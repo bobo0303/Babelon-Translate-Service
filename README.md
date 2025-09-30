@@ -31,7 +31,7 @@ Babelon/
 │   ├── gpt_translate.py   # GPT-4o 翻譯引擎
 │   ├── ollama_translate.py # Ollama 翻譯引擎
 │   ├── post_process.py    # 後處理模組
-│   └── threading_api.py   # 多執行緒 API
+│   └── threading_api.py   # 多執行緒 API（需自行準備，含機密資訊）
 ├── lib/                   # 共用函式庫
 │   ├── base_object.py     # 基礎物件定義
 │   ├── constant.py        # 常數與設定
@@ -39,8 +39,7 @@ Babelon/
 ├── tools/                 # 工具程式
 │   └── audio_splitter.py  # 音頻分割工具
 ├── audio/                 # 音頻檔案暫存
-├── logs/                  # 日誌檔案
-└── old/                   # 歷史檔案
+└── logs/                  # 日誌檔案
 ```
 
 ## 🚀 快速開始
@@ -56,14 +55,12 @@ Babelon/
 #### 方法一：Docker 部署（推薦）
 ```bash
 # 複製項目
-git clone <repository-url>
+git clone <https://github.com/bobo0303/Babelon-Translate-Service.git>
 cd Babelon
 
-# 創建環境變數檔案
-cp .env.example .env
-# 編輯 .env 設定所需的 API 金鑰
-
 # 啟動服務
+docker build -t babelon .
+    or
 docker-compose up -d
 
 # 進入容器
@@ -79,7 +76,7 @@ python main.py
 pip install -r requirements.txt
 
 # 設定環境變數
-export OPENAI_API_KEY="your-api-key"
+export HUGGINGFACE_HUB_TOKEN="your-hf-token"
 
 # 啟動服務
 python main.py
@@ -87,16 +84,27 @@ python main.py
 
 ### 初次使用設定
 
-1. **Hugging Face 登入**（使用 Gemma 模型需要）
+⚠️ **重要提醒**：`azure_config.yaml` 需要自行準備並配置 Azure OpenAI API。
+
+1. **azure_config.yaml**（檔案必備內容）
+```bash
+API_KEY:  
+AZURE_API_VERSION: 
+AZURE_ENDPOINT: 
+AZURE_DEPLOYMENT: 
+```
+
+2. **Hugging Face 登入**（使用 Gemma 模型需要）
 ```bash
 huggingface-cli login --token your_hf_token
 ```
 
-2. **Ollama 設定**（可選）
+3. **Ollama 設定**（使用 Ollama 需要）
 ```bash
-# 安裝並啟動 Ollama
-ollama pull gemma2:latest
-ollama pull qwen2.5:latest
+# 建置 ollama docker 
+docker run -d -it --gpus all --shm-size 32G --runtime nvidia --device=/dev/nvidia-uvm --device=/dev/nvidia-uvm-tools --device=/dev/nvidiactl --device=/dev/nvidia0 -v ./ollama:/root/.ollama -p 52013:11434 --name ollama ollama/ollama
+# 啟動 Ollama 測試
+docker exec -it ollama ollama run gemma3:12b-it-qat --verbose
 ```
 
 ## 📋 API 文檔
@@ -106,9 +114,13 @@ ollama pull qwen2.5:latest
 - **API 文檔**：`http://localhost:80/docs`
 - **健康檢查**：`GET /`
 
-### 主要端點
+### 主要 API 端點
 
-#### 1. 音頻轉錄翻譯
+#### 🎵 音頻轉錄翻譯
+**端點**：`POST /translate`
+
+將音頻檔案進行語音識別並翻譯成多國語言，支援會議記錄、語音備忘錄等應用場景。
+
 ```http
 POST /translate
 Content-Type: multipart/form-data
@@ -146,7 +158,11 @@ transcription_post_processing: bool (預設true)
 }
 ```
 
-#### 2. 純文字翻譯
+#### 📝 純文字翻譯
+**端點**：`POST /text_translate`
+
+直接翻譯已有的文字內容，快速獲得多語言版本。
+
 ```http
 POST /text_translate
 Content-Type: application/x-www-form-urlencoded
@@ -155,38 +171,34 @@ text: 要翻譯的文字
 language: 來源語言 (zh|en|de)
 ```
 
-#### 3. 即時串流翻譯（SSE）
+#### ⚡ 即時串流翻譯（SSE）
+**端點**：`POST/GET /sse_audio_translate`
+
+支援即時音頻處理，適用於線上會議、直播等需要即時回饋的場景。
+
 ```http
-# 上傳音頻到佇列
+# 提交音頻到處理佇列
 POST /sse_audio_translate
 
-# 連接串流
+# 建立 Server-Sent Events 連線接收結果
 GET /sse_audio_translate
 Accept: text/event-stream
 
-# 停止串流
+# 停止串流連線
 POST /stop_sse
 ```
 
-#### 4. 模型管理
+#### ⚙️ 系統管理
+**端點**：多個管理端點
+
+提供模型切換、參數調整、系統狀態查詢等管理功能。
+
 ```http
-# 查看當前模型
-GET /get_current_model
-
-# 列出可用選項
-GET /list_optional_items
-
-# 更換轉錄模型
-POST /change_transcription_model
-model_name: large_v2|large_v3|turbo
-
-# 更換翻譯方法
-POST /change_translation_method  
-method_name: gemma4b|ollama-gemma|ollama-qwen|gpt4o
-
-# 設定提示詞
-POST /set_prompt
-prompts: 自定義提示詞
+GET /get_current_model          # 查看當前使用的模型
+GET /list_optional_items        # 列出所有可用的模型和翻譯選項
+POST /change_transcription_model # 切換語音識別模型
+POST /change_translation_method  # 切換翻譯引擎
+POST /set_prompt                # 設定自定義提示詞
 ```
 
 ## ⚙️ 配置說明
@@ -203,19 +215,15 @@ prompts: 自定義提示詞
 - `TCM`：自定義模型路徑
 
 ### 翻譯引擎選項
-- `gpt4o`：GPT-4o（預設，需要 OpenAI API）
+- `gpt4o`：GPT-4o（預設，需要 Azure OpenAI API）
 - `gemma4b`：Google Gemma 4B（本地運行）
 - `ollama-gemma`：Ollama Gemma 模型
 - `ollama-qwen`：Ollama Qwen 模型
 
 ### 環境變數設定
 ```bash
-# OpenAI API（GPT-4o 翻譯）
-OPENAI_API_KEY=your_openai_api_key
-
-# Azure OpenAI（可選）
-AZURE_OPENAI_ENDPOINT=your_endpoint
-AZURE_OPENAI_API_KEY=your_azure_key
+# Hugging Face Token（Gemma 模型使用）
+HUGGINGFACE_HUB_TOKEN=your_hf_token
 
 # GPU 設定
 NVIDIA_VISIBLE_DEVICES=all
@@ -345,8 +353,8 @@ rm -rf ~/.cache/huggingface/
 
 #### 3. 翻譯 API 錯誤
 ```bash
-# 檢查 API 金鑰設定
-echo $OPENAI_API_KEY
+# 檢查 Azure API 金鑰設定
+echo $AZURE_OPENAI_API_KEY
 
 # 查看詳細錯誤日誌
 tail -f logs/app.log
@@ -364,21 +372,28 @@ grep "error" logs/app.log
 logging.basicConfig(level=logging.DEBUG)
 ```
 
-## 🤝 貢獻指南
+## 🤝 開發參與
 
 ### 開發環境設定
 ```bash
-git clone <repository-url>
-cd Babelon
+# 複製項目
+git clone https://github.com/bobo0303/Babelon-Translate-Service.git
+cd Babelon-Translate-Service
+
+# 安裝依賴
 pip install -r requirements.txt
-pre-commit install
+
+# 配置必要檔案
+# 1. 創建 azure_config.yaml
+# 2. 準備 threading_api.py（包含機密資訊）
+# 3. 設定 Hugging Face Token
 ```
 
-### 程式碼規範
-- 使用 Black 格式化程式碼
-- 遵循 PEP 8 標準
-- 添加適當的型別提示
-- 撰寫測試案例
+### 開發注意事項
+- 請確保已配置 Azure OpenAI API
+- GPU 環境建議使用 Docker 部署
+- 測試前請確認所有依賴模型已下載
+- 機密檔案請勿提交到 repository
 
 ## 📄 授權條款
 
@@ -386,9 +401,8 @@ pre-commit install
 
 ## 📞 聯絡資訊
 
-- **項目維護者**：[您的名稱]
+- **項目維護者**：[Bobo]
 - **問題回報**：[GitHub Issues]
-- **技術討論**：[討論區連結]
 
 ## 🔄 更新日誌
 
