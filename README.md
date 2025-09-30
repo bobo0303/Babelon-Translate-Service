@@ -67,7 +67,7 @@
 │   ├── 💬 gpt_translate.py       # GPT-4o 翻譯引擎
 │   ├── 🦙 ollama_translate.py    # Ollama 翻譯引擎
 │   ├── ⚙️ post_process.py        # 智能後處理模組
-│   └── 🔒 threading_api.py       # 多執行緒 API (機密)
+│   └── � threading_api.py       # 多執行緒 API
 │
 ├── 📚 lib/                       # 共用函式庫
 │   ├── 🏗️ base_object.py         # 基礎物件定義
@@ -149,7 +149,7 @@ python main.py
 <table>
 <tr>
 <td>⚠️</td>
-<td><strong>重要提醒</strong>：以下檔案需要自行準備，包含機密資訊未包含在 repository 中</td>
+<td><strong>重要提醒</strong>：<code>azure_config.yaml</code> 需要自行準備未包含在 repository 中</td>
 </tr>
 </table>
 
@@ -699,16 +699,15 @@ cd Babelon-Translate-Service
 pip install -r requirements.txt
 
 # 配置必要檔案
-# 1. 創建 azure_config.yaml
-# 2. 準備 threading_api.py（包含機密資訊）
-# 3. 設定 Hugging Face Token
+# 1. 創建 azure_config.yaml（包含 Azure API 機密資訊）
+# 2. 設定 Hugging Face Token
 ```
 
 ### 開發注意事項
 - 請確保已配置 Azure OpenAI API
 - GPU 環境建議使用 Docker 部署
 - 測試前請確認所有依賴模型已下載
-- 機密檔案請勿提交到 repository
+- 機密檔案（azure_config.yaml）請勿提交到 repository
 
 ## 📄 授權條款
 
