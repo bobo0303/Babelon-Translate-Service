@@ -1,0 +1,383 @@
+import os  
+import gc  
+import time  
+import torch
+import librosa
+import logging  
+import logging.handlers
+import numpy as np
+
+from transformers import pipeline, AutoProcessor
+from queue import Queue  
+
+from api.gemma_translate import Gemma4BTranslate  
+from api.ollama_translate import OllamaChat
+from api.gpt_translate import Gpt4oTranslate  
+from api.post_process import post_process
+
+from lib.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, RTF, DEFAULT_RESULT, MAX_NUM_STRATEGIES
+  
+  
+logger = logging.getLogger(__name__)  
+  
+# 配置日誌記錄器設置（如果尚未配置）  
+if not logger.handlers:  
+    log_format = "%(asctime)s - %(message)s"  
+    log_file = "logs/app.log"  
+    logging.basicConfig(level=logging.INFO, format=log_format)  
+  
+    # 創建文件處理器  
+    file_handler = logging.handlers.RotatingFileHandler(  
+        log_file, maxBytes=10*1024*1024, backupCount=5  
+    )  
+    file_handler.setFormatter(logging.Formatter(log_format))  
+  
+    # 創建控制台處理器  
+    console_handler = logging.StreamHandler()  
+    console_handler.setFormatter(logging.Formatter(log_format))  
+  
+    logger.addHandler(file_handler)  
+    logger.addHandler(console_handler)  
+  
+logger.setLevel(logging.INFO)  
+logger.propagate = False  
+
+class Model:  
+    def __init__(self):  
+        """Initialize the Model class with default attributes."""  
+        self.models_path = ModelPath()
+        # Handle Gemma4B initialization with proper error handling
+        try:
+            self.gemma_translator = Gemma4BTranslate()
+        except Exception as e:
+            logger.warning(f"Failed to initialize Gemma4B translator: {e}")
+            self.gemma_translator = None
+            
+        try:
+            self.ollama_gemma_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])  # Use correct key
+        except Exception as e:
+            logger.warning(f"Failed to initialize Ollama translator: {e}")
+            self.ollama_gemma_translator = None
+        
+        try:
+            self.ollama_qwen_translator = OllamaChat(OLLAMA_MODEL['ollama-qwen'])  # Use correct key
+        except Exception as e:
+            logger.warning(f"Failed to initialize Ollama translator: {e}")
+            self.ollama_qwen_translator = None
+            
+        try:
+            self.gpt4o_translator = Gpt4oTranslate()
+        except Exception as e:
+            logger.warning(f"Failed to initialize GPT4o translator: {e}")
+            self.gpt4o_translator = None
+            
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"  
+        self.prompt = None
+        self.processor = None
+        self.pipe = None  
+        self.model_version = None  
+        self.translate_method = "gpt4o"  
+        self.result_queue = Queue()  
+        self.processing = False
+  
+    def load_model(self, models_name):  
+        """Load the specified model based on the model's name."""  
+        start = time.time()  
+        try:  
+            # Release old model resources  
+            self._release_model()  
+            self.model_version = models_name  
+  
+            self.model_path = getattr(self.models_path, models_name)  # Use getattr to access ModelPath attributes
+            self.processor = AutoProcessor.from_pretrained(self.model_path)
+            self.pipe = pipeline(
+                task="automatic-speech-recognition",
+                model=self.model_path,
+                tokenizer=self.processor.tokenizer,
+                feature_extractor=self.processor.feature_extractor,
+                device=self.device
+            )            
+            end = time.time()  
+            logger.info(f" | Loading '{models_name}' in {end - start:.2f} seconds and successful | ")
+        except Exception as e:  
+            self.model_version = None
+            logger.error(f" | load_model() models_name: '{models_name}' error: {e} | ")
+            logger.error(f" | model has been released. Please use correct model name to reload the model before using | ")
+            return e
+        return None
+
+    def _release_model(self):  
+        """Release the resources occupied by the current model."""  
+        if self.pipe is not None:  
+            del self.pipe  
+            gc.collect()  
+            self.pipe = None  
+            torch.cuda.empty_cache()  
+            logger.info(" | Previous model resources have been released. | ")  
+  
+    def change_translate_method(self, method_name):  
+        """  
+        Change the translate method used by the model.  
+  
+        :param method_name: str  
+            The name of the translation method to be used.  
+        :rtype: None  
+        """  
+        self.translate_method = method_name
+        # if not self.translate_method == method_name and method_name in OLLAMA_MODEL:
+        #     try:
+        #         self.ollama_translator.close()
+        #         self.ollama_translator = OllamaChat(OLLAMA_MODEL[method_name])
+        #         self.translate_method = method_name
+        #         logger.info(f" | old ollama has been released. Initial '{method_name}' has been successful | ")          
+        #     except Exception as e:
+        #         logger.error(f" | ollama translate method change error try to load default: {e} | ")
+        #         try:
+        #             self.ollama_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])
+        #             self.translate_method = "ollama-gemma"
+        #             logger.info(f" | Loading preset ollama model 'ollama-gemma' successfully | ")
+        #         except Exception as e:
+        #             logger.error(f" | Error changing preset ollama model, please check whether ollama is started | ")
+        #             logger.info(f" | Using 'GPT-4o' as translate fallback | ")
+        #             self.translate_method = "gpt4o"
+        # else:
+        #     self.translate_method = method_name
+        
+    def set_prompt(self, prompt_name):  
+        """  
+        Set the prompt for the transcription model.  
+  
+        :param prompt_name: str  
+            The name of the prompt to be used.  
+        :rtype: None  
+        """  
+        
+        if prompt_name is None:
+            self.prompt = None
+            return
+        
+        start = time.time()
+        prompt_text = f"Our prompts are {prompt_name}"
+        try:
+            # 如果 processor 未初始化，先初始化它
+            if self.processor is None:
+                logger.warning(f" | AutoProcessor not initialized, initializing now... | ")
+                self.processor = AutoProcessor.from_pretrained(self.model_path)
+            
+            # 生成 prompt_ids 並移到正確的設備上
+            self.prompt = self.processor.get_prompt_ids(prompt_text, return_tensors="pt")
+            # 確保 prompt 在正確的設備上
+            if self.device == "cuda" and torch.cuda.is_available():
+                self.prompt = self.prompt.to(self.device)
+                logger.debug(f" | Prompt moved to device: {self.device} | ")
+            end = time.time()
+            logger.info(f" | spend {end - start:.2f} seconds | Prompt has been set to: {prompt_name} | ")
+        except Exception as e:
+            logger.error(f" | set_prompt() error: {e} | ")
+            self.prompt = None
+            logger.error(f" | Prompt setting failed. | ")
+            return e    
+        
+    def _add_silence_padding(self, audio_file, padding_duration=0.5):  # Added self parameter
+        audio, sr = librosa.load(audio_file, sr=16000)
+        
+        # 添加前後靜音
+        padding_samples = int(padding_duration * sr)
+        silence = np.zeros(padding_samples, dtype=audio.dtype)
+        
+        # 前後各加1秒靜音
+        padded_audio = np.concatenate([silence, audio, silence])
+        return padded_audio
+
+    def transcribe(self, audio_file_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
+        """  
+        Perform transcription on the given audio file.  
+    
+        :param audio_file_path: str  
+            The path to the audio file to be transcribed.  
+        :param ori: str  
+            The original language of the audio.  
+        :rtype: tuple  
+            A tuple containing the original transcription and inference time.  
+        :logs: Inference status and time.  
+        """  
+        start = time.time()  # Start timing the transcription process  
+
+        try:
+            # Load audio and calculate length
+            if RTF:
+                original_audio, sr = librosa.load(audio_file_path, sr=None)
+                audio_length_seconds = len(original_audio) / sr
+            else:
+                audio_length_seconds = 0  # Set default value when RTF is False
+
+            if SILENCE_PADDING:
+                audio_file_path = self._add_silence_padding(audio_file_path)
+
+            # multi_strategy_transcription
+            # -> 1. tmp = 0.0 | do_sample = False | prompt = self.prompt + prev_text
+            # -> 2. tmp = 0.0 | do_sample = False | prompt = self.prompt 
+            # -> 3. tmp = 0.0 | do_sample = False | prompt = None
+            # -> 4. tmp = [0.2, 0.4, 0.6, 0.8, 1.0] | do_sample = True | prompt = None
+            for strategy in range(multi_strategy_transcription):
+                retry_flag = False
+                # Build generate_kwargs conditionally to avoid conflicts
+                generate_kwargs = {
+                    "language": ori,  
+                    "task": "transcribe",  
+                    "temperature": 0.0 if strategy < MAX_NUM_STRATEGIES - 1 else [0.2, 0.4, 0.6, 0.8, 1.0],
+                    "do_sample": False if strategy < MAX_NUM_STRATEGIES - 1 else True,
+                }
+
+                if self.prompt is not None and strategy < MAX_NUM_STRATEGIES - 2:
+                    if strategy == 0:
+                        if prev_text.strip() != "":
+                            if not prev_text.endswith(('.', '。', '!', '！', '?', '？')):
+                                prev_text += '。'  
+                            prompt_with_prev = self.processor.get_prompt_ids(prev_text, return_tensors="pt")
+                            prompt = f"{self.prompt} {prompt_with_prev}"
+                            generate_kwargs["prompt_ids"] = prompt.to(self.device) if self.device == "cuda" else prompt
+                        else:
+                            continue # no prev_text skip to next strategy
+                    else:
+                        generate_kwargs["prompt_ids"] = self.prompt.to(self.device) if self.device == "cuda" else self.prompt
+                    
+                transcription_result = self.pipe(
+                    audio_file_path, 
+                    generate_kwargs=generate_kwargs
+                )
+                
+                ori_pred = transcription_result["text"]
+                logger.debug(f" | Raw Transcription: {ori_pred} | ")
+                
+                if post_processing:
+                    retry_flag, ori_pred = post_process(ori_pred)
+                    
+                if retry_flag:
+                    end = time.time() 
+                    if strategy < multi_strategy_transcription - 1:
+                        logger.info(f" | Strategy {strategy+1} transcription FAILED: retry strategy {strategy+2} | now process time '{end - start:.2f}' seconds | ")
+                    else:
+                        logger.info(f" | Strategy {strategy+1} transcription FAILED: no more retry strategies | now process time '{end - start:.2f}' seconds | ")
+                else:
+                    break  
+            
+            end = time.time() 
+            inference_time = end - start  
+            if RTF and audio_length_seconds > 0:
+                rtf = inference_time / audio_length_seconds
+            else:
+                rtf = 0
+            logger.info(f" | Transcription: {ori_pred} | ")
+            logger.debug(f" RTF {rtf} | Transcription time {inference_time} seconds. | ")  # Log the inference time
+        except Exception as e:
+            ori_pred = ""
+            inference_time = 0
+            rtf = 0
+            logger.error(f" | transcribe() error: {e} | ")  
+
+        return ori_pred, rtf, inference_time  
+    
+    def translate(self, ori_pred, ori):
+        """
+        Translate the given text from the original language to the target language.
+
+        :param ori_pred: str  
+            The original text to be translated.  
+        :param ori: str  
+            The original language of the text.  
+        :param tar: str  
+            The target language for translation.  
+        :return: tuple  
+            A tuple containing the translated text, the translation time, and the translation method used.  
+        """  
+        start = time.time()  
+        ori_pred = ori_pred if ori_pred != "." else ""  # Ensure the original prediction is not just a period  
+        translated_pred = DEFAULT_RESULT.copy()
+        translated_pred[ori] = ori_pred 
+        
+        if ori not in LANGUAGE_LIST:
+            logger.error(f"Error: ori \"{ori}\" not in LANGUAGE_LIST \"{LANGUAGE_LIST}\"")
+            return translated_pred, 0, self.translate_method
+        
+        try:  
+            if ori_pred != "":  # Proceed with translation only if languages are different and text is not empty  
+                # if self.translate_method == "google":  
+                #     # Adjust language codes for Google Translate  
+                #     ori = 'zh-TW' if ori == 'zh' else ori  
+                #     tar = 'zh-TW' if tar == 'zh' else tar  
+                #     translated_pred = self.google_translator.translate(ori_pred, src=ori, dest=tar).text  
+                if self.translate_method == "gpt4o":  
+                    try:  
+                        if self.gpt4o_translator is None:
+                            logger.error(f" | GPT-4o translator not initialized | ")
+                            translated_pred = DEFAULT_RESULT.copy()
+                            translated_pred[ori] = ori_pred
+                        else:
+                            translated_pred = self.gpt4o_translator.translate(ori_pred, ori)  
+                            if translated_pred == "403_Forbidden":  
+                                logger.error(f" | gpt4o rejected translate due to security violation | use gemma4b translate to retry | ")  
+                                # Retry translation using Gemma if GPT-4o translation is forbidden  
+                                if self.gemma_translator is not None:
+                                    try:
+                                        translated_pred = self.gemma_translator.translate(ori_pred, ori)  
+                                    except Exception as e:
+                                        logger.error(f" | gemma4b translate error: {e} | ")  
+                                        logger.error(f" | backup translate failed return default result | ")
+                                else:
+                                    logger.error(f" | gemma4b translator not available | ")
+                    except Exception as e:  
+                        logger.error(f" | translate failed use default result | Error: {e} | ")
+                                                        
+                elif self.translate_method == "gemma4b":  
+                    try:
+                        if self.gemma_translator is None:
+                            logger.error(f" | Gemma4B translator not initialized | ")
+                            translated_pred = DEFAULT_RESULT.copy()
+                            translated_pred[ori] = ori_pred
+                        else:
+                            translated_pred = self.gemma_translator.translate(ori_pred, ori)  
+                    except Exception as e:
+                        logger.error(f" | gemma4b translate error: {e} | ")  
+                
+                elif self.translate_method in OLLAMA_MODEL:
+                    try:
+                        if self.ollama_translator is None:
+                            logger.error(f" | Ollama translator not initialized | ")
+                            translated_pred = DEFAULT_RESULT.copy()
+                            translated_pred[ori] = ori_pred
+                        else:
+                            translated_pred = self.ollama_translator.translate(ori_pred, ori)  
+                    except Exception as e:
+                        logger.error(f" | ollama '{self.translate_method}' translate error: {e} | ")  
+                
+                if translated_pred is None:
+                    logger.error(f" | translate failed. return default result | ")
+                    translated_pred = DEFAULT_RESULT.copy()
+                    translated_pred[ori] = ori_pred
+
+        except Exception as e:
+            logger.error(f" | translate() '{self.translate_method}' error: {e} | ")
+    
+        end = time.time()  
+        g_translate_time = end - start  # Calculate the time taken for translation  
+    
+        return translated_pred, g_translate_time, self.translate_method  
+ 
+    def close(self):  
+        """  
+        Close any resources held by the translators.  
+        """  
+        if self.ollama_gemma_translator is not None:
+            try:    
+                self.ollama_gemma_translator.close()
+                logger.info(f" | Closed Ollama Gemma translator successfully. | ")
+            except Exception as e:
+                logger.warning(f" | Failed to close Ollama Gemma translator: {e} | ")
+        if self.ollama_qwen_translator is not None:
+            try:
+                self.ollama_qwen_translator.close()
+                logger.info(f" | Closed Ollama Qwen translator successfully. | ")
+            except Exception as e:
+                logger.warning(f" | Failed to close Ollama Qwen translator: {e} | ")
+                

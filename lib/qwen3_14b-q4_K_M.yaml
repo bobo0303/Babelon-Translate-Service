@@ -1,0 +1,3 @@
+HOST: "http://172.17.0.1:52013/"
+# MODEL: "qwen2.5:14b-instruct-q4_K_M"
+MODEL: "qwen3:14b-q4_K_M"
