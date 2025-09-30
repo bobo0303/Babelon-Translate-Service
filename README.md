@@ -1,111 +1,206 @@
-# Babelon 翻譯服務
+<div align="center">
+
+# 🌐 Babelon 翻譯服務
+
+**多語言音頻轉錄與翻譯平台**
+
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://docker.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+*整合先進 ASR 與 AI 翻譯技術，為會議記錄與即時翻譯提供專業解決方案*
+
+</div>
+
+---
 
 ## 📝 項目概述
 
-Babelon 是一個基於 FastAPI 的多語言音頻轉錄與翻譯服務，整合了先進的 ASR（自動語音識別）和 AI 翻譯技術。該服務能夠將音頻文件轉錄為文字，並翻譯成多種語言，特別適用於會議記錄、即時翻譯等場景。
+**Babelon** 是一個基於 FastAPI 的多語言音頻轉錄與翻譯服務平台。融合了最新的 ASR（自動語音識別）和 AI 翻譯技術，提供高精度的語音轉文字和多語言翻譯功能。
 
-## ✨ 主要功能
+### 🎯 適用場景
+- 📋 **會議記錄** - 自動生成多語言會議紀錄
+- 🎙️ **即時語音翻譯** - 線上會議即時多語言支援
+- 📝 **語音備忘錄** - 將語音快速轉換為可編輯文字
+- 🌍 **多語言內容創作** - 一鍵生成多語言版本內容
 
-### 🎯 核心功能
-- **音頻轉錄**：支援多種 Whisper 模型（large-v2, large-v3, turbo）
-- **多語言翻譯**：支援中文（繁體）、英文、德文之間的互相翻譯
-- **即時串流**：支援 Server-Sent Events (SSE) 即時翻譯
-- **多重策略轉錄**：最多 4 種策略提升轉錄準確度
-- **智能後處理**：自動修正 ASR 常見錯誤
+## ✨ 核心特色
 
-### 🛠 技術特色
-- **多模型支援**：整合 OpenAI Whisper、Gemma、Ollama、GPT-4o
-- **GPU 加速**：支援 CUDA 加速運算
-- **容器化部署**：Docker + Docker Compose 快速部署
-- **資源管理**：自動清理舊音頻文件，記憶體優化
-- **錯誤重試**：多策略容錯機制
+<table>
+<tr>
+<td width="50%">
+
+### 🎯 **核心功能**
+- 🎵 **高精度音頻轉錄** - 支援 Whisper large-v2/v3/turbo 模型
+- 🌍 **多語言翻譯** - 中文（繁體）、英文、德文互譯
+- ⚡ **即時串流處理** - SSE 技術實現即時翻譯回饋
+- 🔄 **多重策略轉錄** - 最多 4 種策略確保最佳準確度
+- 🛠️ **智能後處理** - 自動修正 ASR 常見錯誤
+
+</td>
+<td width="50%">
+
+### 🛠 **技術亮點**
+- 🚀 **多 AI 模型整合** - Whisper、Gemma、Ollama、GPT-4o
+- ⚡ **GPU 加速運算** - CUDA 支援，大幅提升處理速度
+- 🐳 **容器化部署** - Docker/Docker Compose 一鍵部署
+- 🔧 **智能資源管理** - 自動清理、記憶體優化
+- 🛡️ **多策略容錯** - 確保服務穩定性
+
+</td>
+</tr>
+</table>
 
 ## 🏗 系統架構
 
+<div align="center">
+
 ```
-Babelon/
-├── main.py                 # FastAPI 主應用程式
-├── api/                    # API 模組
-│   ├── model.py           # 核心模型管理
-│   ├── gemma_translate.py # Gemma 翻譯引擎
-│   ├── gpt_translate.py   # GPT-4o 翻譯引擎
-│   ├── ollama_translate.py # Ollama 翻譯引擎
-│   ├── post_process.py    # 後處理模組
-│   └── threading_api.py   # 多執行緒 API（需自行準備，含機密資訊）
-├── lib/                   # 共用函式庫
-│   ├── base_object.py     # 基礎物件定義
-│   ├── constant.py        # 常數與設定
-│   └── azure_config.yaml  # Azure 設定
-├── tools/                 # 工具程式
-│   └── audio_splitter.py  # 音頻分割工具
-├── audio/                 # 音頻檔案暫存
-└── logs/                  # 日誌檔案
+┌─────────────────────────────────────────────────────────────┐
+│                    🌐 Babelon 翻譯服務                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  📁 Babelon/                                               │
+│  ├── 🚀 main.py                # FastAPI 主應用程式         │
+│  ├── 📂 api/                   # API 核心模組              │
+│  │   ├── 🧠 model.py          # 模型管理中心               │
+│  │   ├── 🔤 gemma_translate.py # Gemma 翻譯引擎           │
+│  │   ├── 💬 gpt_translate.py   # GPT-4o 翻譯引擎          │
+│  │   ├── 🦙 ollama_translate.py# Ollama 翻譯引擎          │
+│  │   ├── ⚙️ post_process.py    # 智能後處理模組            │
+│  │   └── 🔒 threading_api.py   # 多執行緒 API        │
+│  ├── 📚 lib/                   # 共用函式庫                │
+│  │   ├── 🏗️ base_object.py     # 基礎物件定義              │
+│  │   ├── ⚙️ constant.py        # 系統常數設定              │
+│  │   └── ☁️ azure_config.yaml  # Azure API 設定           │
+│  ├── 🛠️ tools/                 # 工具程式集                │
+│  │   └── 🔊 audio_splitter.py  # 音頻分割工具             │
+│  ├── 🎵 audio/                 # 音頻暫存區               │
+│  └── 📋 logs/                  # 系統日誌                 │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+</div>
 
 ## 🚀 快速開始
 
-### 環境需求
-- Python 3.9+
-- CUDA 支援的 GPU（建議）
-- Docker & Docker Compose
-- 4GB+ GPU 記憶體
+### 📋 環境需求
 
-### 安裝部署
+<table>
+<tr>
+<td><strong>🐍 Python</strong></td>
+<td>3.9 或以上版本</td>
+</tr>
+<tr>
+<td><strong>🔥 GPU</strong></td>
+<td>NVIDIA CUDA 支援 (建議 4GB+ VRAM)</td>
+</tr>
+<tr>
+<td><strong>🐳 容器</strong></td>
+<td>Docker & Docker Compose</td>
+</tr>
+<tr>
+<td><strong>💾 記憶體</strong></td>
+<td>16GB+ RAM (建議)</td>
+</tr>
+</table>
 
-#### 方法一：Docker 部署（推薦）
+### 🛠️ 安裝部署
+
+<details>
+<summary><strong>🐳 方法一：Docker 部署（推薦）</strong></summary>
+
 ```bash
-# 複製項目
-git clone <https://github.com/bobo0303/Babelon-Translate-Service.git>
-cd Babelon
+# 📥 複製項目
+git clone https://github.com/bobo0303/Babelon-Translate-Service.git
+cd Babelon-Translate-Service
 
-# 啟動服務
+# 🏗️ 建置並啟動服務
 docker build -t babelon .
-    or
+# 或使用 Docker Compose
 docker-compose up -d
 
-# 進入容器
+# 🔧 進入容器
 docker exec -it babelon bash
 
-# 在容器內啟動服務
+# 🚀 啟動服務
 python main.py
 ```
 
-#### 方法二：本地安裝
+</details>
+
+<details>
+<summary><strong>💻 方法二：本地安裝</strong></summary>
+
 ```bash
-# 安裝依賴
+# 📦 安裝相依套件
 pip install -r requirements.txt
 
-# 設定環境變數
+# ⚙️ 設定環境變數
 export HUGGINGFACE_HUB_TOKEN="your-hf-token"
 
-# 啟動服務
+# 🚀 啟動服務
 python main.py
 ```
 
-### 初次使用設定
+</details>
 
-⚠️ **重要提醒**：`azure_config.yaml` 需要自行準備並配置 Azure OpenAI API。
+### ⚙️ 初次使用設定
 
-1. **azure_config.yaml**（檔案必備內容）
-```bash
-API_KEY:  
-AZURE_API_VERSION: 
-AZURE_ENDPOINT: 
-AZURE_DEPLOYMENT: 
+<div align="center">
+<table>
+<tr>
+<td>⚠️</td>
+<td><strong>重要提醒</strong>：以下檔案需要自行準備，包含機密資訊未包含在 repository 中</td>
+</tr>
+</table>
+</div>
+
+<details>
+<summary><strong>🔧 步驟 1：Azure OpenAI 配置</strong></summary>
+
+建立 `azure_config.yaml` 檔案並填入以下內容：
+
+```yaml
+API_KEY: "your_azure_api_key"
+AZURE_API_VERSION: "xxxx-xx-xx-preview"
+AZURE_ENDPOINT: "https://your-endpoint.openai.azure.com"
+AZURE_DEPLOYMENT: "your-deployment-name"
 ```
 
-2. **Hugging Face 登入**（使用 Gemma 模型需要）
+</details>
+
+<details>
+<summary><strong>🤗 步驟 2：Hugging Face 登入（Gemma 模型）</strong></summary>
+
 ```bash
+# 首先需要在 Hugging Face 同意使用條款
+# 訪問：https://huggingface.co/google/gemma-3-4b-it
+
+# 使用 Token 登入
 huggingface-cli login --token your_hf_token
 ```
 
-3. **Ollama 設定**（使用 Ollama 需要）
+</details>
+
+<details>
+<summary><strong>🦙 步驟 3：Ollama 設定（可選）</strong></summary>
+
 ```bash
-# 建置 ollama docker 
-docker run -d -it --gpus all --shm-size 32G --runtime nvidia --device=/dev/nvidia-uvm --device=/dev/nvidia-uvm-tools --device=/dev/nvidiactl --device=/dev/nvidia0 -v ./ollama:/root/.ollama -p 52013:11434 --name ollama ollama/ollama
-# 啟動 Ollama 測試
+# 🐳 建置 Ollama Docker 容器
+docker run -d -it --gpus all --shm-size 32G --runtime nvidia \
+  --device=/dev/nvidia-uvm --device=/dev/nvidia-uvm-tools \
+  --device=/dev/nvidiactl --device=/dev/nvidia0 \
+  -v ./ollama:/root/.ollama -p 52013:11434 \
+  --name ollama ollama/ollama
+
+# 🧪 測試 Ollama 模型
 docker exec -it ollama ollama run gemma3:12b-it-qat --verbose
 ```
+
+</details>
 
 ## 📋 API 文檔
 
@@ -201,57 +296,170 @@ POST /change_translation_method  # 切換翻譯引擎
 POST /set_prompt                # 設定自定義提示詞
 ```
 
-## ⚙️ 配置說明
+## ⚙️ 系統配置
 
-### 支援的語言
-- `zh`：繁體中文（台灣）
-- `en`：英文（美式）
-- `de`：德文（標準德語）
+### 🌍 支援語言
 
-### 轉錄模型選項
-- `large_v2`：OpenAI Whisper Large v2（預設）
-- `large_v3`：OpenAI Whisper Large v3
-- `turbo`：OpenAI Whisper Large v3 Turbo
-- `TCM`：自定義模型路徑
+<div align="center">
+<table>
+<tr>
+<th>語言代碼</th>
+<th>語言名稱</th>
+<th>說明</th>
+</tr>
+<tr>
+<td><code>zh</code></td>
+<td>🇹🇼 繁體中文</td>
+<td>台灣地區標準中文</td>
+</tr>
+<tr>
+<td><code>en</code></td>
+<td>🇺🇸 英文</td>
+<td>美式英語</td>
+</tr>
+<tr>
+<td><code>de</code></td>
+<td>🇩🇪 德文</td>
+<td>標準德語</td>
+</tr>
+</table>
+</div>
 
-### 翻譯引擎選項
-- `gpt4o`：GPT-4o（預設，需要 Azure OpenAI API）
-- `gemma4b`：Google Gemma 4B（本地運行）
-- `ollama-gemma`：Ollama Gemma 模型
-- `ollama-qwen`：Ollama Qwen 模型
+### 🎙️ 轉錄模型選項
 
-### 環境變數設定
+<table>
+<tr>
+<th>模型名稱</th>
+<th>說明</th>
+<th>推薦使用</th>
+</tr>
+<tr>
+<td><code>large_v2</code></td>
+<td>OpenAI Whisper Large v2（預設）</td>
+<td>✅ 穩定性佳</td>
+</tr>
+<tr>
+<td><code>large_v3</code></td>
+<td>OpenAI Whisper Large v3</td>
+<td>🎯 精度更高</td>
+</tr>
+<tr>
+<td><code>turbo</code></td>
+<td>OpenAI Whisper Large v3 Turbo</td>
+<td>⚡ 速度優先</td>
+</tr>
+<tr>
+<td><code>TCM</code></td>
+<td>自定義模型路徑</td>
+<td>🔧 客製化需求</td>
+</tr>
+</table>
+
+### 🤖 翻譯引擎選項
+
+<table>
+<tr>
+<th>引擎名稱</th>
+<th>說明</th>
+<th>部署方式</th>
+<th>特色</th>
+</tr>
+<tr>
+<td><code>gpt4o</code></td>
+<td>GPT-4o（預設）</td>
+<td>☁️ Azure OpenAI API</td>
+<td>🏆 最高品質</td>
+</tr>
+<tr>
+<td><code>gemma4b</code></td>
+<td>Google Gemma 4B</td>
+<td>💻 本地運行</td>
+<td>🔒 隱私保護</td>
+</tr>
+<tr>
+<td><code>ollama-gemma</code></td>
+<td>Ollama Gemma</td>
+<td>🐳 容器部署</td>
+<td>⚡ 快速部署</td>
+</tr>
+<tr>
+<td><code>ollama-qwen</code></td>
+<td>Ollama Qwen</td>
+<td>🐳 容器部署</td>
+<td>🌏 中文優化</td>
+</tr>
+</table>
+
+### 🔧 環境變數設定
+
 ```bash
-# 預獲得 Hugging Face Token 必須先同意使用許可並創建 token
-https://huggingface.co/google/gemma-3-4b-it
+# 🤗 Hugging Face Token（Gemma 模型使用）
+# 請先訪問並同意使用條款：https://huggingface.co/google/gemma-3-4b-it
+export HUGGINGFACE_HUB_TOKEN="your_hf_token"
 
-# Hugging Face Token（Gemma 模型使用）
-HUGGINGFACE_HUB_TOKEN=your_hf_token
-
-# GPU 設定
-NVIDIA_VISIBLE_DEVICES=all
-CUDA_VISIBLE_DEVICES=0
+# 🔥 GPU 設定
+export NVIDIA_VISIBLE_DEVICES=all
+export CUDA_VISIBLE_DEVICES=0
 ```
 
 ## 🔧 進階功能
 
-### 多重策略轉錄
-系統支援最多 4 種轉錄策略以提升準確度：
-1. **策略 1**：使用自定義提示詞 + 前文語境
-2. **策略 2**：僅使用自定義提示詞
-3. **策略 3**：無提示詞，低溫度採樣
-4. **策略 4**：高溫度多樣化採樣
+### 🎯 多重策略轉錄
 
-### 智能後處理
-- 自動修正 ASR 常見錯誤
-- 品牌名稱標準化
-- 語法錯誤修正
-- 幻覺檢測與過濾
+<div align="center">
+<table>
+<tr>
+<th>策略</th>
+<th>描述</th>
+<th>適用場景</th>
+</tr>
+<tr>
+<td>🔹 <strong>策略 1</strong></td>
+<td>自定義提示詞 + 前文語境</td>
+<td>連續對話、會議記錄</td>
+</tr>
+<tr>
+<td>🔸 <strong>策略 2</strong></td>
+<td>僅使用自定義提示詞</td>
+<td>專業術語、特定領域</td>
+</tr>
+<tr>
+<td>🔹 <strong>策略 3</strong></td>
+<td>無提示詞，低溫度採樣</td>
+<td>一般語音、高準確度需求</td>
+</tr>
+<tr>
+<td>🔸 <strong>策略 4</strong></td>
+<td>高溫度多樣化採樣</td>
+<td>不清晰音頻、口音較重</td>
+</tr>
+</table>
+</div>
 
-### 自動資源管理
-- 定時清理 24 小時前的音頻檔案
-- GPU 記憶體自動回收
-- 模型熱切換不中斷服務
+### 🛠️ 智能後處理
+
+<table>
+<tr>
+<td width="50%">
+
+#### 🔍 **錯誤檢測**
+- 🔤 ASR 常見錯誤自動識別
+- 🏢 品牌名稱標準化處理
+- 📝 語法錯誤智能修正
+- ⚠️ 幻覺內容檢測過濾
+
+</td>
+<td width="50%">
+
+#### ⚡ **效能優化**
+- 🧹 24小時自動清理音頻檔案
+- 💾 GPU 記憶體智能回收
+- 🔄 模型熱切換零中斷
+- 📊 即時性能監控 (RTF)
+
+</td>
+</tr>
+</table>
 
 ## 🎯 使用範例
 
@@ -305,20 +513,80 @@ curl -X POST "http://localhost:80/text_translate" \
 
 ## 📊 效能最佳化
 
-### 建議的硬體配置
-- **GPU**：NVIDIA RTX 3080 以上
-- **記憶體**：16GB+ RAM
-- **儲存**：SSD 推薦
-- **網路**：穩定的網路連線（API 調用）
+### 💻 建議硬體配置
 
-### 效能調校
+<div align="center">
+<table>
+<tr>
+<th>組件</th>
+<th>最低需求</th>
+<th>建議配置</th>
+<th>最佳效能</th>
+</tr>
+<tr>
+<td><strong>🔥 GPU</strong></td>
+<td>GTX 1660 (6GB)</td>
+<td>RTX 3080 (10GB)</td>
+<td>RTX 4090 (24GB)</td>
+</tr>
+<tr>
+<td><strong>💾 記憶體</strong></td>
+<td>8GB RAM</td>
+<td>16GB RAM</td>
+<td>32GB+ RAM</td>
+</tr>
+<tr>
+<td><strong>💿 儲存</strong></td>
+<td>HDD</td>
+<td>SATA SSD</td>
+<td>NVMe SSD</td>
+</tr>
+<tr>
+<td><strong>🌐 網路</strong></td>
+<td>10 Mbps</td>
+<td>100 Mbps</td>
+<td>1 Gbps</td>
+</tr>
+</table>
+</div>
+
+### ⚙️ 效能調校參數
+
+<details>
+<summary><strong>🔧 在 constant.py 中調整以下參數</strong></summary>
+
 ```python
-# 在 constant.py 中調整參數
-WAITING_TIME = 60           # 轉錄超時時間
-MAX_NUM_STRATEGIES = 4      # 最大策略數
-SILENCE_PADDING = True      # 靜音填充
-RTF = True                  # 計算即時係數
+# ⏱️ 轉錄超時設定
+WAITING_TIME = 60           # 單位：秒，建議 30-120
+
+# 🎯 策略數量設定
+MAX_NUM_STRATEGIES = 4      # 最大 4 種，可降低至 1-2 提升速度
+
+# 🔇 靜音填充
+SILENCE_PADDING = True      # 提升邊界詞識別，輕微增加處理時間
+
+# 📈 即時係數計算
+RTF = True                  # 啟用效能監控，輕微影響效能
 ```
+
+</details>
+
+### 📈 效能監控指標
+
+<table>
+<tr>
+<td><strong>🎯 RTF (Real-Time Factor)</strong></td>
+<td>< 0.3 優秀 | 0.3-0.5 良好 | > 0.5 需優化</td>
+</tr>
+<tr>
+<td><strong>💾 GPU 記憶體使用率</strong></td>
+<td>< 80% 安全 | 80-90% 注意 | > 90% 危險</td>
+</tr>
+<tr>
+<td><strong>⚡ 處理速度</strong></td>
+<td>1分鐘音頻 < 20秒處理為佳</td>
+</tr>
+</table>
 
 ## 🛡️ 安全性考慮
 
@@ -334,46 +602,101 @@ RTF = True                  # 計算即時係數
 
 ## 🐛 故障排除
 
-### 常見問題
+### ❓ 常見問題
 
-#### 1. GPU 記憶體不足
+<details>
+<summary><strong>🔥 問題 1：GPU 記憶體不足</strong></summary>
+
+**症狀**：CUDA out of memory 錯誤
+
+**解決方案**：
 ```bash
-# 檢查 GPU 使用狀況
+# 🔍 檢查 GPU 使用狀況
 nvidia-smi
 
-# 降低模型規模
-# 改用 turbo 模型替代 large_v3
+# 🔧 解決方案
+# 1. 使用較小的模型
+POST /change_transcription_model
+model_name: turbo
+
+# 2. 清理 GPU 快取
+docker restart babelon
+
+# 3. 降低並發處理數量
 ```
 
-#### 2. 模型載入失敗
+</details>
+
+<details>
+<summary><strong>🤗 問題 2：模型載入失敗</strong></summary>
+
+**症狀**：Hugging Face 模型下載失敗
+
+**解決方案**：
 ```bash
-# 檢查 Hugging Face 登入狀態
+# 🔐 檢查登入狀態
 huggingface-cli whoami
 
-# 清除模型快取
+# 🧹 清除快取重新下載
 rm -rf ~/.cache/huggingface/
+
+# 🔄 重新登入
+huggingface-cli login --token your_token
 ```
 
-#### 3. 翻譯 API 錯誤
+</details>
+
+<details>
+<summary><strong>☁️ 問題 3：翻譯 API 錯誤</strong></summary>
+
+**症狀**：翻譯功能無回應或錯誤
+
+**解決方案**：
 ```bash
-# 檢查 Azure 配置檔案
+# ⚙️ 檢查 Azure 配置
 cat lib/azure_config.yaml
 
-# 查看詳細錯誤日誌
+# 🔍 驗證 API 連通性
+curl -X POST "https://your-endpoint.openai.azure.com/openai/deployments/your-deployment/chat/completions?api-version=2024-02-15-preview" \
+  -H "Content-Type: application/json" \
+  -H "api-key: your-api-key" \
+  -d '{"messages":[{"role":"user","content":"test"}]}'
+
+# 📋 查看詳細日誌
 tail -f logs/app.log
 ```
 
-### 日誌除錯
-```bash
-# 查看即時日誌
-tail -f logs/app.log
+</details>
 
-# 搜尋特定錯誤
-grep "error" logs/app.log
+### 📋 除錯工具
 
-# 調整日誌等級（在 main.py 中）
-logging.basicConfig(level=logging.DEBUG)
-```
+<table>
+<tr>
+<th>工具</th>
+<th>用途</th>
+<th>指令</th>
+</tr>
+<tr>
+<td><strong>📊 即時日誌</strong></td>
+<td>監控系統運行狀態</td>
+<td><code>tail -f logs/app.log</code></td>
+</tr>
+<tr>
+<td><strong>🔍 錯誤搜尋</strong></td>
+<td>快速定位錯誤訊息</td>
+<td><code>grep "error" logs/app.log</code></td>
+</tr>
+<tr>
+<td><strong>🔧 除錯模式</strong></td>
+<td>開啟詳細日誌</td>
+<td>在 main.py 中設定 <code>logging.DEBUG</code></td>
+</tr>
+<tr>
+<td><strong>🔥 GPU 監控</strong></td>
+<td>檢查 GPU 使用狀況</td>
+<td><code>watch -n 1 nvidia-smi</code></td>
+</tr>
+</table>
 
 ## 🤝 開發參與
 
@@ -400,21 +723,49 @@ pip install -r requirements.txt
 
 ## 📄 授權條款
 
-本項目採用 [MIT License](LICENSE)
+本項目採用 [MIT License](LICENSE) 開源授權
 
 ## 📞 聯絡資訊
 
-- **項目維護者**：[Bobo]
-- **問題回報**：[GitHub Issues]
+<div align="center">
+<table>
+<tr>
+<td>👤 <strong>項目維護者</strong></td>
+<td>Bobo</td>
+</tr>
+<tr>
+<td>🐛 <strong>問題回報</strong></td>
+<td><a href="https://github.com/bobo0303/Babelon-Translate-Service/issues">GitHub Issues</a></td>
+</tr>
+<tr>
+<td>⭐ <strong>如果覺得有用</strong></td>
+<td>歡迎給個 Star ⭐</td>
+</tr>
+</table>
+</div>
 
 ## 🔄 更新日誌
 
-### v1.0.0 (2024-01-01)
-- 初始版本發布
-- 支援多語言音頻轉錄翻譯
-- 整合多種 AI 模型
-- 實現 SSE 即時串流
+### 📅 v1.0.0 (2024-01-01)
+- 🎉 **初始版本發布**
+- 🎵 支援多語言音頻轉錄翻譯
+- 🤖 整合多種 AI 模型 (Whisper, Gemma, Ollama, GPT-4o)
+- ⚡ 實現 SSE 即時串流翻譯
+- 🐳 Docker 容器化部署支援
 
 ---
 
-**注意**：本服務仍在持續開發中，部分功能可能會有調整。生產環境使用前請充分測試。
+<div align="center">
+
+### 🌟 感謝使用 Babelon 翻譯服務！
+
+**⚠️ 免責聲明**：本服務仍在持續開發中，部分功能可能會有調整。  
+生產環境使用前請充分測試，並遵守相關 AI 服務的使用條款。
+
+<br>
+
+[![Made with ❤️](https://img.shields.io/badge/Made%20with-❤️-red.svg)](https://github.com/bobo0303/Babelon-Translate-Service)
+[![Powered by FastAPI](https://img.shields.io/badge/Powered%20by-FastAPI-009688.svg)](https://fastapi.tiangolo.com)
+[![AI Translation](https://img.shields.io/badge/AI-Translation-blue.svg)](https://github.com/bobo0303/Babelon-Translate-Service)
+
+</div>
