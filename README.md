@@ -54,35 +54,32 @@
 
 ## 🏗 系統架構
 
-<div align="center">
+## 🏗 系統架構
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    🌐 Babelon 翻譯服務                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  📁 Babelon/                                               │
-│  ├── 🚀 main.py                # FastAPI 主應用程式         │
-│  ├── 📂 api/                   # API 核心模組              │
-│  │   ├── 🧠 model.py          # 模型管理中心               │
-│  │   ├── 🔤 gemma_translate.py # Gemma 翻譯引擎           │
-│  │   ├── 💬 gpt_translate.py   # GPT-4o 翻譯引擎          │
-│  │   ├── 🦙 ollama_translate.py# Ollama 翻譯引擎          │
-│  │   ├── ⚙️ post_process.py    # 智能後處理模組            │
-│  │   └── 🔒 threading_api.py   # 多執行緒 API        │
-│  ├── 📚 lib/                   # 共用函式庫                │
-│  │   ├── 🏗️ base_object.py     # 基礎物件定義              │
-│  │   ├── ⚙️ constant.py        # 系統常數設定              │
-│  │   └── ☁️ azure_config.yaml  # Azure API 設定           │
-│  ├── 🛠️ tools/                 # 工具程式集                │
-│  │   └── 🔊 audio_splitter.py  # 音頻分割工具             │
-│  ├── 🎵 audio/                 # 音頻暫存區               │
-│  └── 📋 logs/                  # 系統日誌                 │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+🌐 Babelon 翻譯服務
+│
+├── 🚀 main.py                    # FastAPI 主應用程式
+│
+├── 📂 api/                       # API 核心模組
+│   ├── 🧠 model.py               # 模型管理中心
+│   ├── 🔤 gemma_translate.py     # Gemma 翻譯引擎
+│   ├── 💬 gpt_translate.py       # GPT-4o 翻譯引擎
+│   ├── 🦙 ollama_translate.py    # Ollama 翻譯引擎
+│   ├── ⚙️ post_process.py        # 智能後處理模組
+│   └── 🔒 threading_api.py       # 多執行緒 API (機密)
+│
+├── 📚 lib/                       # 共用函式庫
+│   ├── 🏗️ base_object.py         # 基礎物件定義
+│   ├── ⚙️ constant.py            # 系統常數設定
+│   └── ☁️ azure_config.yaml      # Azure API 設定
+│
+├── 🛠️ tools/                     # 工具程式集
+│   └── 🔊 audio_splitter.py      # 音頻分割工具
+│
+├── 🎵 audio/                     # 音頻暫存區
+└── 📋 logs/                      # 系統日誌
 ```
-
-</div>
 
 ## 🚀 快速開始
 
@@ -149,14 +146,12 @@ python main.py
 
 ### ⚙️ 初次使用設定
 
-<div align="center">
 <table>
 <tr>
 <td>⚠️</td>
 <td><strong>重要提醒</strong>：以下檔案需要自行準備，包含機密資訊未包含在 repository 中</td>
 </tr>
 </table>
-</div>
 
 <details>
 <summary><strong>🔧 步驟 1：Azure OpenAI 配置</strong></summary>
@@ -300,7 +295,6 @@ POST /set_prompt                # 設定自定義提示詞
 
 ### 🌍 支援語言
 
-<div align="center">
 <table>
 <tr>
 <th>語言代碼</th>
@@ -323,7 +317,6 @@ POST /set_prompt                # 設定自定義提示詞
 <td>標準德語</td>
 </tr>
 </table>
-</div>
 
 ### 🎙️ 轉錄模型選項
 
@@ -406,7 +399,6 @@ export CUDA_VISIBLE_DEVICES=0
 
 ### 🎯 多重策略轉錄
 
-<div align="center">
 <table>
 <tr>
 <th>策略</th>
@@ -434,7 +426,6 @@ export CUDA_VISIBLE_DEVICES=0
 <td>不清晰音頻、口音較重</td>
 </tr>
 </table>
-</div>
 
 ### 🛠️ 智能後處理
 
@@ -515,7 +506,6 @@ curl -X POST "http://localhost:80/text_translate" \
 
 ### 💻 建議硬體配置
 
-<div align="center">
 <table>
 <tr>
 <th>組件</th>
@@ -548,7 +538,6 @@ curl -X POST "http://localhost:80/text_translate" \
 <td>1 Gbps</td>
 </tr>
 </table>
-</div>
 
 ### ⚙️ 效能調校參數
 
@@ -727,7 +716,6 @@ pip install -r requirements.txt
 
 ## 📞 聯絡資訊
 
-<div align="center">
 <table>
 <tr>
 <td>👤 <strong>項目維護者</strong></td>
@@ -742,7 +730,6 @@ pip install -r requirements.txt
 <td>歡迎給個 Star ⭐</td>
 </tr>
 </table>
-</div>
 
 ## 🔄 更新日誌
 
