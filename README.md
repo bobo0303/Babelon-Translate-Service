@@ -222,6 +222,9 @@ POST /set_prompt                # 設定自定義提示詞
 
 ### 環境變數設定
 ```bash
+# 預獲得 Hugging Face Token 必須先同意使用許可並創建 token
+https://huggingface.co/google/gemma-3-4b-it
+
 # Hugging Face Token（Gemma 模型使用）
 HUGGINGFACE_HUB_TOKEN=your_hf_token
 
@@ -353,8 +356,8 @@ rm -rf ~/.cache/huggingface/
 
 #### 3. 翻譯 API 錯誤
 ```bash
-# 檢查 Azure API 金鑰設定
-echo $AZURE_OPENAI_API_KEY
+# 檢查 Azure 配置檔案
+cat lib/azure_config.yaml
 
 # 查看詳細錯誤日誌
 tail -f logs/app.log

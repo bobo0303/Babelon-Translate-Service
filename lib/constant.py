@@ -9,7 +9,7 @@ class ModelPath(BaseModel):
     large_v3: str = "openai/whisper-large-v3"
     turbo: str = "openai/whisper-large-v3-turbo"
     # custom model path
-    TCM: str =  "/mnt/models/TCM_5420"
+    custom_model: str =  ""
 
 # gpt-4o
 AZURE_CONFIG = '/mnt/lib/azure_config.yaml'
