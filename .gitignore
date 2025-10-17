@@ -10,6 +10,7 @@ logs/*
 rtt_test
 tools
 old
+azure_speech
 
 # Byte-compiled / optimized / DLL files  
 __pycache__/  

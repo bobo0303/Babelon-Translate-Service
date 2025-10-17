@@ -1,12 +1,13 @@
 import os
 import sys
+import json
 import logging  
 import yaml
 import re
 from ollama import Client
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.constant import SYSTEM_PROMPT
+from lib.constant import SYSTEM_PROMPT, SYSTEM_PROMPT_V2, LANGUAGE_LIST, DEFAULT_RESULT
 
 logger = logging.getLogger(__name__)
  
@@ -58,6 +59,52 @@ class OllamaChat:
         
         logger.debug(f" | Cleaned think tags from response | ")
         return cleaned_text
+    
+    def _parse_response(self, response_text):
+        """解析並驗證響應"""
+        try:
+            # 清理響應文本
+            cleaned_response = response_text.strip()
+            
+            # 嘗試提取 JSON 塊（處理可能的 markdown 包裝）
+            import re
+            json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+            else:
+                json_str = cleaned_response
+            
+            # 嘗試解析 JSON
+            result = json.loads(json_str)
+            
+            # 驗證響應格式
+            if not isinstance(result, dict):
+                logger.warning(" | Response is not a dictionary, ignoring | ")
+                return None
+            
+            # 檢查所需的語言鍵
+            for lang in LANGUAGE_LIST:
+                if lang not in result:
+                    logger.warning(f" | Missing language key: {lang}, ignoring response | ")
+                    return None
+            
+            # 創建標準格式的響應
+            formatted_result = DEFAULT_RESULT.copy()
+            
+            # 設置所有語言的翻譯結果（讓 GPT 決定源語言）
+            for lang in LANGUAGE_LIST:
+                translated_text = result.get(lang, "").strip()
+                formatted_result[lang] = translated_text
+            
+            return formatted_result
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f" | Failed to parse JSON response, ignoring: {e} | ")
+            logger.debug(f" | Raw response: {response_text[:200]}... | ")
+            return None
+        except Exception as e:
+            logger.error(f" | Error parsing response: {e} | ")
+            return "403_Forbidden"
 
     def translate(
         self,
@@ -81,7 +128,7 @@ class OllamaChat:
         """
 
         messages = [
-            {"role": "system", "content": self.think + SYSTEM_PROMPT},
+            {"role": "system", "content": self.think + SYSTEM_PROMPT_V2},
             {"role": "user", "content": source_text},
         ]
         try:
@@ -103,8 +150,11 @@ class OllamaChat:
         except Exception as e:
             logger.error(f" | ollama Error: {e} | ")
             decoded = None
-            
-        return decoded
+        logger.debug(f"OllamaChat Translation result: {decoded}")
+        
+        # Clean and parse the JSON response
+        cleaned_result = self._parse_response(decoded)
+        return cleaned_result
         
     def close(self):
         self.client.chat(

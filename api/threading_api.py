@@ -1,10 +1,12 @@
 import logging  
 import threading  
-import ctypes  
+import ctypes
+
+from lib.constant import DEFAULT_RESULT  
   
 logger = logging.getLogger(__name__)  
   
-def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi_strategy_transcription=1, transcription_post_processing=True, prev_text=""):  
+def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi_strategy_transcription=1, transcription_post_processing=True, prev_text="", use_translate=True):  
     """  
     Transcribe and translate an audio file, then store the results in a queue.  
   
@@ -20,13 +22,25 @@ def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi
     :param stop_event: threading.Event  
         The event used to signal stopping.  
     """  
-    ori_pred, transcription_rtf, inference_time = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
-    translated_pred, g_translate_time, translate_method = model.translate(ori_pred, ori)  
+    ori_pred, audio_length_seconds, inference_time = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
+    if use_translate:
+        translated_pred, translate_time, translate_method = model.translate(ori_pred, ori)  
+    else:
+        translated_pred = DEFAULT_RESULT.copy()
+        translate_time = 0
+        translate_method = "none"
+    
+    try:
+        rtf = (inference_time + translate_time) / audio_length_seconds
+        logger.debug(f" RTF {rtf} | Transcription time {inference_time} seconds. | ")  # Log the inference time
+    except Exception as e:
+        rtf = 0
+        logger.error(f" | RTF calculation error: {e} | ")
 
-    result_queue.put((translated_pred, transcription_rtf, inference_time, g_translate_time, translate_method))  
+    result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method))  
     stop_event.set()  # Signal to stop the waiting thread  
     
-def text_translate(model, text, result_queue, ori, stop_event):  
+def texts_translate(model, text, result_queue, ori, stop_event):  
     """  
     Translate a given text using the specified model.  
   
@@ -40,12 +54,12 @@ def text_translate(model, text, result_queue, ori, stop_event):
     :param stop_event: threading.Event  
         The event used to signal stopping.  
     """  
-    translated_pred, g_translate_time, translate_method = model.translate(text, ori)  
+    translated_pred, translate_time, translate_method = model.translate(text, ori)  
 
-    result_queue.put((translated_pred, g_translate_time, translate_method))  
+    result_queue.put((translated_pred, translate_time, translate_method))  
     stop_event.set()  # Signal to stop the waiting thread  
   
-def sse_audio_translate(model, audio_file_path, ori, stop_event):  
+def audio_translate_sse(model, audio_file_path, ori, other_information, stop_event):  
     """  
     Transcribe and translate an audio file for SSE, then store the results in the model's result queue.  
   
@@ -58,10 +72,22 @@ def sse_audio_translate(model, audio_file_path, ori, stop_event):
         The event used to signal stopping.  
     """  
     model.processing = True
-    ori_pred, transcription_rtf, inference_time = model.transcribe(audio_file_path, ori)
-    translated_pred, g_translate_time, translate_method = model.translate(ori_pred, ori) 
+    ori_pred, audio_length_seconds, inference_time = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
+    if other_information["use_translate"]:
+        translated_pred, translate_time, translate_method = model.translate(ori_pred, ori)  
+    else:
+        translated_pred = DEFAULT_RESULT.copy()
+        translate_time = 0
+        translate_method = "none"
     
-    model.result_queue.put((translated_pred, transcription_rtf, inference_time, g_translate_time, translate_method))
+    try:
+        rtf = (inference_time + translate_time) / audio_length_seconds
+        logger.debug(f" RTF {rtf} | Transcription time {inference_time} seconds. | ")  # Log the inference time
+    except Exception as e:
+        rtf = 0
+        logger.error(f" | RTF calculation error: {e} | ") 
+    
+    model.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method))
     model.processing = False
     stop_event.set()  # Signal to stop the waiting thread
 

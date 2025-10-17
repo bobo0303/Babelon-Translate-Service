@@ -24,7 +24,7 @@ OLLAMA_MODEL = {
 GEMMA_4B_IT = "google/gemma-3-4b-it"
 
 TRANSCRIPTION_METHODS = ['large-v2', 'large-v3', 'turbo']
-TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt4o']
+TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
 
 #############################################################################
 
@@ -35,10 +35,22 @@ MAX_NUM_STRATEGIES = 4  # The maximum number of strategies for sampling during t
 
 #############################################################################
 
+class AudioTranscriptionResponse(BaseModel):
+    meeting_id: str
+    device_id: str
+    ori_lang: str
+    text: str
+    times: str
+    audio_uid: str
+    transcribe_time: float
+
+#############################################################################
+
 class AudioTranslationResponse(BaseModel):
     meeting_id: str
     device_id: str
     ori_lang: str
+    transcription_text: str
     text: Dict[str, str]
     times: str
     audio_uid: str
@@ -49,7 +61,7 @@ class AudioTranslationResponse(BaseModel):
 
 class TextTranslationResponse(BaseModel):
     ori_lang: str
-    text: str
+    text: Dict[str, str]
     translate_time: float
 
 #############################################################################
@@ -62,10 +74,13 @@ DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
 # no used just for reference
 DEFAULT_PROMPTS = {
-    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, china car, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B (L8B廠), In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, FindARTs, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX",
+    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, china car, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, FindARTs, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX",
     "JAMES": "GRC, DSBG, ADP, OLED, SRBG, RBU, In-cel one chip, monitor, Sports Gaming, High Frame Rate Full HD 320Hz, Kiosk, Frank, Vertical, ARHUD, 手扶屏, 空調屏, 後視鏡的屏, 達擎, 產能, 忠達.",
-    "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FineArt, AUO, ADP, AHA, E&E, Schwarz, PeosiCo."
+    "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo."
 }
+
+CONTAINS_UNUSUAL = ["字幕志願者", "字幕組", "字幕翻譯"]
+ONLY_UNUSUAL = ["謝謝", "謝謝觀看", "感謝聆聽", "感謝收看", "感謝觀看", "以下視頻的資訊和消息都可以在微博或推特上發送", "字幕由 Amara.org 社區提供", "多謝您收看時局新聞，再會！", "大家好，我是 Karen，我們下期再見吧！", "下集再見", "各位車友們，謝謝收看，我是劉胖胖。",]
 
 #############################################################################
 

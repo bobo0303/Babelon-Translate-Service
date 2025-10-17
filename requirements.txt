@@ -32,3 +32,6 @@ openai
 
 # sse
 sseclient
+
+# Azure Speech SDk
+azure-cognitiveservices-speech

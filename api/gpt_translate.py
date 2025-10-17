@@ -1,5 +1,5 @@
 """
-安全的 GPT-4o 翻譯模組，專門為 text_translate API 設計
+安全的 GPT 翻譯模組，專門為 text_translate API 設計
 防止 prompt injection 攻擊，確保穩定的翻譯輸出格式
 """
 
@@ -10,19 +10,21 @@ import json
 import logging  
 from openai import AzureOpenAI
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT
+from lib.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT, SYSTEM_PROMPT_V2
 
 logger = logging.getLogger(__name__)
 
-class Gpt4oTranslate:
-    def __init__(self):
+class GptTranslate:
+    def __init__(self, model_version='gpt-4o'):
         with open(AZURE_CONFIG, 'r') as file:  
             self.config = yaml.safe_load(file)  
 
+        self.config = self.config['gpt_models'][model_version]
+
         self.client = AzureOpenAI(api_key=self.config['API_KEY'],
-                            api_version=self.config['AZURE_API_VERSION'],
-                            azure_endpoint=self.config['AZURE_ENDPOINT'],
-                            azure_deployment=self.config['AZURE_DEPLOYMENT']
+                            api_version=self.config['API_VERSION'],
+                            azure_endpoint=self.config['ENDPOINT'],
+                            azure_deployment=self.config['DEPLOYMENT']
                             )
         
         # 語言映射
@@ -96,14 +98,14 @@ class Gpt4oTranslate:
                 logger.warning(f" | Text too long ({len(source_text)} chars), truncating | ")
                 source_text = source_text[:8000] + "..."
             
-            system_prompt = SYSTEM_PROMPT
+            system_prompt = SYSTEM_PROMPT_V2
             user_prompt = source_text
             
             logger.debug(f" | Translating from {source_lang}: {source_text[:100]}... | ")
             
-            # 調用 GPT-4o
+            # 調用 GPT
             response = self.client.chat.completions.create(
-                model=self.config['AZURE_DEPLOYMENT'],
+                model=self.config['DEPLOYMENT'],
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

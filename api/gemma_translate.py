@@ -5,11 +5,13 @@ import os
 import sys
 import logging  
 import torch
+import json
+import re
 from transformers import AutoProcessor, Gemma3ForConditionalGeneration  
 from huggingface_hub import login
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.constant import SYSTEM_PROMPT, GEMMA_4B_IT
+from lib.constant import SYSTEM_PROMPT, SYSTEM_PROMPT_V2, GEMMA_4B_IT, LANGUAGE_LIST, DEFAULT_RESULT
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,52 @@ class Gemma4BTranslate:
             logger.error(f"Failed to authenticate with HuggingFace: {e}")
             raise RuntimeError(f"HuggingFace authentication failed: {e}") from e
     
+    def _parse_response(self, response_text):
+        """解析並驗證響應"""
+        try:
+            # 清理響應文本
+            cleaned_response = response_text.strip()
+            
+            # 嘗試提取 JSON 塊（處理可能的 markdown 包裝）
+            import re
+            json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+            else:
+                json_str = cleaned_response
+            
+            # 嘗試解析 JSON
+            result = json.loads(json_str)
+            
+            # 驗證響應格式
+            if not isinstance(result, dict):
+                logger.warning(" | Response is not a dictionary, ignoring | ")
+                return None
+            
+            # 檢查所需的語言鍵
+            for lang in LANGUAGE_LIST:
+                if lang not in result:
+                    logger.warning(f" | Missing language key: {lang}, ignoring response | ")
+                    return None
+            
+            # 創建標準格式的響應
+            formatted_result = DEFAULT_RESULT.copy()
+            
+            # 設置所有語言的翻譯結果（讓 GPT 決定源語言）
+            for lang in LANGUAGE_LIST:
+                translated_text = result.get(lang, "").strip()
+                formatted_result[lang] = translated_text
+            
+            return formatted_result
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f" | Failed to parse JSON response, ignoring: {e} | ")
+            logger.debug(f" | Raw response: {response_text[:200]}... | ")
+            return None
+        except Exception as e:
+            logger.error(f" | Error parsing response: {e} | ")
+            return "403_Forbidden"
+    
     def translate(self, source_text):
         """
         Translate text from source language to supported target languages.
@@ -67,7 +115,7 @@ class Gemma4BTranslate:
             messages = [
                 { 
                     "role": "system",
-                    "content": [{"type": "text", "text": SYSTEM_PROMPT}] 
+                    "content": [{"type": "text", "text": SYSTEM_PROMPT_V2}] 
                 },
                 { 
                     "role": "user", 
@@ -83,11 +131,15 @@ class Gemma4BTranslate:
             input_len = inputs["input_ids"].shape[-1]
 
             with torch.inference_mode():
-                generation = self.model.generate(**inputs, max_new_tokens=100, do_sample=False)
+                generation = self.model.generate(**inputs, max_new_tokens=4000, do_sample=False)
                 generation = generation[0][input_len:]
 
             decoded = self.processor.decode(generation, skip_special_tokens=True)
-            return decoded
+            logger.debug(f"GEMMA 4B Translation result: {decoded}")
+            
+            # Clean and parse the JSON response
+            cleaned_result = self._parse_response(decoded)
+            return cleaned_result
             
         except Exception as e:
             logger.error(f"Translation failed: {str(e)}")
