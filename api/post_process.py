@@ -67,10 +67,10 @@ def post_process(text, audio_duration=None):
         unit = "units"
         
         if ratio < min_ratio:
-            logger.warning(f" | Text too short for audio duration: {ratio:.2f}{unit}/sec < {min_ratio}{unit}/sec (duration: {audio_duration}s | ")
+            logger.warning(f" | Text too short for audio duration: {ratio:.2f}{unit}/sec < {min_ratio}{unit}/sec (duration: {audio_duration}s) | ")
             retry_flag = True
         elif ratio > max_ratio:
-            logger.warning(f" | Text too long for audio duration: {ratio:.2f}{unit}/sec > {max_ratio}{unit}/sec (duration: {audio_duration}s | ")
+            logger.warning(f" | Text too long for audio duration: {ratio:.2f}{unit}/sec > {max_ratio}{unit}/sec (duration: {audio_duration}s) | ")
             retry_flag = True
 
     # 5. Check for obvious format anomalies
@@ -90,22 +90,70 @@ def post_process(text, audio_duration=None):
     
     if len(words) >= 4:
         # Check for obvious repeated words (3 consecutive identical words)
-        for i in range(len(words) - 2):
+        cleaned_words = []
+        i = 0
+        while i < len(words):
             word = words[i]
-            if len(word) > 2 and words[i] == words[i+1] == words[i+2]:
-                logger.warning(f" | Repeated word hallucination: '{word}' appears 3+ times consecutively | ")
-                retry_flag = True
-                break
-        
-        # Check for repeated phrases (2-word combinations)
-        if not retry_flag and len(words) >= 6:
-            for i in range(len(words) - 3):
-                phrase1 = ' '.join(words[i:i+2])
-                phrase2 = ' '.join(words[i+2:i+4])
-                if phrase1 == phrase2 and len(phrase1.strip()) > 4:
-                    logger.warning(f" | Repeated phrase hallucination: '{phrase1}' appears consecutively | ")
+            
+            # Check for consecutive repetitions
+            if len(word) > 2:
+                repeat_count = 1
+                j = i + 1
+                while j < len(words) and words[j] == word:
+                    repeat_count += 1
+                    j += 1
+                
+                if repeat_count >= 3:
+                    logger.warning(f" | Repeated word hallucination: '{word}' appears {repeat_count} times consecutively, keeping only 1 | ")
+                    cleaned_words.append(word)  # Keep only one instance
                     retry_flag = True
-                    break
+                    i = j  # Skip all repetitions
+                else:
+                    cleaned_words.append(word)
+                    i += 1
+            else:
+                cleaned_words.append(word)
+                i += 1
+        
+        # Check for repeated phrases (2-word combinations) and clean them
+        if len(cleaned_words) >= 6:
+            final_words = []
+            i = 0
+            while i < len(cleaned_words) - 1:
+                if i < len(cleaned_words) - 3:
+                    phrase1 = ' '.join(cleaned_words[i:i+2])
+                    phrase2 = ' '.join(cleaned_words[i+2:i+4])
+                    
+                    if phrase1 == phrase2 and len(phrase1.strip()) > 4:
+                        logger.warning(f" | Repeated phrase hallucination: '{phrase1}' appears consecutively, removing duplicate | ")
+                        final_words.extend(cleaned_words[i:i+2])  # Keep only first occurrence
+                        retry_flag = True
+                        i += 4  # Skip the repeated phrase
+                    else:
+                        final_words.append(cleaned_words[i])
+                        i += 1
+                else:
+                    final_words.append(cleaned_words[i])
+                    i += 1
+            
+            # Add remaining words
+            if i < len(cleaned_words):
+                final_words.extend(cleaned_words[i:])
+            
+            cleaned_words = final_words
+        
+        # Reconstruct the text from cleaned words
+        if retry_flag:
+            # Try to maintain original spacing by using the most common separator
+            if '，' in cleaned_text:
+                separator = '，'
+            elif ', ' in cleaned_text:
+                separator = ', '
+            else:
+                separator = ' '
+            
+            cleaned_text = separator.join(cleaned_words)
+            logger.info(f" | Cleaned repetition hallucinations: result length {len(cleaned_words)} words | ")
 
     # 7. Check for unusual character patterns (excluding JSON-safe characters)
     if re.search(r'[^\w\s\u4e00-\u9fff.,!?;:""''()（），。！？；：、—–+=%$€£¥@&*/<>|\\-]', cleaned_text):

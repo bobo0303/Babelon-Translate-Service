@@ -2,6 +2,7 @@ import logging
 import threading  
 import ctypes
 
+from api.audio_utils import calculate_rtf
 from lib.constant import DEFAULT_RESULT  
   
 logger = logging.getLogger(__name__)  
@@ -17,12 +18,10 @@ def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi
         The queue to store the results.  
     :param ori: str  
         The original language of the audio.  
-    :param tar: str  
-        The target language for translation.  
     :param stop_event: threading.Event  
-        The event used to signal stopping.  
+        The event used to signal stopping.
     """  
-    ori_pred, audio_length_seconds, inference_time = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
+    ori_pred, inference_time = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
     if use_translate:
         translated_pred, translate_time, translate_method = model.translate(ori_pred, ori)  
     else:
@@ -30,12 +29,8 @@ def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi
         translate_time = 0
         translate_method = "none"
     
-    try:
-        rtf = (inference_time + translate_time) / audio_length_seconds
-        logger.debug(f" RTF {rtf} | Transcription time {inference_time} seconds. | ")  # Log the inference time
-    except Exception as e:
-        rtf = 0
-        logger.error(f" | RTF calculation error: {e} | ")
+    # Calculate RTF using audio_utils
+    rtf = calculate_rtf(audio_file_path, inference_time, translate_time)
 
     result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method))  
     stop_event.set()  # Signal to stop the waiting thread  
@@ -72,7 +67,8 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
         The event used to signal stopping.  
     """  
     model.processing = True
-    ori_pred, audio_length_seconds, inference_time = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
+    
+    ori_pred, inference_time = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
     if other_information["use_translate"]:
         translated_pred, translate_time, translate_method = model.translate(ori_pred, ori)  
     else:
@@ -80,12 +76,8 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
         translate_time = 0
         translate_method = "none"
     
-    try:
-        rtf = (inference_time + translate_time) / audio_length_seconds
-        logger.debug(f" RTF {rtf} | Transcription time {inference_time} seconds. | ")  # Log the inference time
-    except Exception as e:
-        rtf = 0
-        logger.error(f" | RTF calculation error: {e} | ") 
+    # Calculate RTF using audio_utils
+    rtf = calculate_rtf(audio_file_path, inference_time, translate_time) 
     
     model.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method))
     model.processing = False

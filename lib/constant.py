@@ -35,17 +35,6 @@ MAX_NUM_STRATEGIES = 4  # The maximum number of strategies for sampling during t
 
 #############################################################################
 
-class AudioTranscriptionResponse(BaseModel):
-    meeting_id: str
-    device_id: str
-    ori_lang: str
-    text: str
-    times: str
-    audio_uid: str
-    transcribe_time: float
-
-#############################################################################
-
 class AudioTranslationResponse(BaseModel):
     meeting_id: str
     device_id: str

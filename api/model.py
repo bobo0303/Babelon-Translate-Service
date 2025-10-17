@@ -1,4 +1,3 @@
-import os  
 import gc  
 import time  
 import torch
@@ -14,8 +13,9 @@ from api.gemma_translate import Gemma4BTranslate
 from api.ollama_translate import OllamaChat
 from api.gpt_translate import GptTranslate  
 from api.post_process import post_process
+from api.audio_utils import get_audio_duration
 
-from lib.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, RTF, DEFAULT_RESULT, MAX_NUM_STRATEGIES
+from lib.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES
   
   
 logger = logging.getLogger(__name__)  
@@ -201,15 +201,32 @@ class Model:
         Returns:
             numpy.ndarray: Audio with silence padding added
         """
-        audio, sr = librosa.load(audio_file, sr=16000)
+        start_time = time.time()
         
-        # Add silence at beginning and end
-        padding_samples = int(padding_duration * sr)
-        silence = np.zeros(padding_samples, dtype=audio.dtype)
-        
-        # Add silence before and after the audio
-        padded_audio = np.concatenate([silence, audio, silence])
-        return padded_audio
+        try:
+            audio, sr = librosa.load(audio_file, sr=16000)
+            
+            # Add silence at beginning and end
+            padding_samples = int(padding_duration * sr)
+            silence = np.zeros(padding_samples, dtype=audio.dtype)
+            
+            # Add silence before and after the audio
+            padded_audio = np.concatenate([silence, audio, silence])
+            
+            end_time = time.time()
+            execution_time = end_time - start_time
+            original_duration = len(audio) / sr
+            padded_duration = len(padded_audio) / sr
+            
+            logger.debug(f" | _add_silence_padding execution time: {execution_time:.8f}s | Original: {original_duration:.2f}s | Padded: {padded_duration:.2f}s | File: {audio_file} | ")
+            
+            return padded_audio
+        except Exception as e:
+            end_time = time.time()
+            execution_time = end_time - start_time
+            logger.error(f" | _add_silence_padding failed in {execution_time:.8f}s | Error: {e} | File: {audio_file} | ")
+            # Return original file path if padding fails
+            return audio_file
 
     def transcribe(self, audio_file_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
         """  
@@ -218,7 +235,7 @@ class Model:
         :param audio_file_path: str  
             The path to the audio file to be transcribed.  
         :param ori: str  
-            The original language of the audio.  
+            The original language of the audio.
         :rtype: tuple  
             A tuple containing the original transcription and inference time.  
         :logs: Inference status and time.  
@@ -226,10 +243,9 @@ class Model:
         start = time.time()  # Start timing the transcription process  
 
         try:
-            # Load audio and calculate length
-            original_audio, sr = librosa.load(audio_file_path, sr=None)
-            audio_length_seconds = len(original_audio) / sr
-
+            # Store original file path for duration calculation
+            original_audio_file_path = audio_file_path
+            
             if SILENCE_PADDING:
                 audio_file_path = self._add_silence_padding(audio_file_path)
                 
@@ -276,7 +292,8 @@ class Model:
                 logger.debug(f" | Raw Transcription: {ori_pred} | ")
                 
                 if post_processing:
-                    retry_flag, ori_pred = post_process(ori_pred, audio_length_seconds)
+                    audio_duration = get_audio_duration(original_audio_file_path)
+                    retry_flag, ori_pred = post_process(ori_pred, audio_duration)
 
                 if retry_flag:
                     end = time.time() 
@@ -284,6 +301,7 @@ class Model:
                         logger.info(f" | Strategy {strategy+1} | Transcription: {ori_pred} | ")
                         logger.info(f" | Strategy {strategy+1} FAILED: retry strategy {strategy+2} | now process time '{end - start:.2f}' seconds | ")
                     else:
+                        logger.info(f" | Strategy {strategy+1} | Transcription: {ori_pred} | ")
                         logger.info(f" | Strategy {strategy+1} FAILED: no more retry strategies | now process time '{end - start:.2f}' seconds | ")
                 else:
                     break  
@@ -293,10 +311,9 @@ class Model:
         except Exception as e:
             ori_pred = ""
             inference_time = 0
-            audio_length_seconds = 0
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori_pred, audio_length_seconds, inference_time  
+        return ori_pred, inference_time  
     
     def _create_default_result(self, ori_pred, ori):
         """Helper function to create default translation result"""
@@ -387,9 +404,9 @@ class Model:
             logger.error(f" | translate() '{self.translate_method}' error: {e} | ")
     
         end = time.time()  
-        g_translate_time = end - start  # Calculate the time taken for translation  
+        translate_time = end - start  # Calculate the time taken for translation  
     
-        return translated_pred, g_translate_time, self.translate_method  
+        return translated_pred,translate_time, self.translate_method  
  
     def close(self):  
         """  

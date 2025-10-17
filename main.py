@@ -14,7 +14,7 @@ from threading import Thread, Event
 from api.model import Model  
 from api.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse
 from lib.base_object import BaseResponse, Status
-from lib.constant import AudioTranscriptionResponse, AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_RESULT, MAX_NUM_STRATEGIES
+from lib.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_RESULT, MAX_NUM_STRATEGIES
 from api.utils import write_txt
 
 # Create necessary directories if they don't exist
@@ -277,8 +277,12 @@ async def translate(
     # Save the uploaded audio file  
     file_name = times + ".wav"  
     audio_buffer = f"audio/{file_name}"  
+    
+    # Read file content once
+    file_content = file.file.read()
+    
     with open(audio_buffer, 'wb') as f:  
-        f.write(file.file.read())  
+        f.write(file_content)
   
     # Check if the audio file exists  
     if not os.path.exists(audio_buffer):  
@@ -301,7 +305,7 @@ async def translate(
   
         # Create timing thread and inference thread  
         time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text))  
+        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, use_translate))  
   
         # Start the threads  
         time_thread.start()  
@@ -506,8 +510,11 @@ async def sse_audio_translate(
         if previous_waiting_list != waiting_list:  
             file_name = f"{response_data.times}.wav"  
             audio_buffer = f"audio/{file_name}"  
+            
+            # Read file content once and save
+            file_content = file.file.read()
             with open(audio_buffer, 'wb') as f:  
-                f.write(file.file.read())  
+                f.write(file_content)  
           
         return BaseResponse(status=Status.OK, message=" | Request added to the waiting list. | ", data=None)  
     except Exception as e:  
