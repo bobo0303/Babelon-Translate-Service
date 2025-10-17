@@ -13,16 +13,16 @@ logger = logging.getLogger(__name__)
  
 class OllamaChat:
     def __init__(self, config_path):
-        """初始化 Ollama 聊天客戶端
+        """Initialize Ollama chat client
  
         Args:
-            config_path: 配置文件路徑
+            config_path: Configuration file path
         """
         self.config_path = config_path
         self.config = self._load_config()
         self.think = "/no_think\n" if "qwen3" in self.config_path else ""
         
-         # 初始化 Ollama 客戶端
+         # Initialize Ollama client
         try:
             self.client = Client(host=self.config["HOST"])
             
@@ -38,18 +38,18 @@ class OllamaChat:
             raise e
  
     def _load_config(self):
-        """載入配置文件"""
+        """Load configuration file"""
         with open(self.config_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
 
     def _clean_think_tags(self, text):
-        """清理回應中的 <think> </think> 標籤及其內容
+        """Clean <think> </think> tags and their content from response
         
         Args:
-            text: 原始回應文本
+            text: Original response text
             
         Returns:
-            清理後的文本
+            Cleaned text
         """
         if not text:
             return text
@@ -61,12 +61,12 @@ class OllamaChat:
         return cleaned_text
     
     def _parse_response(self, response_text):
-        """解析並驗證響應"""
+        """Parse and validate response"""
         try:
-            # 清理響應文本
+            # Clean response text
             cleaned_response = response_text.strip()
             
-            # 嘗試提取 JSON 塊（處理可能的 markdown 包裝）
+            # Try to extract JSON block (handle possible markdown wrapping)
             import re
             json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
             if json_match:
@@ -74,24 +74,24 @@ class OllamaChat:
             else:
                 json_str = cleaned_response
             
-            # 嘗試解析 JSON
+            # Try to parse JSON
             result = json.loads(json_str)
             
-            # 驗證響應格式
+            # Validate response format
             if not isinstance(result, dict):
                 logger.warning(" | Response is not a dictionary, ignoring | ")
                 return None
             
-            # 檢查所需的語言鍵
+            # Check required language keys
             for lang in LANGUAGE_LIST:
                 if lang not in result:
                     logger.warning(f" | Missing language key: {lang}, ignoring response | ")
                     return None
             
-            # 創建標準格式的響應
+            # Create standard format response
             formatted_result = DEFAULT_RESULT.copy()
             
-            # 設置所有語言的翻譯結果（讓 GPT 決定源語言）
+            # Set translation results for all languages (let GPT decide source language)
             for lang in LANGUAGE_LIST:
                 translated_text = result.get(lang, "").strip()
                 formatted_result[lang] = translated_text
@@ -113,18 +113,18 @@ class OllamaChat:
         format = "",
         source_text = "", 
     ):
-        """發送聊天請求並獲取回應
+        """Send chat request and get response
  
         Args:
-            prompt: 用戶提問內容
-            system_prompt: 系統提示詞
-            temperature: 溫度參數，控制隨機性
-            stream: 是否使用流式輸出
-            format: 輸出格式
+            prompt: User question content
+            system_prompt: System prompt
+            temperature: Temperature parameter to control randomness
+            stream: Whether to use streaming output
+            format: Output format
  
         Returns:
-            如果 stream=True，返回流式響應生成器
-            如果 stream=False，返回完整響應
+            If stream=True, returns streaming response generator
+            If stream=False, returns complete response
         """
 
         messages = [
@@ -143,7 +143,7 @@ class OllamaChat:
 
             decoded = response.message.content
             
-            # 清理 <think> </think> 標籤及其內容
+            # Clean <think> </think> tags and their content
             if decoded:
                 decoded = self._clean_think_tags(decoded)
                 

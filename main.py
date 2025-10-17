@@ -17,6 +17,7 @@ from lib.base_object import BaseResponse, Status
 from lib.constant import AudioTranscriptionResponse, AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_RESULT, MAX_NUM_STRATEGIES
 from api.utils import write_txt
 
+# Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  
     os.mkdir("./audio")  
 if not os.path.exists("./logs"):  
@@ -52,10 +53,11 @@ utc_now = datetime.datetime.now(pytz.utc)
 tz = pytz.timezone('Asia/Taipei')  
 local_now = utc_now.astimezone(tz)  
   
+# Initialize global objects and variables
 model = Model()  
-waiting_list = []
+waiting_list = []  # Queue for waiting translation requests
 sse_stop_event = Event()  # Global event to control SSE connection
-service_stop_event = Event()  
+service_stop_event = Event()  # Event to control service shutdown  
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,15 +97,24 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 ##############################################################################  
+# API Endpoints
+##############################################################################  
 
 @app.get("/")  
 def HelloWorld(name:str=None):  
+    """Health check endpoint."""
     return {"Hello": f"World {name}"}  
 
 ##############################################################################  
 
 @app.get("/get_current_model")  
 async def get_items():  
+    """
+    Get information about currently loaded models.
+    
+    Returns:
+        BaseResponse: Current transcription and translation models
+    """
     logger.info(f" | ############### Transcription model ########################### | ")  
     logger.info(f" | current transcription model is {model.model_version} | ")  
     logger.info(f" | ################# Translate methods ########################### | ")  
@@ -187,7 +198,13 @@ async def change_translation_method(method_name: str = Form(...)):
 @app.post("/set_prompt")
 async def set_prompt(prompts = Form(None)):
     """
-    Use a specific prompt for translation.
+    Set a custom prompt for the transcription model.
+    
+    Args:
+        prompts: Custom prompt text or None to clear
+        
+    Returns:
+        BaseResponse: Status of prompt setting operation
     """
     if prompts is None or prompts == "" or (isinstance(prompts, str) and prompts.strip() == ""):
         model.set_prompt(None)
@@ -592,6 +609,10 @@ async def stop_sse():
     return BaseResponse(status=Status.OK, message=" | SSE connection has been stopped | ", data=None)  
 
 
+##############################################################################  
+# Utility Functions
+##############################################################################
+
 # Clean up audio files  
 def delete_old_audio_files():  
     """  
@@ -621,6 +642,12 @@ def delete_old_audio_files():
   
 # Daily task scheduling  
 def schedule_daily_task(stop_event):  
+    """
+    Schedule daily cleanup tasks.
+    
+    Args:
+        stop_event: Event to signal stopping the scheduler
+    """
     while not stop_event.is_set():  
         if local_now.hour == 0 and local_now.minute == 0:  
             delete_old_audio_files()  

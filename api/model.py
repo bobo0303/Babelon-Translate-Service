@@ -20,19 +20,19 @@ from lib.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING
   
 logger = logging.getLogger(__name__)  
   
-# 配置日誌記錄器設置（如果尚未配置）  
+# Configure logger settings (if not already configured)  
 if not logger.handlers:  
     log_format = "%(asctime)s - %(message)s"  
     log_file = "logs/app.log"  
     logging.basicConfig(level=logging.INFO, format=log_format)  
   
-    # 創建文件處理器  
+    # Create file handler  
     file_handler = logging.handlers.RotatingFileHandler(  
         log_file, maxBytes=10*1024*1024, backupCount=5  
     )  
     file_handler.setFormatter(logging.Formatter(log_format))  
   
-    # 創建控制台處理器  
+    # Create console handler  
     console_handler = logging.StreamHandler()  
     console_handler.setFormatter(logging.Formatter(log_format))  
   
@@ -190,14 +190,24 @@ class Model:
             logger.error(f" | Prompt setting failed. | ")
             return e    
         
-    def _add_silence_padding(self, audio_file, padding_duration=0.3):  # 减少到0.3秒
+    def _add_silence_padding(self, audio_file, padding_duration=0.3):  # Reduce to 0.3 seconds
+        """
+        Add silence padding to the beginning and end of audio file.
+        
+        Args:
+            audio_file: Path to audio file
+            padding_duration: Duration of silence to add in seconds
+            
+        Returns:
+            numpy.ndarray: Audio with silence padding added
+        """
         audio, sr = librosa.load(audio_file, sr=16000)
         
-        # 添加前後靜音
+        # Add silence at beginning and end
         padding_samples = int(padding_duration * sr)
         silence = np.zeros(padding_samples, dtype=audio.dtype)
         
-        # 前後各加1秒靜音
+        # Add silence before and after the audio
         padded_audio = np.concatenate([silence, audio, silence])
         return padded_audio
 
@@ -223,17 +233,18 @@ class Model:
             if SILENCE_PADDING:
                 audio_file_path = self._add_silence_padding(audio_file_path)
                 
+            # Process previous text context
             if prev_text.strip() != "" and len(prev_text.replace('.', '').replace('。', '').replace(',', '').replace('，', '').strip()) >= 1:
                 if not prev_text.endswith(('.', '。', '!', '！', '?', '？')):
                     prev_text += '。' 
             else:
                 prev_text = ""
                 
-            # multi_strategy_transcription
-            # -> 1. tmp = 0.0 | do_sample = False | prompt = self.prompt + prev_text
-            # -> 2. tmp = 0.0 | do_sample = False | prompt = self.prompt 
-            # -> 3. tmp = 0.0 | do_sample = False | prompt = None
-            # -> 4. tmp = [0.2, 0.4, 0.6, 0.8, 1.0] | do_sample = True | prompt = None
+            # Multi-strategy transcription:
+            # Strategy 1: temp=0.0, do_sample=False, prompt=self.prompt+prev_text
+            # Strategy 2: temp=0.0, do_sample=False, prompt=self.prompt 
+            # Strategy 3: temp=0.0, do_sample=False, prompt=None
+            # Strategy 4: temp=[0.2,0.4,0.6,0.8,1.0], do_sample=True, prompt=None
             for strategy in range(multi_strategy_transcription):
                 retry_flag = False
                 # Build generate_kwargs conditionally to avoid conflicts
@@ -301,8 +312,6 @@ class Model:
             The original text to be translated.  
         :param ori: str  
             The original language of the text.  
-        :param tar: str  
-            The target language for translation.  
         :return: tuple  
             A tuple containing the translated text, the translation time, and the translation method used.  
         """  
@@ -315,12 +324,8 @@ class Model:
             return translated_pred, 0, self.translate_method
         
         try:  
-            if ori_pred != "":  # Proceed with translation only if languages are different and text is not empty  
-                # if self.translate_method == "google":  
-                #     # Adjust language codes for Google Translate  
-                #     ori = 'zh-TW' if ori == 'zh' else ori  
-                #     tar = 'zh-TW' if tar == 'zh' else tar  
-                #     translated_pred = self.google_translator.translate(ori_pred, src=ori, dest=tar).text  
+            if ori_pred != "":  # Proceed with translation only if text is not empty  
+                # Translation method handling
                 if self.translate_method.startswith("gpt"):
                     def _fallback_to_ollama_qwen(reason):
                         """Helper function to handle fallback to ollama-qwen translator"""

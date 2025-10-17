@@ -1,6 +1,6 @@
 """
-安全的 GPT 翻譯模組，專門為 text_translate API 設計
-防止 prompt injection 攻擊，確保穩定的翻譯輸出格式
+Safe GPT translation module, specifically designed for text_translate API
+Prevents prompt injection attacks and ensures stable translation output format
 """
 
 import os
@@ -27,7 +27,7 @@ class GptTranslate:
                             azure_deployment=self.config['DEPLOYMENT']
                             )
         
-        # 語言映射
+        # Language mapping
         self.lang_names = {
             'zh': 'Traditional Chinese (繁體中文)',
             'en': 'English',
@@ -35,12 +35,12 @@ class GptTranslate:
         }
 
     def _parse_response(self, response_text):
-        """解析並驗證響應"""
+        """Parse and validate response"""
         try:
-            # 清理響應文本
+            # Clean response text
             cleaned_response = response_text.strip()
             
-            # 嘗試提取 JSON 塊（處理可能的 markdown 包裝）
+            # Try to extract JSON block (handle possible markdown wrapping)
             import re
             json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
             if json_match:
@@ -48,24 +48,24 @@ class GptTranslate:
             else:
                 json_str = cleaned_response
             
-            # 嘗試解析 JSON
+            # Try to parse JSON
             result = json.loads(json_str)
             
-            # 驗證響應格式
+            # Validate response format
             if not isinstance(result, dict):
                 logger.warning(" | Response is not a dictionary, ignoring | ")
                 return None
             
-            # 檢查所需的語言鍵
+            # Check required language keys
             for lang in LANGUAGE_LIST:
                 if lang not in result:
                     logger.warning(f" | Missing language key: {lang}, ignoring response | ")
                     return None
             
-            # 創建標準格式的響應
+            # Create standard format response
             formatted_result = DEFAULT_RESULT.copy()
             
-            # 設置所有語言的翻譯結果（讓 GPT 決定源語言）
+            # Set translation results for all languages (let GPT decide source language)
             for lang in LANGUAGE_LIST:
                 translated_text = result.get(lang, "").strip()
                 formatted_result[lang] = translated_text
@@ -82,19 +82,19 @@ class GptTranslate:
         
     def translate(self, source_text, source_lang):
         """
-        翻譯方法 - 使用新的安全策略
+        Translation method - using new security strategy
         
-        :param source_text: 要翻譯的文本
-        :param source_lang: 源語言 ('zh', 'en', 'de') - 僅用於日誌記錄
-        :return: 翻譯結果字典 (DEFAULT_RESULT 格式) 或 "403_Forbidden"
+        :param source_text: Text to be translated
+        :param source_lang: Source language ('zh', 'en', 'de') - only used for logging
+        :return: Translation result dictionary (DEFAULT_RESULT format) or "403_Forbidden"
         """
         try:
             if not source_text.strip():
                 result = DEFAULT_RESULT.copy()
                 return result
             
-            # 檢查文本長度並適當處理
-            if len(source_text) > 8000:  # 約 2000 tokens
+            # Check text length and handle appropriately
+            if len(source_text) > 8000:  # Approximately 2000 tokens
                 logger.warning(f" | Text too long ({len(source_text)} chars), truncating | ")
                 source_text = source_text[:8000] + "..."
             
@@ -103,7 +103,7 @@ class GptTranslate:
             
             logger.debug(f" | Translating from {source_lang}: {source_text[:100]}... | ")
             
-            # 調用 GPT
+            # Call GPT
             response = self.client.chat.completions.create(
                 model=self.config['DEPLOYMENT'],
                 messages=[
@@ -118,12 +118,12 @@ class GptTranslate:
             
             logger.debug(f" | Raw GPT response: {response_text} | ")
             
-            # 解析響應
+            # Parse response
             parsed_result = self._parse_response(response_text)
             
             if parsed_result is None:
                 logger.warning(" | Failed to parse response, using fallback | ")
-                # 當解析失敗時，返回包含原文的結果
+                # When parsing fails, return result containing original text
                 result = DEFAULT_RESULT.copy()
                 result[source_lang] = source_text
                 return result

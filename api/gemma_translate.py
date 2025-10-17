@@ -56,12 +56,12 @@ class Gemma4BTranslate:
             raise RuntimeError(f"HuggingFace authentication failed: {e}") from e
     
     def _parse_response(self, response_text):
-        """解析並驗證響應"""
+        """Parse and validate response"""
         try:
-            # 清理響應文本
+            # Clean response text
             cleaned_response = response_text.strip()
             
-            # 嘗試提取 JSON 塊（處理可能的 markdown 包裝）
+            # Try to extract JSON block (handle possible markdown wrapping)
             import re
             json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
             if json_match:
@@ -69,24 +69,24 @@ class Gemma4BTranslate:
             else:
                 json_str = cleaned_response
             
-            # 嘗試解析 JSON
+            # Try to parse JSON
             result = json.loads(json_str)
             
-            # 驗證響應格式
+            # Validate response format
             if not isinstance(result, dict):
                 logger.warning(" | Response is not a dictionary, ignoring | ")
                 return None
             
-            # 檢查所需的語言鍵
+            # Check required language keys
             for lang in LANGUAGE_LIST:
                 if lang not in result:
                     logger.warning(f" | Missing language key: {lang}, ignoring response | ")
                     return None
             
-            # 創建標準格式的響應
+            # Create standard format response
             formatted_result = DEFAULT_RESULT.copy()
             
-            # 設置所有語言的翻譯結果（讓 GPT 決定源語言）
+            # Set translation results for all languages (let GPT decide source language)
             for lang in LANGUAGE_LIST:
                 translated_text = result.get(lang, "").strip()
                 formatted_result[lang] = translated_text

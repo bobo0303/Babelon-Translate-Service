@@ -25,13 +25,13 @@ def post_process(text, audio_duration=None):
     # 1. First merge hyphenated words, then split English words from adjacent Chinese characters
     # A - B -> A-B
     cleaned_text = re.sub(r'([a-zA-Z0-9]+)\s*-\s*([a-zA-Z0-9]+)', r'\1-\2', cleaned_text)
-    # XXABXX -> XX AB XX (但排除英文/英數後直接接符號的情況)
+    # XXABXX -> XX AB XX (but exclude cases where English/alphanumeric is directly followed by symbols)
     cleaned_text = re.sub(r'([^\sa-zA-Z0-9.-])([a-zA-Z0-9])', r'\1 \2', cleaned_text) 
-    # 對於英文/英數後接的字符，區分處理：
-    # - 如果後接中文字符，則加空格
-    # - 如果後接符號，則不加空格
-    cleaned_text = re.sub(r'([a-zA-Z0-9])([\u4e00-\u9fff])', r'\1 \2', cleaned_text)  # 英文後接中文
-    cleaned_text = re.sub(r'([\u4e00-\u9fff])([a-zA-Z0-9])', r'\1 \2', cleaned_text)  # 中文後接英文
+    # For characters following English/alphanumeric, handle differently:
+    # - If followed by Chinese characters, add space
+    # - If followed by symbols, don't add space
+    cleaned_text = re.sub(r'([a-zA-Z0-9])([\u4e00-\u9fff])', r'\1 \2', cleaned_text)  # English followed by Chinese
+    cleaned_text = re.sub(r'([\u4e00-\u9fff])([a-zA-Z0-9])', r'\1 \2', cleaned_text)  # Chinese followed by English
     
     # 2. Remove leading/trailing whitespace
     cleaned_text = cleaned_text.strip() 
@@ -64,13 +64,13 @@ def post_process(text, audio_duration=None):
         total_units = count_mixed_language_units(cleaned_text)
         ratio = total_units / audio_duration
         min_ratio, max_ratio = 2.0, 6.0  # Adjusted range for mixed counting
-        unit = "單位"
+        unit = "units"
         
         if ratio < min_ratio:
-            logger.warning(f" | Text too short for audio duration: {ratio:.2f}{unit}/秒 < {min_ratio}{unit}/秒 (duration: {audio_duration}s | ")
+            logger.warning(f" | Text too short for audio duration: {ratio:.2f}{unit}/sec < {min_ratio}{unit}/sec (duration: {audio_duration}s | ")
             retry_flag = True
         elif ratio > max_ratio:
-            logger.warning(f" | Text too long for audio duration: {ratio:.2f}{unit}/秒 > {max_ratio}{unit}/秒 (duration: {audio_duration}s | ")
+            logger.warning(f" | Text too long for audio duration: {ratio:.2f}{unit}/sec > {max_ratio}{unit}/sec (duration: {audio_duration}s | ")
             retry_flag = True
 
     # 5. Check for obvious format anomalies
