@@ -3,7 +3,28 @@ import logging
 from lib.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL
 
 logger = logging.getLogger(__name__)  
-
+  
+# Configure logger settings (if not already configured)  
+if not logger.handlers:  
+    log_format = "%(asctime)s - %(message)s"  
+    log_file = "logs/app.log"  
+    logging.basicConfig(level=logging.INFO, format=log_format)  
+  
+    # Create file handler  
+    file_handler = logging.handlers.RotatingFileHandler(  
+        log_file, maxBytes=10*1024*1024, backupCount=5  
+    )  
+    file_handler.setFormatter(logging.Formatter(log_format))  
+  
+    # Create console handler  
+    console_handler = logging.StreamHandler()  
+    console_handler.setFormatter(logging.Formatter(log_format))  
+  
+    logger.addHandler(file_handler)  
+    logger.addHandler(console_handler)  
+  
+logger.setLevel(logging.INFO)  
+logger.propagate = False  
 
 def post_process(text, audio_duration=None):
     """Post-process the transcribed text based on the specified strategy.
@@ -155,13 +176,26 @@ def post_process(text, audio_duration=None):
             cleaned_text = separator.join(cleaned_words)
             logger.info(f" | Cleaned repetition hallucinations: result length {len(cleaned_words)} words | ")
 
-    # 7. Check for unusual character patterns (excluding JSON-safe characters)
-    if re.search(r'[^\w\s\u4e00-\u9fff.,!?;:""''()（），。！？；：、—–+=%$€£¥@&*/<>|\\-]', cleaned_text):
-        unusual_chars = re.findall(r'[^\w\s\u4e00-\u9fff.,!?;:""''()（），。！？；：、—–+=%$€£¥@&*/<>|\\-]', cleaned_text)
+    # 7. Check for unusual character patterns and clean them
+    # Define allowed characters: Latin (a-zA-Z), digits (0-9), Chinese, common punctuation, spaces
+    # Explicitly exclude Arabic, Cyrillic, and other non-target languages
+    allowed_pattern = r'[a-zA-Z0-9\s\u4e00-\u9fff.,!?;:""''()（），。！？；：、—–+=%$€£¥@&*/<>|\\-]'
+    
+    if re.search(r'[^a-zA-Z0-9\s\u4e00-\u9fff.,!?;:""''()（），。！？；：、—–+=%$€£¥@&*/<>|\\-]', cleaned_text):
+        unusual_chars = re.findall(r'[^a-zA-Z0-9\s\u4e00-\u9fff.,!?;:""''()（），。！？；：、—–+=%$€£¥@&*/<>|\\-]', cleaned_text)
         logger.warning(f" | Unusual characters detected: {set(unusual_chars)} in '{cleaned_text[:50]}...' | ")
+        
+        # Remove unusual characters (like Arabic, symbols, corrupted Unicode, etc.)
+        original_text = cleaned_text
+        cleaned_text = re.sub(r'[^a-zA-Z0-9\s\u4e00-\u9fff.,!?;:""''()（），。！？；：、—–+=%$€£¥@&*/<>|\\-]', '', cleaned_text)
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()  # Clean up extra spaces
+        
+        if cleaned_text != original_text:
+            logger.info(f" | Removed unusual characters: '{original_text[:50]}...' → '{cleaned_text[:50]}...' | ")
+            retry_flag = True
 
     # 8. Common Hallucination Check
-    text_for_check = re.sub(r'[^\w\s\u4e00-\u9fff]', '', cleaned_text)
+    text_for_check = re.sub(r'[^a-zA-Z0-9\s\u4e00-\u9fff]', '', cleaned_text)
     text_for_check = re.sub(r'\s+', ' ', text_for_check).strip()
     
     if any(phrase in text_for_check for phrase in CONTAINS_UNUSUAL):

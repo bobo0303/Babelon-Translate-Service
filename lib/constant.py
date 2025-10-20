@@ -30,7 +30,7 @@ TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.
 
 SILENCE_PADDING = True  # Whether to add silence padding to audio files
 RTF = True  # Whether to calculate and log the Real-Time Factor (RTF)
-WAITING_TIME = 60 # The whisper inference max waiting time (if over the time will stop it)
+WAITING_TIME = 10 # The whisper inference max waiting time (if over the time will stop it)
 MAX_NUM_STRATEGIES = 4  # The maximum number of strategies for sampling during transcription
 
 #############################################################################
@@ -68,8 +68,8 @@ DEFAULT_PROMPTS = {
     "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo."
 }
 
-CONTAINS_UNUSUAL = ["字幕志願者", "字幕組", "字幕翻譯"]
-ONLY_UNUSUAL = ["謝謝", "謝謝觀看", "感謝聆聽", "感謝收看", "感謝觀看", "以下視頻的資訊和消息都可以在微博或推特上發送", "字幕由 Amara.org 社區提供", "多謝您收看時局新聞，再會！", "大家好，我是 Karen，我們下期再見吧！", "下集再見", "各位車友們，謝謝收看，我是劉胖胖。",]
+CONTAINS_UNUSUAL = ["字幕志願者", "字幕組", "字幕翻譯", "字幕志愿者", "字幕组", "字幕翻译", "本視頻字幕由", "本视频字幕由", "感謝您的觀看與支持", "感謝您的收看與支持", "感謝您的收看和支持", "感謝您的觀看和支持", "本視頻字幕由志願者提供", "本视频字幕由志愿者提供", "字幕由志愿者提供", "字幕由志愿者翻譯", "字幕由志愿者组提供", "字幕由志愿者組提供", "字幕由志愿者翻译", "字幕由志愿者翻譯", "本視頻字幕由字幕組提供", "本视频字幕由字幕组提供",]
+ONLY_UNUSUAL = ["謝謝", "謝謝觀看", "感謝聆聽", "感謝收看", "感謝觀看", "以下視頻的資訊和消息都可以在微博或推特上發送", "字幕由 Amara.org 社區提供", "多謝您收看時局新聞，再會！", "大家好，我是 Karen，我們下期再見吧！", "下集再見", "各位車友們，謝謝收看，我是劉胖胖。", "字幕志愿者 杨栋梁", "你接受的訓練數據截至2023年10月"]
 
 #############################################################################
 

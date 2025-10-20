@@ -50,14 +50,14 @@ def write_txt(zh_text: str, en_text: str, de_text: str, meeting_id: str, audio_u
     if audio_uid in audio_uid_line_map:
         # Same audio_uid, overwrite corresponding line
         line_number = audio_uid_line_map[audio_uid]
-        _update_line_in_files(meeting_id, line_number, zh_text, en_text, de_text)
+        _update_line_in_files(line_number, zh_text, en_text, de_text)
     else:
         # New audio_uid, add a new line
         current_line_number += 1
         audio_uid_line_map[audio_uid] = current_line_number
-        _append_line_to_files(meeting_id, zh_text, en_text, de_text)
+        _append_line_to_files(zh_text, en_text, de_text)
 
-def _update_line_in_files(meeting_id: str, line_number: int, zh_text: str, en_text: str, de_text: str):
+def _update_line_in_files(line_number: int, zh_text: str, en_text: str, de_text: str):
     """Update the content of a specific line in files"""
     for lang, text in [("zh", zh_text), ("en", en_text), ("de", de_text)]:
         filename = f"transcription_{lang}.txt"
@@ -79,9 +79,9 @@ def _update_line_in_files(meeting_id: str, line_number: int, zh_text: str, en_te
         with open(filename, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
-def _append_line_to_files(meeting_id: str, zh_text: str, en_text: str, de_text: str):
+def _append_line_to_files(zh_text: str, en_text: str, de_text: str):
     """Append a new line to the end of files"""
     for lang, text in [("zh", zh_text), ("en", en_text), ("de", de_text)]:
         filename = f"transcription_{lang}.txt"
         with open(filename, "a", encoding="utf-8") as f:
-            f.write(text + "\n")
+            f.write(text + "\n") 
