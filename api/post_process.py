@@ -1,6 +1,6 @@
 import re
 import logging  
-from lib.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL
+from lib.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL, Q1, Q3, IQR_RATIO, TOLERANCE_RATE
 
 logger = logging.getLogger(__name__)  
   
@@ -79,20 +79,47 @@ def post_process(text, audio_duration=None):
         total_units = chinese_chars + english_words + numbers
         return total_units
 
-    # 4. Check audio duration vs text length ratio using mixed language counting
+    # 4. Check audio duration vs text length ratio using IQR-based dynamic range
     if audio_duration is not None and audio_duration > 0:
         # Always use mixed language counting: Chinese chars + English words + numbers
         total_units = count_mixed_language_units(cleaned_text)
         ratio = total_units / audio_duration
-        min_ratio, max_ratio = 2.0, 6.0  # Adjusted range for mixed counting
-        unit = "units"
         
-        if ratio < min_ratio:
-            logger.warning(f" | Text too short for audio duration: {ratio:.2f}{unit}/sec < {min_ratio}{unit}/sec (duration: {audio_duration}s) | ")
-            retry_flag = True
-        elif ratio > max_ratio:
-            logger.warning(f" | Text too long for audio duration: {ratio:.2f}{unit}/sec > {max_ratio}{unit}/sec (duration: {audio_duration}s) | ")
-            retry_flag = True
+        # Get IQR-based range for the specific duration
+        duration_seconds = int(audio_duration)
+        if 1 <= duration_seconds <= 20:
+            # Array index is duration - 1 (since arrays are 0-indexed)
+            q1_value = Q1[duration_seconds - 1]
+            q3_value = Q3[duration_seconds - 1]
+            
+            # Calculate IQR bounds
+            iqr = q3_value - q1_value
+            min_ratio = max(0, q1_value - IQR_RATIO * iqr)  # Ensure non-negative
+            max_ratio = q3_value + IQR_RATIO * iqr
+            
+            # Apply tolerance rate for flexibility
+            min_ratio *= (1 - TOLERANCE_RATE)
+            max_ratio *= (1 + TOLERANCE_RATE)
+            
+            unit = "chars"
+            
+            if total_units < min_ratio:
+                logger.warning(f" | Text too short for audio duration: {total_units}{unit} < {min_ratio:.1f}{unit} (IQR-based, duration: {audio_duration}s) | ")
+                retry_flag = True
+            elif total_units > max_ratio:
+                logger.warning(f" | Text too long for audio duration: {total_units}{unit} > {max_ratio:.1f}{unit} (IQR-based, duration: {audio_duration}s) | ")
+                retry_flag = True
+        else:
+            # Fallback to original method for durations outside 1-20 seconds
+            min_ratio, max_ratio = 0.68, 9.14
+            unit = "units/sec"
+            
+            if ratio < min_ratio:
+                logger.warning(f" | Text too short for audio duration: {ratio:.2f}{unit} < {min_ratio}{unit} (fallback method, duration: {audio_duration}s) | ")
+                retry_flag = True
+            elif ratio > max_ratio:
+                logger.warning(f" | Text too long for audio duration: {ratio:.2f}{unit} > {max_ratio}{unit} (fallback method, duration: {audio_duration}s) | ")
+                retry_flag = True
 
     # 5. Check for obvious format anomalies
     # if (cleaned_text.startswith('[') and cleaned_text.endswith(']')) or \
