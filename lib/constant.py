@@ -32,6 +32,7 @@ SILENCE_PADDING = True  # Whether to add silence padding to audio files
 RTF = True  # Whether to calculate and log the Real-Time Factor (RTF)
 WAITING_TIME = 10 # The whisper inference max waiting time (if over the time will stop it)
 MAX_NUM_STRATEGIES = 4  # The maximum number of strategies for sampling during transcription
+FALLBACK_METHOD = 'ollama-gemma' 
 
 #############################################################################
 

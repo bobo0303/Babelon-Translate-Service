@@ -185,16 +185,24 @@ async def change_translation_method(method_name: str = Form(...)):
     method_name = method_name.lower()  
       
     # Check if the method name is in the list of supported translation methods  
-    if method_name in TRANSLATE_METHODS:  
-        # Change the translation method  
-        model.change_translate_method(method_name)  
-        logger.info(f" | Translate method '{method_name}' has been changed successfully. | ")  
-        # Return a response indicating the success of the operation  
-        return BaseResponse(message=f" | Translate method '{method_name}' has been changed successfully. | ", data=None)
-    else:  
+    if method_name not in TRANSLATE_METHODS:  
         logger.info(f" | Translate method '{method_name}' is not supported. Supported methods: {TRANSLATE_METHODS}. | ")  
         return BaseResponse(status=Status.FAILED, message=f" | Translate method '{method_name}' is not supported. Supported methods: {TRANSLATE_METHODS}. | ", data=None)
     
+    # Change the translation method  
+    model.change_translate_method(method_name)  
+    active_method = getattr(model, "translate_method", None)
+
+    if active_method == method_name:
+        logger.info(f" | Translate method '{method_name}' has been changed successfully. | ")  
+        return BaseResponse(message=f" | Translate method '{method_name}' has been changed successfully. | ", data=active_method)
+    elif active_method is None:
+        logger.info(f" | Translate method change failed. and all fallback methods are failed. Can't translate now. | ")
+        return BaseResponse(status=Status.FAILED, message=f" | Translate method change failed. and all fallback methods are failed. Can't translate now. | ", data=active_method)
+    else:
+        logger.info(f" | Translate method change failed. Fallback to '{active_method}'. | ")
+        return BaseResponse(message=f" | Translate method change failed. Fallback to '{active_method}'. | ", data=active_method)
+        
 @app.post("/set_prompt")
 async def set_prompt(prompts = Form(None)):
     """

@@ -134,3 +134,17 @@ class GptTranslate:
         except Exception as e:
             logger.error(f" | GPT translation system error: {e} | ")
             return "403_Forbidden"
+
+    def test_gpt_model(self):
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config['DEPLOYMENT'],
+                messages=[{"role": "user", "content": "Hello!"}],
+                max_tokens=10,   
+                temperature=0     
+            )
+            logger.debug("Model response:", response.choices[0].message.content)
+            return True
+        except Exception as e:
+            logger.error("Model test failed:", e)
+            return False

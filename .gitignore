@@ -2,6 +2,7 @@
 models/*
 deb/*
 lib/azure_config.yaml
+lib/azure_config_inside.yaml
 app.yml
 audio/202*
 whl/*
@@ -11,6 +12,7 @@ rtt_test
 tools
 old
 azure_speech
+
 
 # Byte-compiled / optimized / DLL files  
 __pycache__/  
