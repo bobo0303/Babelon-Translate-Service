@@ -71,6 +71,7 @@ class Model:
             
         self.device = "cuda" if torch.cuda.is_available() else "cpu"  
         self.prompt = None
+        self.prompt_name = None  # Store original prompt name for post-processing
         self.processor = None
         self.pipe = None  
         self.model_version = None  
@@ -190,12 +191,17 @@ class Model:
         
         if prompt_name is None:
             self.prompt = None
+            self.prompt_name = None
             return
+        
+        # Store original prompt name for post-processing
+        self.prompt_name = prompt_name
         
         start = time.time()
         if not prompt_name.endswith(('.', '。', '!', '！', '?', '？')):
             prompt_name += '.'
-        prompt_text = f"Our prompts are {prompt_name}"
+        # prompt_text = f"Our prompts are {prompt_name}"
+        prompt_text = f"These are our prompts {prompt_name} Let's continue."
         
         try:
             # 如果 processor 未初始化，先初始化它
@@ -298,17 +304,27 @@ class Model:
                     "do_sample": False if strategy < MAX_NUM_STRATEGIES - 1 else True,
                 }
                 
-                if self.prompt is not None and strategy < MAX_NUM_STRATEGIES - 2:
+                if strategy < MAX_NUM_STRATEGIES - 2:
+                    # if available strategy > 3 and not prompt and not prev_text -> skip to strategy 3 
+                    if multi_strategy_transcription >= MAX_NUM_STRATEGIES - 1 and self.prompt is None:
+                        if strategy == 0 and prev_text != "":
+                            pass
+                        else:
+                            continue
+                    # if no prev_text -> strategy 0 already handled
                     if prev_text == "" and strategy == 1:
                         continue
+                    # strategy 0 with prev_text
                     if strategy == 0 and prev_text != "":
                         prev_prompt = self.processor.get_prompt_ids(prev_text, return_tensors="pt")
                         prev_prompt = prev_prompt.to(self.device) if self.device == "cuda" else prev_prompt
-                        prompt = torch.cat([self.prompt, prev_prompt], dim=-1)
+                        prompt = torch.cat([self.prompt, prev_prompt], dim=-1) if self.prompt is not None else prev_prompt
                         generate_kwargs["prompt_ids"] = prompt
+                    # strategy 0 without prev_text (handled strategy 1)
                     else:
-                        generate_kwargs["prompt_ids"] = self.prompt.to(self.device) if self.device == "cuda" else self.prompt
-                    
+                        if self.prompt is not None:
+                            generate_kwargs["prompt_ids"] = self.prompt.to(self.device) if self.device == "cuda" else self.prompt
+                
                 transcription_result = self.pipe(
                     audio_file_path, 
                     generate_kwargs=generate_kwargs,
@@ -320,8 +336,8 @@ class Model:
                 
                 if post_processing:
                     audio_duration = get_audio_duration(original_audio_file_path)
-                    retry_flag, ori_pred = post_process(ori_pred, audio_duration)
-
+                    retry_flag, ori_pred = post_process(ori_pred, audio_duration, self.prompt_name)
+                
                 if retry_flag:
                     end = time.time() 
                     if strategy < multi_strategy_transcription - 1:

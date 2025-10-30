@@ -10,7 +10,7 @@ import json
 import logging  
 from openai import AzureOpenAI
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT, SYSTEM_PROMPT_V2
+from lib.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT, SYSTEM_PROMPT_V3
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class GptTranslate:
                 logger.warning(f" | Text too long ({len(source_text)} chars), truncating | ")
                 source_text = source_text[:8000] + "..."
             
-            system_prompt = SYSTEM_PROMPT_V2
+            system_prompt = SYSTEM_PROMPT_V3
             user_prompt = source_text
             
             logger.debug(f" | Translating from {source_lang}: {source_text[:100]}... | ")

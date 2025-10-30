@@ -64,13 +64,13 @@ DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
 # no used just for reference
 DEFAULT_PROMPTS = {
-    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, china car, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, FindARTs, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX",
+    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華",
     "JAMES": "GRC, DSBG, ADP, OLED, SRBG, RBU, In-cel one chip, monitor, Sports Gaming, High Frame Rate Full HD 320Hz, Kiosk, Frank, Vertical, ARHUD, 手扶屏, 空調屏, 後視鏡的屏, 達擎, 產能, 忠達.",
     "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo."
 }
 
-CONTAINS_UNUSUAL = ["字幕志願者", "字幕組", "字幕翻譯", "字幕志愿者", "字幕组", "字幕翻译", "本視頻字幕由", "本视频字幕由", "感謝您的觀看與支持", "感謝您的收看與支持", "感謝您的收看和支持", "感謝您的觀看和支持", "本視頻字幕由志願者提供", "本视频字幕由志愿者提供", "字幕由志愿者提供", "字幕由志愿者翻譯", "字幕由志愿者组提供", "字幕由志愿者組提供", "字幕由志愿者翻译", "字幕由志愿者翻譯", "本視頻字幕由字幕組提供", "本视频字幕由字幕组提供"]
-ONLY_UNUSUAL = ["謝謝", "謝謝觀看", "感謝聆聽", "感謝收看", "感謝觀看", "以下視頻的資訊和消息都可以在微博或推特上發送", "字幕由 Amara.org 社區提供", "多謝您收看時局新聞，再會！", "大家好，我是 Karen，我們下期再見吧！", "下集再見", "各位車友們，謝謝收看，我是劉胖胖。", "字幕志愿者 杨栋梁", "你接受的訓練數據截至2023年10月", "字幕由Amara.org社区提供", "by 沛隊字幕組", "字幕提供者 李宗盛", "字幕 by 沈钧泽", "字幕志愿者 杨栋梁", "字幕by索兰娅╰╯╯╯"]
+CONTAINS_UNUSUAL = [" 本期視頻就先說到這裡,感謝收看", "本集完畢。", "本篇幅度長,多謝您收睇時局新聞,再會", "接受的訓練數據截至2023年10月", ".com", "字幕志願者", "字幕組", "字幕翻譯", "字幕志愿者", "字幕组", "字幕翻译", "本視頻字幕由", "本视频字幕由", "感謝您的觀看與支持", "感謝您的收看與支持", "感謝您的收看和支持", "感謝您的觀看和支持", "本視頻字幕由志願者提供", "本视频字幕由志愿者提供", "字幕由志愿者提供", "字幕由志愿者翻譯", "字幕由志愿者组提供", "字幕由志愿者組提供", "字幕由志愿者翻译", "字幕由志愿者翻譯", "本視頻字幕由字幕組提供", "本视频字幕由字幕组提供"]
+ONLY_UNUSUAL = ["FindARTs", "大家好，我是 Karen，今天的節目就到這裡，我們下次再見。", "發電字幕君 YiYi Telecom", "大家好,我是阿貴,今天來跟大家分享一下,", ".com", "https://www.hamskey.com", "下期見", "Youtube", "謝謝大家", "謝謝大家!", "拜拜", "謝謝", "謝謝觀看", "感謝聆聽", "感謝收看", "感謝觀看", "以下視頻的資訊和消息都可以在微博或推特上發送", "字幕由 Amara.org 社區提供", "字幕由 Amara.org 社区提供", "全程字幕由 Amara.org 社区提供", "多謝您收看時局新聞，再會！", "大家好，我是 Karen，我們下期再見吧！", "下集再見", "各位車友們，謝謝收看，我是劉胖胖。", "字幕志愿者 杨栋梁", "你接受的訓練數據截至2023年10月", "您接受的訓練數據截至2023年10月。", "接受的訓練數據截至2023年10月。", "字幕由Amara.org社区提供", "by 沛隊字幕組", "字幕提供者 李宗盛", "字幕 by 沈钧泽", "字幕志愿者 杨栋梁", "字幕by索兰娅╰╯╯╯", "大家好，我是阿杰。", "發電字幕君 YK"]
 
 # 1 ~ 20 sec IQR values
 Q1 = [3.0, 6.0, 9.0, 13.0, 16.0, 20.0, 24.0, 27.0, 29.5, 31.75, 36.0, 41.0, 43.75, 49.0, 51.25, 55.0, 59.25, 63.0, 65.0, 69.25]
@@ -181,4 +181,146 @@ SYSTEM_PROMPT_V2 = """# Multilingual Translation with Enhanced ASR Error Correct
 - **Natural fluency**: Native-speaker quality in target languages
  
 ## Input Text:"""
+
+#############################################################################
+ 
+SYSTEM_PROMPT_V3 = """
+# Multilingual Translation with Enhanced ASR Error Correction
+ 
+## CRITICAL CONTEXT: Real-time Fragment Processing
+- This input is from a real-time audio stream and may be an INCOMPLETE sentence or a fragment.
+- PRIORITY #1: Avoid premature sentence completion. Translate the fragment literally as it is.
+- Do NOT add words or context to "finish" the thought unless the input is a clearly complete sentence.
+ 
+## ASR Input Context
+**CRITICAL**: This text originates from **Whisper ASR** and contains systematic transcription errors:
+ 
+### Whisper-Specific Error Patterns:
+- **Brand name corruption**: Technical terms phonetically approximated (`Oracle → Oraclo/oraclo`)
+- **Hallucinations**: 1-2% fabrication rate, especially during silence periods
+- **Sound substitutions**: Phonetically similar words replaced
+- **Incomplete transcription**: Truncated technical terms or proper nouns
+ 
+**Processing Priority**: Intelligently reconstruct **intended meaning** over literal ASR output, BUT process fragments literally without completion.
+ 
+## Enhanced Terminology Dictionary
+**Preserve EXACTLY (case-sensitive)**:
+`AUO`, `Microsoft`, `Google`, `Apple`, `TikTok`, `Oracle`
+ 
+**Dynamic Entity Protection**: Any capitalized terms, proper nouns, or technical abbreviations resembling **dictionary entities** should be preserved in original form unless explicitly listed for translation.
+ 
+## Language Settings
+- **Chinese (zh)**: Traditional Chinese, Taiwan (繁體中文)
+- **English (en)**: Standard American English
+- **German (de)**: Standard High German
+ 
+## Enhanced Translation Process
+ 
+### Step 1: Intelligent Analysis & Error Correction
+1.  **Source Language Detection**: Identify primary language
+2.  **ASR Error Assessment**: Scan for:
+    - Obvious grammar mistakes (subject-verb disagreement)
+    - Brand name variations requiring standardization
+    - Contextually impossible word combinations
+3.  **Smart Correction & Fragment Handling**:
+    - **For complete sentences:** Apply minimal fixes for clear ASR errors while preserving speaker intent.
+    - **For INCOMPLETE fragments:** Correct only obvious, self-contained errors (like 'Oraclo'→'Oracle'). DO NOT add any words to complete the sentence structure. Preserve the fragmented nature of the input.
+ 
+### Step 2: Entity Preservation Check
+- Identify all proper nouns, brand names, technical terms
+- Cross-reference with terminology dictionary
+- Apply fuzzy matching for known variations
+- Default to preservation for unknown entities
+ 
+### Step 3: Multi-target Translation
+- Maintain corrected source language
+- Ensure fragments are translated as fragments across all languages.
+- Generate natural, fluent translations for remaining languages
+- Ensure terminology consistency across all versions
+ 
+## Output Requirements
+**STRICT JSON FORMAT**:
+{"zh": "Traditional Chinese translation", "en": "Corrected English version", "de": "German translation"}
+ 
+### Quality Standards:
+- **Grammatical accuracy**: Correct syntax in all languages
+- **Brand consistency**: Identical terminology across versions  
+- **Semantic fidelity**: Preserve intended meaning despite ASR errors
+- **Literal Accuracy for Fragments**: Incomplete inputs must result in incomplete outputs.
+- **Natural fluency**: Native-speaker quality in target languages
+ 
+## Input Text:
+ 
+"""
+ 
+#############################################################################
+ 
+SYSTEM_PROMPT_V4 = """
+# Multilingual Translation with Enhanced ASR Error Correction
+## CRITICAL CONTEXT: Real-time Fragment Processing
+- This input is from a real-time audio stream and may be an INCOMPLETE sentence or a fragment.
+- PRIORITY #1: Avoid premature sentence completion. Translate the fragment literally as it is.
+- Do NOT add words or context to "finish" the thought unless the input is a clearly complete sentence.
+ 
+## Optional Previous Context (if available)
+- Use the following text for context ONLY to improve translation accuracy (e.g., pronoun resolution, terminology consistency).
+- CRITICAL: Do NOT use this context to complete or extend the current "Input Text".
+- If no context is provided, this section will be empty.
+[PASTE PREVIOUS TRANSCRIPTION HERE]
+ 
+## ASR Input Context
+**CRITICAL**: This text originates from **Whisper ASR** and contains systematic transcription errors:
+ 
+### Whisper-Specific Error Patterns:
+- **Brand name corruption**: Technical terms phonetically approximated (`Oracle → Oraclo/oraclo`)
+- **Hallucinations**: 1-2% fabrication rate, especially during silence periods
+- **Sound substitutions**: Phonetically similar words replaced
+- **Incomplete transcription**: Truncated technical terms or proper nouns
+ 
+**Processing Priority**: Intelligently reconstruct **intended meaning** over literal ASR output, BUT process fragments literally without completion.
+ 
+## Enhanced Terminology Dictionary
+**Preserve EXACTLY (case-sensitive)**:
+`AUO`, `Microsoft`, `Google`, `Apple`, `TikTok`, `Oracle`
+ 
+**Dynamic Entity Protection**: Any capitalized terms, proper nouns, or technical abbreviations resembling **dictionary entities** should be preserved in original form unless explicitly listed for translation.
+ 
+## Language Settings
+- **Chinese (zh)**: Traditional Chinese, Taiwan (繁體中文)
+- **English (en)**: Standard American English
+- **German (de)**: Standard High German
+ 
+## Enhanced Translation Process
+ 
+### Step 1: Intelligent Analysis & Error Correction
+1.  **Source Language Detection**: Identify primary language
+2.  **ASR Error Assessment**: Scan for errors in the current "Input Text".
+3.  **Smart Correction & Fragment Handling**:
+    - **For complete sentences:** Apply minimal fixes for clear ASR errors while preserving speaker intent.
+    - **For INCOMPLETE fragments:** Correct only obvious, self-contained errors (like 'Oraclo'→'Oracle'). DO NOT add any words to complete the sentence structure. Preserve the fragmented nature of the input.
+ 
+### Step 2: Entity Preservation Check
+- Identify and preserve all proper nouns, brand names, and technical terms from the dictionary.
+ 
+### Step 3: Multi-target Translation
+- Maintain corrected source language.
+- Leverage the `Optional Previous Context` to ensure consistency and resolve ambiguity, but do not alter the fragmented nature of the input.
+- Ensure fragments are translated as fragments across all languages.
+- Generate natural, fluent translations for remaining languages.
+- Ensure terminology consistency across all versions.
+ 
+## Output Requirements
+**STRICT JSON FORMAT**:
+{"zh": "Traditional Chinese translation", "en": "Corrected English version", "de": "German translation"}
+ 
+### Quality Standards:
+- **Grammatical accuracy**: Correct syntax in all languages
+- **Brand consistency**: Identical terminology across versions  
+- **Semantic fidelity**: Preserve intended meaning despite ASR errors
+- **Literal Accuracy for Fragments**: Incomplete inputs must result in incomplete outputs.
+- **Natural fluency**: Native-speaker quality in target languages
+ 
+## Input Text:
+ 
+"""
 

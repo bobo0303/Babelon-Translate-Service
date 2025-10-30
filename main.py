@@ -14,7 +14,7 @@ from threading import Thread, Event
 from api.model import Model  
 from api.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse
 from lib.base_object import BaseResponse, Status
-from lib.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_RESULT, MAX_NUM_STRATEGIES
+from lib.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES
 from api.utils import write_txt
 
 # Create necessary directories if they don't exist
@@ -79,6 +79,9 @@ async def lifespan(app: FastAPI):
         model.transcribe(default_audio, "en", post_processing=False)  
     end = time.time()  
     logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
+    # set default prompt
+    model.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
+    logger.info(f" | Default prompt has been set. | ")  
     logger.info(f" | ##################################################### | ")  
     delete_old_audio_files()
     
@@ -339,7 +342,7 @@ async def translate(
             de_result = response_data.text.get("de", "")
             
             logger.debug(response_data.model_dump_json())  
-            logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} |")  
+            logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
             logger.info(f" | Transcription: {ori_pred} | ")
             if use_translate:
                 logger.info(f" | {'#' * 75} | ")
@@ -352,7 +355,7 @@ async def translate(
             # write_txt(zh_result, en_result, de_result, meeting_id, audio_uid, times)
         else:  
             logger.info(f" | Transcription has exceeded the upper limit time and has been stopped |")  
-            zh_result = en_result = de_result = ""
+            ori_pred = zh_result = en_result = de_result = ""
             state = Status.FAILED
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | ", data=response_data)  
