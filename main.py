@@ -83,11 +83,11 @@ async def lifespan(app: FastAPI):
     model.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
     logger.info(f" | Default prompt has been set. | ")  
     logger.info(f" | ##################################################### | ")  
-    delete_old_audio_files()
+    # delete_old_audio_files()
     
     # Start daily task scheduling  
-    task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
-    task_thread.start()
+    # task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
+    # task_thread.start()
     
     yield  # Application starts receiving requests
     
@@ -327,8 +327,8 @@ async def translate(
         stop_thread(inference_thread)  
   
         # Remove the audio buffer file  
-        if os.path.exists(audio_buffer):
-            os.remove(audio_buffer)  
+        # if os.path.exists(audio_buffer):
+        #     os.remove(audio_buffer)  
   
         # Get the result from the queue  
         if not result_queue.empty():  
