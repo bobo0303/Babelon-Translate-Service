@@ -23,7 +23,7 @@ def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi
     """  
     ori_pred, inference_time = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
     if use_translate:
-        translated_pred, translate_time, translate_method = model.translate(ori_pred, ori)  
+        translated_pred, translate_time, translate_method = model.translate(ori_pred, ori, prev_text)  
     else:
         translated_pred = DEFAULT_RESULT.copy()
         translate_time = 0

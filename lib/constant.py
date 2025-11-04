@@ -343,7 +343,7 @@ SYSTEM_PROMPT_V3 = """
  
 #############################################################################
  
-SYSTEM_PROMPT_V4 = """
+SYSTEM_PROMPT_V4_1 = """
 # Multilingual Translation with Enhanced ASR Error Correction
 ## CRITICAL CONTEXT: Real-time Fragment Processing
 - This input is from a real-time audio stream and may be an INCOMPLETE sentence or a fragment.
@@ -354,8 +354,10 @@ SYSTEM_PROMPT_V4 = """
 - Use the following text for context ONLY to improve translation accuracy (e.g., pronoun resolution, terminology consistency).
 - CRITICAL: Do NOT use this context to complete or extend the current "Input Text".
 - If no context is provided, this section will be empty.
-[PASTE PREVIOUS TRANSCRIPTION HERE]
- 
+"""
+
+SYSTEM_PROMPT_V4_2= """ 
+
 ## ASR Input Context
 **CRITICAL**: This text originates from **Whisper ASR** and contains systematic transcription errors:
  
@@ -411,4 +413,6 @@ SYSTEM_PROMPT_V4 = """
 ## Input Text:
  
 """
+
+#############################################################################
 

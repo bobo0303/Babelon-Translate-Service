@@ -10,7 +10,7 @@ import json
 import logging  
 from openai import AzureOpenAI
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT, SYSTEM_PROMPT_V3
+from lib.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ class GptTranslate:
             logger.error(f" | Error parsing response: {e} | ")
             return "403_Forbidden"
         
-    def translate(self, source_text, source_lang):
+    def translate(self, source_text, source_lang, prev_text=""):
         """
         Translation method - using new security strategy
         
@@ -97,10 +97,13 @@ class GptTranslate:
             if len(source_text) > 8000:  # Approximately 2000 tokens
                 logger.warning(f" | Text too long ({len(source_text)} chars), truncating | ")
                 source_text = source_text[:8000] + "..."
-            
-            system_prompt = SYSTEM_PROMPT_V3
+
+            if not prev_text:
+                system_prompt = SYSTEM_PROMPT_V3
+            else:
+                system_prompt = SYSTEM_PROMPT_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_V4_2
             user_prompt = source_text
-            
+
             logger.debug(f" | Translating from {source_lang}: {source_text[:100]}... | ")
             
             # Call GPT

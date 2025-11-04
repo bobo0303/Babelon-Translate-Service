@@ -364,7 +364,7 @@ class Model:
         result[ori] = ori_pred
         return result
 
-    def translate(self, ori_pred, ori):
+    def translate(self, ori_pred, ori, prev_text=""):
         """
         Translate the given text from the original language to the target language.
 
@@ -383,17 +383,20 @@ class Model:
         if ori not in LANGUAGE_LIST:
             logger.error(f"Error: ori \"{ori}\" not in LANGUAGE_LIST \"{LANGUAGE_LIST}\"")
             return translated_pred, 0, translate_method
+        
+        if prev_text:
+            prev_text = prev_text if prev_text.endswith((',', '.', '。', '!', '！', '?', '？')) else prev_text + '.'
 
         try:  
             if ori_pred != "":  # Proceed with translation only if text is not empty  
                 # Translation method handling
                 if self.translate_method.startswith("gpt"):
-                    def _fallback_to_ollama_qwen(reason):
+                    def _fallback_to_ollama_qwen(reason, prev_text=""):
                         """Helper function to handle fallback to ollama-qwen translator"""
                         logger.error(f" | {reason} | use ollama-qwen translate to retry | ")
                         if self.ollama_qwen_translator is not None:
                             try:
-                                return self.ollama_qwen_translator.translate(source_text=ori_pred)
+                                return self.ollama_qwen_translator.translate(source_text=ori_pred, prev_text=prev_text)
                             except Exception as e:
                                 logger.error(f" | ollama-qwen translate error: {e} | ")
                                 logger.error(f" | backup translate failed return default result | ")
@@ -404,32 +407,32 @@ class Model:
                     try:
                         if self.gpt_translator is None:
                             translate_method = "ollama-qwen"
-                            translated_pred = _fallback_to_ollama_qwen("GPT translator not initialized")
+                            translated_pred = _fallback_to_ollama_qwen("GPT translator not initialized", prev_text=prev_text)
                         else:
-                            translated_pred = self.gpt_translator.translate(ori_pred, ori)
+                            translated_pred = self.gpt_translator.translate(ori_pred, ori, prev_text=prev_text)
                             if translated_pred == "403_Forbidden":
                                 translate_method = "ollama-qwen"
-                                translated_pred = _fallback_to_ollama_qwen("gpt rejected translate due to security violation")
+                                translated_pred = _fallback_to_ollama_qwen("gpt rejected translate due to security violation", prev_text=prev_text)
                     except Exception as e:
                         logger.error(f" | translate failed use default result | Error: {e} | ")
                                                         
                 elif self.translate_method == "gemma4b":  
                     try:
                         if self.gemma_translator is not None:
-                            translated_pred = self.gemma_translator.translate(ori_pred)  
+                            translated_pred = self.gemma_translator.translate(ori_pred, prev_text=prev_text)  
                     except Exception as e:
                         logger.error(f" | gemma4b translate error: {e} | ")
                 elif self.translate_method == "ollama-gemma":
                     try:
                         if self.ollama_gemma_translator is not None:
-                            translated_pred = self.ollama_gemma_translator.translate(source_text=ori_pred)
+                            translated_pred = self.ollama_gemma_translator.translate(source_text=ori_pred, prev_text=prev_text)
                     except Exception as e:
                         logger.error(f" | ollama '{self.translate_method}' translate error: {e} | ")
                         
                 elif self.translate_method == "ollama-qwen":
                     try:
                         if self.ollama_qwen_translator is not None:
-                            translated_pred = self.ollama_qwen_translator.translate(source_text=ori_pred)
+                            translated_pred = self.ollama_qwen_translator.translate(source_text=ori_pred, prev_text=prev_text)
                     except Exception as e:
                         logger.error(f" | ollama '{self.translate_method}' translate error: {e} | ")  
                 

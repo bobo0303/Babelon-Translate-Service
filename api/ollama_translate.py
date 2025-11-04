@@ -7,7 +7,7 @@ import re
 from ollama import Client
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.constant import SYSTEM_PROMPT, SYSTEM_PROMPT_V2, LANGUAGE_LIST, DEFAULT_RESULT
+from lib.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, LANGUAGE_LIST, DEFAULT_RESULT
 
 logger = logging.getLogger(__name__)
  
@@ -111,7 +111,8 @@ class OllamaChat:
         temperature = 0.0,
         stream = False,
         format = "",
-        source_text = "", 
+        source_text = "",
+        prev_text = ""
     ):
         """Send chat request and get response
  
@@ -126,9 +127,14 @@ class OllamaChat:
             If stream=True, returns streaming response generator
             If stream=False, returns complete response
         """
+        
+        if not prev_text:
+            system_prompt = SYSTEM_PROMPT_V3
+        else:
+            system_prompt = SYSTEM_PROMPT_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_V4_2
 
         messages = [
-            {"role": "system", "content": self.think + SYSTEM_PROMPT_V2},
+            {"role": "system", "content": self.think + system_prompt},
             {"role": "user", "content": source_text},
         ]
         try:

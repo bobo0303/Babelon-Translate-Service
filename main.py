@@ -352,16 +352,15 @@ async def translate(
                 logger.info(f" | {'#' * 75} | ")
             logger.info(f" | RTF: {rtf} | total time: {transcription_time + translate_time:.2f} seconds. | transcribe {transcription_time:.2f} seconds. | translate {translate_time:.2f} seconds. | strategy: {multi_strategy_transcription} | ")  
             state = Status.OK
-            # write_txt(zh_result, en_result, de_result, meeting_id, audio_uid, times)
         else:  
-            logger.info(f" | Transcription has exceeded the upper limit time and has been stopped |")  
+            logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
             ori_pred = zh_result = en_result = de_result = ""
             state = Status.FAILED
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | ", data=response_data)  
     except Exception as e:  
-        logger.error(f" | transcription() error: {e} | ")  
-        return BaseResponse(status=Status.FAILED, message=f" | transcription() error: {e} | ", data=response_data)  
+        logger.error(f" | Translation() error: {e} | ")  
+        return BaseResponse(status=Status.FAILED, message=f" | Translation() error: {e} | ", data=response_data)  
 
 @app.post("/text_translate")  
 async def text_translate(  
@@ -422,13 +421,13 @@ async def text_translate(
             logger.info(f" | translate has been completed in {translate_time:.2f} seconds. |")  
             state = Status.OK
         else:
-            logger.info(f" | transcription has exceeded the upper limit time and has been stopped |")
+            logger.info(f" | translation has exceeded the upper limit time and has been stopped |")
             state = Status.FAILED
 
         return BaseResponse(status=state, message=f" | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | ", data=response_data)
     except Exception as e:
-        logger.error(f" | transcription() error: {e} | ")
-        return BaseResponse(status=Status.FAILED, message=f" | transcription() error: {e} | ", data=response_data)
+        logger.error(f" | translation() error: {e} | ")
+        return BaseResponse(status=Status.FAILED, message=f" | translation() error: {e} | ", data=response_data)
 
 @app.post("/sse_audio_translate")
 async def sse_audio_translate(
