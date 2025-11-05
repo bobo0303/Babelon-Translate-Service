@@ -30,6 +30,7 @@ ENV TZ=Asia/Taipei
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility  
 ENV NVIDIA_VISIBLE_DEVICES=all  
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib/llvm-10/lib:$LD_LIBRARY_PATH  
+ENV PYTHONPATH=/mnt  
 
 # 設置時區  
 RUN ln -sf /usr/share/zoneinfo/Asia/Taipei /etc/localtime && \  

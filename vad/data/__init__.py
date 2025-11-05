@@ -1,0 +1,1 @@
+# VAD data module initialization
