@@ -35,3 +35,24 @@ sseclient
 
 # Azure Speech SDk
 azure-cognitiveservices-speech
+
+# websocket
+websockets==11.0.3
+httpx==0.28.1
+
+# webrtcvad
+webrtcvad==2.0.10
+
+# silero
+silero-vad==5.1
+
+# wjy3
+/tmp/wjy3-1.8.2-py3-none-any.whl  
+
+# Azure Blob Storage
+azure-storage-blob==12.24.1
+
+# SQL
+alembic==1.17.0
+
+

@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     service_stop_event.set()  
-    task_thread.join()  
+    # task_thread.join()  
     model.close()
     logger.info(" | Scheduled task has been stopped. | ")
 
