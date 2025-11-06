@@ -11,7 +11,7 @@ WORKDIR /mnt
 
 # 更新系統並安裝必要的軟體包  
 RUN apt-get update && apt-get install -y --no-install-recommends \  
-    libgl1 libglib2.0-0 vim ffmpeg zip unzip htop screen tree build-essential gcc g++ make unixodbc-dev curl python3-dev python3-distutils git wget libvulkan1 libfreeimage-dev \  
+    tzdata libgl1 libglib2.0-0 vim ffmpeg zip unzip htop screen tree build-essential gcc g++ make unixodbc-dev curl python3-dev python3-distutils git wget libvulkan1 libfreeimage-dev \  
     && apt-get clean && rm -rf /var/lib/apt/lists/*  
 
 # 升級 pip  

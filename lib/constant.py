@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Dict
+from enum import Enum
 
 #############################################################################
 
@@ -165,6 +166,16 @@ Q1 = [3.0, 6.0, 9.0, 13.0, 16.0, 20.0, 24.0, 27.0, 29.5, 31.75, 36.0, 41.0, 43.7
 Q3 =  [7.0, 12.0, 17.0, 22.0, 26.0, 29.0, 34.0, 37.0, 41.0, 45.0, 51.0, 55.75, 58.25, 63.25, 67.0, 72.0, 74.75, 79.0, 83.0, 88.0]
 IQR_RATIO = 1.5
 TOLERANCE_RATE = 0.05  # 5% tolerance
+
+#############################################################################
+# VAD
+SAMPLERATE = 16000
+FRAME_DURATION = 0.03  # 30 ms (for webRTC VAD)
+
+# audio processing parameters
+NO_SPEECH_DURATION_THRESHOLD = 1.0  # seconds
+BATCH_SIZE = 2  # 0.5 (sec) = 2 / 4 (duration)
+MAX_DURATION = 60  # 15 (sec) = 60 / 4 (duration)
 
 #############################################################################
 

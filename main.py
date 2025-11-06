@@ -16,6 +16,7 @@ from api.threading_api import audio_translate, texts_translate, waiting_times, s
 from lib.base_object import BaseResponse, Status
 from lib.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES
 from api.utils import write_txt
+from api import websocket_router
 
 # Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  
@@ -98,6 +99,7 @@ async def lifespan(app: FastAPI):
     logger.info(" | Scheduled task has been stopped. | ")
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(websocket_router)
 
 ##############################################################################  
 # API Endpoints
