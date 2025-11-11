@@ -72,12 +72,24 @@ class AudioProcessor:
         is_speaking : 用來判斷是否為語音  = True | False
         self.speech : 用來判斷語音的開始與結束  = True | False
         """
+        # 如果還沒開始語音，先存到緩衝區
+        if not self.is_speech:
+            # 維護緩衝區大小
+            self.pre_buffer.append(audio_data.copy())
+            if len(self.pre_buffer) > self.pre_buffer_size:
+                self.pre_buffer.pop(0)  # 移除最舊的
  
         # 計算目前錄音資料的長度 (duration=1，約0.25秒)
         duration = int(((len(self.recording_data) * 4) / self.samplerate))
 
         # 語音開始
         if is_speaking:
+            # 第一次檢測到語音時，將緩衝區的音檔加到錄音資料前面
+            if not self.is_speech:
+                # 將緩衝區的所有音檔合併到 recording_data 開頭
+                for buffered_chunk in self.pre_buffer:
+                    self.recording_data.extend(buffered_chunk)
+                    
             self.is_speech = True
             self.last_speech_time = None
             self.recording_data.extend(audio_data)
@@ -126,6 +138,7 @@ class AudioProcessor:
                 audio_tags="audio_end",
                 callback=self._save_recording_data
             )
+            self._clear_pre_buffer()
             self.recording_data = self.recording_data[-self.samplerate :]
             self.batch_list = []
             self.audio_uid = ""
@@ -135,10 +148,14 @@ class AudioProcessor:
             if self.last_speech_time:
                 time_diff = (datetime.now() - self.last_speech_time).total_seconds()
                 if time_diff < self.no_speech_duration_threshold:
+                    if self.audio_uid == "":
+                        self.recording_data.extend(audio_data)
                     return
                 self.last_speech_time = None
             else:
                 self.last_speech_time = datetime.now()
+                if self.audio_uid == "":
+                   self.recording_data.extend(audio_data)
                 return
 
             # 語音結束
@@ -155,6 +172,7 @@ class AudioProcessor:
                 )
             self.is_speech = False
             self._clear_recording_data()
+            self._clear_pre_buffer()
             self.batch_list = []
             self.audio_uid = ""
             self.batch_size = 2
