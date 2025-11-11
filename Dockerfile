@@ -64,5 +64,5 @@ RUN ln -sf /usr/share/zoneinfo/Asia/Taipei /etc/localtime && \
 # AZURE_STORAGE_CONNECTION_STRING
 # AZURE_STORAGE_CONTAINER_NAME
 
-# DB -> alembic init -> alembic.ini 刪除 sqlalchemy.url 內容 -> alembic revision --autogenerate -m "init table" -> alembic upgrade head
+# DB -> alembic init -> alembic.ini 刪除 sqlalchemy.url 內容 -> alembic revision --autogenerate -m "init table" -> python3 init_job.py
  

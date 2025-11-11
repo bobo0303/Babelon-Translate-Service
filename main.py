@@ -17,6 +17,7 @@ from lib.base_object import BaseResponse, Status
 from lib.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
 from api.utils import write_txt
 from api import websocket_router
+from lib.logging_config import setup_application_logger
 
 # Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  
@@ -24,30 +25,15 @@ if not os.path.exists("./audio"):
 if not os.path.exists("./logs"):  
     os.mkdir("./logs")  
     
-# Configure logging  
-log_format = "%(asctime)s - %(message)s"  # Output timestamp and message content  
-log_file = "logs/app.log"  
-logging.basicConfig(level=logging.INFO, format=log_format)  
-  
-# Create a file handler  
-file_handler = logging.handlers.RotatingFileHandler(  
-    log_file, maxBytes=10*1024*1024, backupCount=5  
+# Configure logging using centralized configuration
+logger = setup_application_logger(
+    logger_name=__name__,
+    log_level=logging.INFO,
+    log_file="logs/app.log",
+    max_bytes=10*1024*1024,
+    backup_count=5,
+    console_output=True
 )  
-file_handler.setFormatter(logging.Formatter(log_format))  
-  
-# Create a console handler  
-console_handler = logging.StreamHandler()  
-console_handler.setFormatter(logging.Formatter(log_format))  
-  
-logger = logging.getLogger(__name__)  
-logger.setLevel(logging.INFO)  # Ensure logger level is set to INFO or lower  
-  
-# Clear existing handlers to prevent duplicate logs  
-if not logger.handlers:  
-    logger.addHandler(file_handler)  
-    logger.addHandler(console_handler)  # Add console handler 
-
-logger.propagate = False  
   
 # Configure UTC+8 time  
 utc_now = datetime.datetime.now(pytz.utc)  
@@ -348,7 +334,7 @@ async def translate(
             en_result = response_data.text.get("en", "")
             de_result = response_data.text.get("de", "")
             
-            logger.debug(response_data.model_dump_json())  
+            logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
             logger.info(f" | Transcription: {ori_pred} | ")
             if use_translate:
@@ -420,7 +406,7 @@ async def text_translate(
             en_result = response_data.text.get("en", "")
             de_result = response_data.text.get("de", "")
   
-            logger.debug(response_data.model_dump_json())  
+            logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | original language: {language} | translate_method: {translate_method} |")  
             logger.info(f" | ZH: {zh_result} | ")  
             logger.info(f" | EN: {en_result} | ")  
@@ -584,7 +570,7 @@ async def sse_audio_translate():
                             en_result = response_data.text.get("en", "")
                             de_result = response_data.text.get("de", "")
                             
-                            logger.debug(response_data.model_dump_json())  
+                            logger.debug(f" | {response_data.model_dump_json()} | ")  
                             logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} |")  
                             logger.info(f" | Transcription: {ori_pred} | ")
                             if other_information["use_translate"]:

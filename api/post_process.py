@@ -32,14 +32,14 @@ logger.propagate = False
 try:
     s2t_converter = opencc.OpenCC('s2tw')  # simplified to Taiwan traditional (modern forms)
 except Exception as e:
-    logger.error(f"Failed to initialize OpenCC converter: {e}")
+    logger.error(f" | Failed to initialize OpenCC converter: {e} | ")
     s2t_converter = None
 
 def convert_simplified_to_traditional(text):
     """Convert simplified Chinese to traditional Chinese using OpenCC"""
     try:
         if s2t_converter is None:
-            logger.warning("OpenCC converter not available, returning original text")
+            logger.warning(f" | OpenCC converter not available, returning original text | ")
             return text
         
         result = s2t_converter.convert(text)

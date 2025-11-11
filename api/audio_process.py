@@ -72,24 +72,12 @@ class AudioProcessor:
         is_speaking : 用來判斷是否為語音  = True | False
         self.speech : 用來判斷語音的開始與結束  = True | False
         """
-        # 如果還沒開始語音，先存到緩衝區
-        if not self.is_speech:
-            # 維護緩衝區大小
-            self.pre_buffer.append(audio_data.copy())
-            if len(self.pre_buffer) > self.pre_buffer_size:
-                self.pre_buffer.pop(0)  # 移除最舊的
-        
+ 
         # 計算目前錄音資料的長度 (duration=1，約0.25秒)
         duration = int(((len(self.recording_data) * 4) / self.samplerate))
 
         # 語音開始
         if is_speaking:
-            # 第一次檢測到語音時，將緩衝區的音檔加到錄音資料前面
-            if not self.is_speech:
-                # 將緩衝區的所有音檔合併到 recording_data 開頭
-                for buffered_chunk in self.pre_buffer:
-                    self.recording_data.extend(buffered_chunk)
-            
             self.is_speech = True
             self.last_speech_time = None
             self.recording_data.extend(audio_data)
@@ -130,7 +118,7 @@ class AudioProcessor:
 
         elif self.is_speech and duration >= self.max_duration:
             # 超過最大錄音時間
-            self.logger.info(f"超過最大錄音時間, frame_timestamp:{frame_timestamp}")
+            self.logger.info(f" | 超過最大錄音時間, frame_timestamp:{frame_timestamp} | ")
             self.vad_processor.create_silero_vad_step(
                 self.audio_uid, 
                 self.recording_data, 
@@ -139,7 +127,6 @@ class AudioProcessor:
                 callback=self._save_recording_data
             )
             self.recording_data = self.recording_data[-self.samplerate :]
-            self._clear_pre_buffer()
             self.batch_list = []
             self.audio_uid = ""
 
@@ -148,14 +135,10 @@ class AudioProcessor:
             if self.last_speech_time:
                 time_diff = (datetime.now() - self.last_speech_time).total_seconds()
                 if time_diff < self.no_speech_duration_threshold:
-                    if self.audio_uid != "":
-                        self.recording_data.extend(audio_data)
                     return
                 self.last_speech_time = None
             else:
                 self.last_speech_time = datetime.now()
-                if self.audio_uid != "":
-                    self.recording_data.extend(audio_data)
                 return
 
             # 語音結束
@@ -171,7 +154,6 @@ class AudioProcessor:
                 callback=self._save_recording_data
             )
             self._clear_recording_data()
-            self._clear_pre_buffer()
             self.batch_list = []
             self.audio_uid = ""
             self.batch_size = 2
@@ -187,11 +169,11 @@ class AudioProcessor:
         recording_data = np.copy(recording_data)
         # 保存錄音檔案
         if self.save_file:
-            self.logger.info(
+            self.logger.debug(
                 f"before save file, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}"
             )
             self._save_audio_file(recording_data, audio_uid, frame_timestamp, audio_tags)
-            self.logger.info(
+            self.logger.debug(
                 f"after save file, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}"
             )
 
@@ -201,7 +183,7 @@ class AudioProcessor:
             f"{audio_uid}_{frame_timestamp.replace(':', ';').replace(' ', '_')}.wav"
         )
 
-        self.logger.debug("保存文件開始")
+        self.logger.debug(" | 保存文件開始 | ")
         # 檢查並創建輸出目錄
         os.makedirs(self.output_directory, exist_ok=True)
 
@@ -216,12 +198,12 @@ class AudioProcessor:
             # 如果已經是 numpy array，確保格式正確
             audio_array = np.array(recording_np, dtype=np.float32)
         
-        self.logger.debug(f"音頻數據格式: type={type(audio_array)}, shape={audio_array.shape}, dtype={audio_array.dtype}")
+        self.logger.debug(f" | 音頻數據格式: type={type(audio_array)}, shape={audio_array.shape}, dtype={audio_array.dtype} | ")
 
         # 保存文件
         sf.write(full_path, audio_array, SAMPLERATE)
-        self.logger.debug(f"Saved file: {full_path}")        
-        self.logger.debug("保存文件結束")
+        self.logger.debug(f" | Saved file: {full_path} | ")        
+        self.logger.debug(" | 保存文件結束 | ")
 
         self.stt_processor.send_to_stt(audio_array, audio_uid, frame_timestamp, audio_tags=audio_tags)
 
@@ -234,7 +216,7 @@ class AudioProcessor:
         ).replace("-", "")
         
     def _clear_recording_data(self):
-        # self.logger.debug("清除錄音資料")
+        # self.logger.debug(f" | 清除錄音資料 | ")
         self.recording_data.clear()
         
     def _clear_pre_buffer(self):

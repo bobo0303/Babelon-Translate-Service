@@ -9,32 +9,10 @@ from typing import Optional
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from azure.core.exceptions import AzureError
 
-import logging
-import logging.handlers
+from lib.logging_config import get_configured_logger
 
-logger = logging.getLogger(__name__)  
-  
-# Configure logger settings (if not already configured)  
-if not logger.handlers:  
-    log_format = "%(asctime)s - %(message)s"  
-    log_file = "logs/app.log"  
-    logging.basicConfig(level=logging.INFO, format=log_format)  
-  
-    # Create file handler  
-    file_handler = logging.handlers.RotatingFileHandler(  
-        log_file, maxBytes=10*1024*1024, backupCount=5  
-    )  
-    file_handler.setFormatter(logging.Formatter(log_format))  
-  
-    # Create console handler  
-    console_handler = logging.StreamHandler()  
-    console_handler.setFormatter(logging.Formatter(log_format))  
-  
-    logger.addHandler(file_handler)  
-    logger.addHandler(console_handler)  
-  
-logger.setLevel(logging.INFO)  
-logger.propagate = False  
+# 獲取配置好的日誌器
+logger = get_configured_logger(__name__)
 
 class AzureBlobService:
     """Azure Blob Storage 服務類別"""
@@ -67,10 +45,10 @@ class AzureBlobService:
                 )
                 self._ensure_container_exists()
                 logger.info(
-                    f"Azure Blob Service initialized with container: {container_name}"
+                    f" | Azure Blob Service initialized with container: {container_name} | "
                 )
             except Exception as e:
-                logger.error(f"Failed to initialize Azure Blob Service: {e}")
+                logger.error(f" | Failed to initialize Azure Blob Service: {e} | ")
                 self.blob_service_client = None
 
     def _ensure_container_exists(self):
@@ -81,9 +59,9 @@ class AzureBlobService:
             )
             if not container_client.exists():
                 container_client.create_container()
-                logger.info(f"Created container: {self.container_name}")
+                logger.info(f" | Created container: {self.container_name} | ")
         except AzureError as e:
-            logger.error(f"Error ensuring container exists: {e}")
+            logger.error(f" | Error ensuring container exists: {e} | ")
 
     def upload_file(
         self,
@@ -103,11 +81,11 @@ class AzureBlobService:
             Blob URL 如果成功，否則返回 None
         """
         if not self.blob_service_client:
-            logger.warning("Azure Blob Service not configured, skipping upload")
+            logger.warning(" | Azure Blob Service not configured, skipping upload | ")
             return None
 
         if not os.path.exists(local_file_path):
-            logger.error(f"Local file not found: {local_file_path}")
+            logger.error(f" | Local file not found: {local_file_path} | ")
             return None
 
         try:
@@ -134,14 +112,14 @@ class AzureBlobService:
                 )
 
             blob_url = blob_client.url
-            logger.info(f"Successfully uploaded file to Azure Blob: {blob_url}")
+            logger.info(f" | Successfully uploaded file to Azure Blob: {blob_url} | ")
             return blob_url
 
         except AzureError as e:
-            logger.error(f"Failed to upload file to Azure Blob: {e}")
+            logger.error(f" | Failed to upload file to Azure Blob: {e} | ")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error during Azure Blob upload: {e}")
+            logger.error(f" | Unexpected error during Azure Blob upload: {e} | ")
             return None
 
     async def upload_file_async(
@@ -179,7 +157,7 @@ class AzureBlobService:
             成功返回 True，否則返回 False
         """
         if not self.blob_service_client:
-            logger.warning("Azure Blob Service not configured, skipping delete")
+            logger.warning(" | Azure Blob Service not configured, skipping delete | ")
             return False
 
         try:
@@ -191,14 +169,14 @@ class AzureBlobService:
                 container=self.container_name, blob=blob_name
             )
             blob_client.delete_blob()
-            logger.info(f"Successfully deleted blob: {blob_name}")
+            logger.info(f" | Successfully deleted blob: {blob_name} | ")
             return True
 
         except AzureError as e:
-            logger.error(f"Failed to delete blob: {e}")
+            logger.error(f" | Failed to delete blob: {e} | ")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error during blob deletion: {e}")
+            logger.error(f" | Unexpected error during blob deletion: {e} | ")
             return False
 
 

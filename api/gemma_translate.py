@@ -30,7 +30,7 @@ class Gemma4BTranslate:
             from huggingface_hub import whoami
             try:
                 user_info = whoami()
-                logger.info(f"Already authenticated with HuggingFace as: {user_info['name']}")
+                logger.info(f" | Already authenticated with HuggingFace as: {user_info['name']} | ")
                 return
             except Exception:
                 # Not logged in yet, continue to token-based login
@@ -41,18 +41,18 @@ class Gemma4BTranslate:
             
             if not hf_token:
                 # For development/testing purposes, provide clear guidance
-                logger.error("HUGGINGFACE_HUB_TOKEN environment variable not found!")
-                logger.error("Please set it with: export HUGGINGFACE_HUB_TOKEN='your_token_here'")
-                logger.error("Or run with: docker exec -e HUGGINGFACE_HUB_TOKEN='your_token' ...")
-                logger.error("Or use: hf auth login (which you may have already done)")
+                logger.error(f" | HUGGINGFACE_HUB_TOKEN environment variable not found! | ")
+                logger.error(f" | Please set it with: export HUGGINGFACE_HUB_TOKEN='your_token_here' | ")
+                logger.error(f" | Or run with: docker exec -e HUGGINGFACE_HUB_TOKEN='your_token' ... | ")
+                logger.error(f" | Or use: hf auth login (which you may have already done) | ")
                 raise ValueError("HuggingFace token is required to access gated models")
             
             # Use add_to_git_credential=False to avoid modifying git config
             login(token=hf_token, add_to_git_credential=False)
-            logger.info("Successfully authenticated with HuggingFace using token")
+            logger.info(f" | Successfully authenticated with HuggingFace using token | ")
             
         except Exception as e:
-            logger.error(f"Failed to authenticate with HuggingFace: {e}")
+            logger.error(f" | Failed to authenticate with HuggingFace: {e} | ")
             raise RuntimeError(f"HuggingFace authentication failed: {e}") from e
     
     def _parse_response(self, response_text):
@@ -141,14 +141,14 @@ class Gemma4BTranslate:
                 generation = generation[0][input_len:]
 
             decoded = self.processor.decode(generation, skip_special_tokens=True)
-            logger.debug(f"GEMMA 4B Translation result: {decoded}")
+            logger.debug(f" | GEMMA 4B Translation result: {decoded} | ")
             
             # Clean and parse the JSON response
             cleaned_result = self._parse_response(decoded)
             return cleaned_result
             
         except Exception as e:
-            logger.error(f"Translation failed: {str(e)}")
+            logger.error(f" | Translation failed: {str(e)} | ")
             return None
         
         

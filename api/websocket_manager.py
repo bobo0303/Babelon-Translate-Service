@@ -22,7 +22,7 @@ class ConnectionManager:
         meeting_id = payload_data.get("meeting_id", "default_meeting_id")
 
         await websocket.accept()
-        self.logger.info(f"🔗 WebSocket 連線已建立: {connection_id}, meeting_id: {meeting_id}")
+        self.logger.info(f" | 🔗 WebSocket 連線已建立: {connection_id}, meeting_id: {meeting_id} | ")
         
         self.connections[connection_id] = websocket
 
@@ -79,7 +79,7 @@ class ConnectionManager:
                 )
     
             except Exception as e:
-                self.logger.error(f"❌ 音訊處理錯誤: {connection_id}, {str(e)}")
+                self.logger.error(f" | ❌ 音訊處理錯誤: {connection_id}, {str(e)} | ")
                 audio_state = "error"
 
                 await self._send_error(

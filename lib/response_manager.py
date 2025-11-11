@@ -5,6 +5,7 @@ import httpx
 import asyncio
 
 from typing import Any, Dict, List
+from lib.logging_config import get_configured_logger
 
 from lib.constant import AudioTranslationResponse
 from lib.base_object import BaseResponse, Status
@@ -24,7 +25,7 @@ def process_stt_response(logger, response_data: AudioTranslationResponse, other_
         if websocket:
             _response_websocket(logger, response_data, websocket)
         else:
-            logger.warning(f"WebSocket connection not found for {connection_id}")
+            logger.warning(f" | WebSocket connection not found for {connection_id} | ")
     
     # save transcription history to db
     try:
@@ -65,8 +66,8 @@ def _save_trans_history_to_db(
     """
     儲存轉錄歷史至資料庫
     """
-    logger.info(
-        f"before save to db,\naudio_uid: {response_data.audio_uid} sec, \ntimestamp:{response_data.times}\n"
+    logger.debug(
+        f"before save to db,\naudio_uid: {response_data.audio_uid}, \ntimestamp:{response_data.times}\n"
     )
 
     # 解析時間戳記
@@ -118,9 +119,12 @@ def _save_trans_history_to_db(
         )
     )
 
-    logger.info(
-        f'after save to db,\naudio_uid: {response_data.audio_uid} sec, \ntimestamp:{response_data.times}\n'
+    logger.debug(
+        f'after save to db,\naudio_uid: {response_data.audio_uid}, \ntimestamp:{response_data.times}\n'
     )
+    
+    logger.info(
+        f' | Save to db, audio_uid: {response_data.audio_uid}, timestamp:{response_data.times} | ')
     
 def _upload_audio_to_azure_blob(logger, meeting_id: str, audio_file_name: str):
     """
@@ -129,7 +133,7 @@ def _upload_audio_to_azure_blob(logger, meeting_id: str, audio_file_name: str):
     try:
         local_file_path = f"audio/{meeting_id}/{audio_file_name}"
 
-        logger.info(
+        logger.debug(
             f"Uploading audio file to Azure Blob: {audio_file_name}, meeting_id: {meeting_id}"
         )
 
@@ -142,14 +146,16 @@ def _upload_audio_to_azure_blob(logger, meeting_id: str, audio_file_name: str):
             blob_name=audio_file_name,
             meeting_id=meeting_id,
         )
-
+        
         if blob_url:
-            logger.info(f"Successfully uploaded audio file to Azure Blob: {blob_url}")
+            logger.debug(f" | Successfully uploaded audio file to Azure Blob: {blob_url} | ")
         else:
             logger.warning(
                 f"Failed to upload audio file to Azure Blob: {audio_file_name}"
             )
+            
+        
 
     except Exception as e:
-        logger.error(f"Error uploading audio file to Azure Blob: {e}")
+        logger.error(f" | Error uploading audio file to Azure Blob: {e} | ")
 

@@ -50,19 +50,19 @@ class Model:
         try:
             self.gemma_translator = Gemma4BTranslate()
         except Exception as e:
-            logger.warning(f"Failed to initialize Gemma4B translator: {e}")
+            logger.warning(f" | Failed to initialize Gemma4B translator: {e} | ")
             self.gemma_translator = None
             
         try:
             self.ollama_gemma_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])  # Use correct key
         except Exception as e:
-            logger.warning(f"Failed to initialize Ollama translator: {e}")
+            logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
             self.ollama_gemma_translator = None
         
         try:
             self.ollama_qwen_translator = OllamaChat(OLLAMA_MODEL['ollama-qwen'])  # Use correct key
         except Exception as e:
-            logger.warning(f"Failed to initialize Ollama translator: {e}")
+            logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
             self.ollama_qwen_translator = None
             
         self.gpt_translator = GptTranslate()
@@ -381,7 +381,7 @@ class Model:
         translate_method = self.translate_method
         
         if ori not in LANGUAGE_LIST:
-            logger.error(f"Error: ori \"{ori}\" not in LANGUAGE_LIST \"{LANGUAGE_LIST}\"")
+            logger.error(f" | Error: ori \"{ori}\" not in LANGUAGE_LIST \"{LANGUAGE_LIST}\" | ")
             return translated_pred, 0, translate_method
         
         if prev_text:

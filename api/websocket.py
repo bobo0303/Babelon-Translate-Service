@@ -1,47 +1,20 @@
 # use webrtcvad and silero vad to detect speech in audio data
 
-from typing import Dict, Optional, Set
-from datetime import datetime
 import uuid
-
-import logging
-import logging.handlers
+from typing import Optional
 
 from fastapi import (
     APIRouter,
     WebSocket,
     WebSocketDisconnect,
     Query,
-    HTTPException,
-    status,
 )
-from fastapi.responses import HTMLResponse
 
 from api.websocket_manager import ConnectionManager
+from lib.logging_config import get_configured_logger
 
-logger = logging.getLogger(__name__)  
-  
-# Configure logger settings (if not already configured)  
-if not logger.handlers:  
-    log_format = "%(asctime)s - %(message)s"  
-    log_file = "logs/app.log"  
-    logging.basicConfig(level=logging.INFO, format=log_format)  
-  
-    # Create file handler  
-    file_handler = logging.handlers.RotatingFileHandler(  
-        log_file, maxBytes=10*1024*1024, backupCount=5  
-    )  
-    file_handler.setFormatter(logging.Formatter(log_format))  
-  
-    # Create console handler  
-    console_handler = logging.StreamHandler()  
-    console_handler.setFormatter(logging.Formatter(log_format))  
-  
-    logger.addHandler(file_handler)  
-    logger.addHandler(console_handler)  
-  
-logger.setLevel(logging.INFO)  
-logger.propagate = False  
+# 獲取配置好的日誌器
+logger = get_configured_logger(__name__)
 
 router = APIRouter()
 connection_manager = ConnectionManager(logger)
@@ -74,7 +47,7 @@ async def websocket_audio_vad_and_translate(
         import json
         payload_data = json.loads(payload)
     except (json.JSONDecodeError, Exception) as e:
-        logger.error(f"解析 payload 失敗: {e}")
+        logger.error(f" | 解析 payload 失敗: {e} | ")
         payload_data = {}
         
     try:
@@ -91,7 +64,7 @@ async def websocket_audio_vad_and_translate(
                 
                 # 檢查是否收到斷線訊息
                 if message.get("type") == "websocket.disconnect":
-                    logger.info(f"🔌 WebSocket 收到斷線訊息: {connection_id}")
+                    logger.info(f" | 🔌 WebSocket 收到斷線訊息: {connection_id} | ")
                     break
 
                 if "text" in message:
@@ -111,23 +84,23 @@ async def websocket_audio_vad_and_translate(
                     )
 
             except WebSocketDisconnect:
-                logger.info(f"🔌 WebSocket 連線斷開: {connection_id}")
+                logger.info(f" | 🔌 WebSocket 連線斷開: {connection_id} | ")
                 break
             except RuntimeError as e:
                 if "Cannot call" in str(e) and "disconnect message" in str(e):
-                    logger.info(f"🔌 WebSocket 已斷線，停止接收訊息: {connection_id}")
+                    logger.info(f" | 🔌 WebSocket 已斷線，停止接收訊息: {connection_id} | ")
                     break
                 else:
-                    logger.error(f"❌ WebSocket 運行時錯誤: {connection_id}, {str(e)}")
+                    logger.error(f" | ❌ WebSocket 運行時錯誤: {connection_id}, {str(e)} | ")
                     break
             except Exception as e:
-                logger.error(f"❌ WebSocket 訊息處理錯誤: {connection_id}, {str(e)}")
+                logger.error(f" | ❌ WebSocket 訊息處理錯誤: {connection_id}, {str(e)} | ")
                 break
 
     except WebSocketDisconnect:
-        logger.info(f"🔌 WebSocket 連線在認證階段斷開: {connection_id}")
+        logger.info(f" | 🔌 WebSocket 連線在認證階段斷開: {connection_id} | ")
     except Exception as e:
-        logger.error(f"❌ WebSocket 連線錯誤: {connection_id}, {str(e)}")
+        logger.error(f" | ❌ WebSocket 連線錯誤: {connection_id}, {str(e)} | ")
         try:
             await websocket.close(code=1011, reason=f"Server error: {str(e)}")
         except Exception:

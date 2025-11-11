@@ -34,9 +34,9 @@ class WebSocketSttManager:
 
         self.model = get_global_model()
         if self.model:
-            self.logger.info(f"AudioProcessor 已獲取 model 實例: {id(self.model)}")
+            self.logger.info(f" | AudioProcessor 已獲取 model 實例: {id(self.model)} | ")
         else:
-            self.logger.warning("Model 尚未設置到註冊表中")
+            self.logger.warning(" | Model 尚未設置到註冊表中 | ")
             
         self.post_processing = True
         self.language = "zh"
@@ -71,7 +71,7 @@ class WebSocketSttManager:
                         audio_info_list.append(audio_uid)
                     audio_info_dict[audio_uid] = input_info
 
-                    self.logger.warning("wait stt response.")
+                    self.logger.debug(" | wait stt response. | ")
                     return
 
                 # 設定正在呼叫 STT Flag
@@ -81,7 +81,7 @@ class WebSocketSttManager:
             self._create_stt_thread(input_info)
             
         except Exception as e:
-            self.logger.error(f"Failed to send STT API: {e}")
+            self.logger.error(f" | Failed to send STT API: {e} | ")
             with self.stt_lock:
                 is_call_stt = False
     
@@ -95,7 +95,7 @@ class WebSocketSttManager:
         )
         call_web_api_thread.start()
         call_web_api_threads["main"] = call_web_api_thread
-        self.logger.info("Started call_web_api_thread for process_stt")
+        self.logger.debug(" | Started call_web_api_thread for process_stt | ")
 
     def _process_stt(
         self, 
@@ -244,7 +244,7 @@ class WebSocketSttManager:
             with self.stt_lock:
                 if len(audio_info_list) == 0:
                     is_call_stt = False
-                    self.logger.info("No more audio to process, set is_call_stt to False")
+                    self.logger.debug(" | No more audio to process, set is_call_stt to False | ")
                     return
 
                 next_audio_uid = audio_info_list.pop(0)
@@ -258,7 +258,7 @@ class WebSocketSttManager:
                 )
                 call_web_api_thread.start()
                 call_web_api_threads["main"] = call_web_api_thread
-                self.logger.info("Started call_web_api_thread for process_stt")
+                self.logger.debug(" | Started call_web_api_thread for process_stt | ")
                 
                 is_call_stt = True
                 

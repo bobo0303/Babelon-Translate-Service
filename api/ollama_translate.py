@@ -156,7 +156,7 @@ class OllamaChat:
         except Exception as e:
             logger.error(f" | ollama Error: {e} | ")
             decoded = None
-        logger.debug(f"OllamaChat Translation result: {decoded}")
+        logger.debug(f" | OllamaChat Translation result: {decoded} | ")
         
         # Clean and parse the JSON response
         cleaned_result = self._parse_response(decoded)

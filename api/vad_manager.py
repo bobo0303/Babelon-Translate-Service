@@ -70,22 +70,25 @@ class SileroVAD:
 
             # 如果 silero 判斷有人聲 speech_timestamps 就有值
             if len(speech_timestamps):
-                self.logger.info(
-                    f"after silero vad, --- is voice ---, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}"
+                self.logger.debug(
+                    f" | after silero vad, --- is voice ---, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp} | "
                 )
                 
                 # 使用回調函數來處理儲存
                 if callback:
                     callback(audio_data, audio_uid, frame_timestamp, audio_tags)
                 else:
-                    self.logger.warning(f"No callback provided for audio_uid:{audio_uid}")
+                    self.logger.warning(f" | No callback provided for audio_uid:{audio_uid} | ")
             else:
+                self.logger.debug(
+                    f" | after silero vad, --- not voice ---, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp} | "
+                )
                 self.logger.info(
-                    f"after silero vad, --- not voice ---, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}"
+                    f" | Silero VAD detect no voice (skip to stt), audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp} | "
                 )
         except Exception as e:
             self.logger.error(
-                f"silero_vad_step exception, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}, error:{e}"
+                f" | silero_vad_step exception, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}, error:{e} | "
             )
     
     

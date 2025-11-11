@@ -26,7 +26,7 @@ class DatabaseService:
         try:
             await self.run_migrations()
         except Exception as e:
-            self.logger.error(f"Failed to run migrations: {e}")
+            self.logger.error(f" | Failed to run migrations: {e} | ")
             raise
 
     async def run_migrations(self) -> None:
@@ -38,7 +38,7 @@ class DatabaseService:
             version_table_name = f"{active}_alembic_version"
             session.exec(text(f"SELECT * FROM {version_table_name}"))
         except Exception:  # noqa: BLE001
-            self.logger.debug("Alembic not initialized")
+            self.logger.debug(" | Alembic not initialized | ")
             should_initialize_alembic = True
         await asyncio.to_thread(self._run_migrations, should_initialize_alembic)
 
@@ -66,7 +66,7 @@ class DatabaseService:
                 self.logger.exception(msg)
                 raise RuntimeError(msg) from exc
         else:
-            self.logger.debug("Alembic initialized")
+            self.logger.debug(" | Alembic initialized | ")
 
     @staticmethod
     def init_alembic(alembic_cfg) -> None:

@@ -7,12 +7,13 @@ import os
 import sys
 import yaml  
 import json
-import logging  
 from openai import AzureOpenAI
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from lib.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2
+from lib.logging_config import get_configured_logger
 
-logger = logging.getLogger(__name__)
+# 獲取配置好的日誌器
+logger = get_configured_logger(__name__)
 
 class GptTranslate:
     def __init__(self, model_version='gpt-4o'):
@@ -146,8 +147,8 @@ class GptTranslate:
                 max_tokens=10,   
                 temperature=0     
             )
-            logger.debug("Model response:", response.choices[0].message.content)
+            logger.debug(" | Model response: | ", response.choices[0].message.content)
             return True
         except Exception as e:
-            logger.error("Model test failed:", e)
+            logger.error(" | Model test failed: | ", e)
             return False
