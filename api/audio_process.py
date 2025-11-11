@@ -142,17 +142,18 @@ class AudioProcessor:
                 return
 
             # 語音結束
-            self.logger.info(
-                f"---斷句---, batch_size:{self.batch_list}, frame_timestamp:{frame_timestamp}"
-            )
+            if self.audio_uid == "":
+                self.logger.warning(f" | audio lower limit not over 0.5s, skip this audio | frame_timestamp:{frame_timestamp} | ")
+            else:
+                self.logger.info(f" | Silent over limit time | batch_size:{self.batch_list} | frame_timestamp:{frame_timestamp} | ")
+                self.vad_processor.create_silero_vad_step(
+                    self.audio_uid, 
+                    self.recording_data, 
+                    frame_timestamp, 
+                    audio_tags="audio_end",
+                    callback=self._save_recording_data
+                )
             self.is_speech = False
-            self.vad_processor.create_silero_vad_step(
-                self.audio_uid, 
-                self.recording_data, 
-                frame_timestamp, 
-                audio_tags="audio_end",
-                callback=self._save_recording_data
-            )
             self._clear_recording_data()
             self.batch_list = []
             self.audio_uid = ""
