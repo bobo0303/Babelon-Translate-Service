@@ -46,6 +46,10 @@ logger.propagate = False
 router = APIRouter()
 connection_manager = ConnectionManager(logger)
 
+def set_model(model):
+    """設置 model 到 connection_manager"""
+    connection_manager.model = model
+
 @router.websocket("/S2TT/vad_translate_stream")
 async def websocket_audio_vad_and_translate(
     websocket: WebSocket,
@@ -78,14 +82,17 @@ async def websocket_audio_vad_and_translate(
             websocket, connection_id, payload_data=payload_data
         )
 
-        logger.info(f"🔗 WebSocket 連線已建立: {connection_id}, meeting_id: {meeting_id}")
-        await websocket.accept()
         # 訊息處理循環
         while True:
             # 接收訊息（文字或二進位）
             try:
                 # 等待訊息
                 message = await websocket.receive()
+                
+                # 檢查是否收到斷線訊息
+                if message.get("type") == "websocket.disconnect":
+                    logger.info(f"🔌 WebSocket 收到斷線訊息: {connection_id}")
+                    break
 
                 if "text" in message:
                     # 處理文字訊息（控制指令）
@@ -106,6 +113,13 @@ async def websocket_audio_vad_and_translate(
             except WebSocketDisconnect:
                 logger.info(f"🔌 WebSocket 連線斷開: {connection_id}")
                 break
+            except RuntimeError as e:
+                if "Cannot call" in str(e) and "disconnect message" in str(e):
+                    logger.info(f"🔌 WebSocket 已斷線，停止接收訊息: {connection_id}")
+                    break
+                else:
+                    logger.error(f"❌ WebSocket 運行時錯誤: {connection_id}, {str(e)}")
+                    break
             except Exception as e:
                 logger.error(f"❌ WebSocket 訊息處理錯誤: {connection_id}, {str(e)}")
                 break

@@ -74,9 +74,6 @@ DEFAULT_PROMPTS = {
 
 CONTAINS_UNUSUAL = [
     "67here",
-    "Milk",
-    "YK",
-    "com",
     "劉胖胖",
     "大家好 我是阿貴",
     "字幕志願者",
@@ -426,4 +423,18 @@ SYSTEM_PROMPT_V4_2= """
 """
 
 #############################################################################
+
+# Global Model Registry
+# 簡單、安全、無循環依賴
+
+_global_model = None
+
+def set_global_model(model):
+    """設置全域 model"""
+    global _global_model
+    _global_model = model
+
+def get_global_model():
+    """獲取全域 model"""
+    return _global_model
 

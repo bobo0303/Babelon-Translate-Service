@@ -2,22 +2,20 @@
 import os
 import uuid
 import random
-import threading
 import numpy as np
+import soundfile as sf
 from datetime import datetime
 
-from vad_manager import VADProcessors
+from api.vad_manager import VADProcessors
+from api.websocket_stt_manager import WebSocketSttManager
 from lib.constant import SAMPLERATE, NO_SPEECH_DURATION_THRESHOLD, BATCH_SIZE, MAX_DURATION
 
 class AudioProcessor:
-    def __init__(self, recording_id: str, meeting_id: str, speaker_id: str, speaker_name: str, logger):
-        self.recording_id = recording_id
-        self.meeting_id = meeting_id
-        self.speaker_id = speaker_id
-        self.speaker_name = speaker_name
+    def __init__(self, logger, payload_data: dict, connection, connection_id):
         self.samplerate = SAMPLERATE
         self.logger = logger
         
+        self.save_file = True 
         self.recording_data = []
         self.is_speech = False
         self.last_speech_time = None
@@ -25,13 +23,15 @@ class AudioProcessor:
         self.max_duration = MAX_DURATION
         self.batch_list = []
         self.audio_uid = ""
+        self.output_directory = f"audio/{payload_data.get('meeting_id', 'default_meeting_id')}/"
 
         # 添加緩衝區設定
         self.pre_buffer = []  # 存放語音開始前的音檔片段
         self.pre_buffer_size = 5  # 緩衝區大小（5個chunk）
         
         self.no_speech_duration_threshold = NO_SPEECH_DURATION_THRESHOLD
-        self.vad_processor = VADProcessors()
+        self.vad_processor = VADProcessors(self.logger)
+        self.stt_processor = WebSocketSttManager(self.logger, payload_data, connection, connection_id)
 
     async def preprocess_chunk(self, audio_bytes: bytes):
         """處理音訊資料塊."""
@@ -62,7 +62,7 @@ class AudioProcessor:
             )
             
     def _handle_speech_detection(self, audio_data: np.array) -> bool:
-        is_speaking = self.vad_processor.check_voice(
+        is_speaking = self.vad_processor.is_speech(
             audio_data, samplerate=self.samplerate
         )
         return is_speaking
@@ -109,10 +109,21 @@ class AudioProcessor:
 
             if self.audio_uid == "":
                 self.audio_uid = self._generate_uid()
-                self.vad_processor.create_silero_vad_step(self.audio_uid, self.recording_data, frame_timestamp, audio_tags="audio_start")
+                self.vad_processor.create_silero_vad_step(
+                    self.audio_uid, 
+                    self.recording_data, 
+                    frame_timestamp, 
+                    audio_tags="audio_start",
+                    callback=self._save_recording_data
+                )
 
             else:
-                self.vad_processor.create_silero_vad_step(self.audio_uid, self.recording_data, frame_timestamp)
+                self.vad_processor.create_silero_vad_step(
+                    self.audio_uid, 
+                    self.recording_data, 
+                    frame_timestamp,
+                    callback=self._save_recording_data
+                )
 
             self.batch_list.append(duration)
             self.batch_size = 12
@@ -120,7 +131,13 @@ class AudioProcessor:
         elif self.is_speech and duration >= self.max_duration:
             # 超過最大錄音時間
             self.logger.info(f"超過最大錄音時間, frame_timestamp:{frame_timestamp}")
-            self.vad_processor.create_silero_vad_step(self.audio_uid, self.recording_data, frame_timestamp, audio_tags="audio_end")
+            self.vad_processor.create_silero_vad_step(
+                self.audio_uid, 
+                self.recording_data, 
+                frame_timestamp, 
+                audio_tags="audio_end",
+                callback=self._save_recording_data
+            )
             self.recording_data = self.recording_data[-self.samplerate :]
             self._clear_pre_buffer()
             self.batch_list = []
@@ -131,12 +148,14 @@ class AudioProcessor:
             if self.last_speech_time:
                 time_diff = (datetime.now() - self.last_speech_time).total_seconds()
                 if time_diff < self.no_speech_duration_threshold:
-                    self.recording_data.extend(audio_data)
+                    if self.audio_uid != "":
+                        self.recording_data.extend(audio_data)
                     return
                 self.last_speech_time = None
             else:
                 self.last_speech_time = datetime.now()
-                self.recording_data.extend(audio_data)
+                if self.audio_uid != "":
+                    self.recording_data.extend(audio_data)
                 return
 
             # 語音結束
@@ -144,13 +163,68 @@ class AudioProcessor:
                 f"---斷句---, batch_size:{self.batch_list}, frame_timestamp:{frame_timestamp}"
             )
             self.is_speech = False
-            self.vad_processor.create_silero_vad_step(self.audio_uid, self.recording_data, frame_timestamp, audio_tags="audio_end")
+            self.vad_processor.create_silero_vad_step(
+                self.audio_uid, 
+                self.recording_data, 
+                frame_timestamp, 
+                audio_tags="audio_end",
+                callback=self._save_recording_data
+            )
             self._clear_recording_data()
             self._clear_pre_buffer()
             self.batch_list = []
             self.audio_uid = ""
             self.batch_size = 2
-            
+
+    
+    def _save_recording_data(
+        self,
+        recording_data,
+        audio_uid: str,
+        frame_timestamp: str,
+        audio_tags: str,
+    ):
+        recording_data = np.copy(recording_data)
+        # 保存錄音檔案
+        if self.save_file:
+            self.logger.info(
+                f"before save file, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}"
+            )
+            self._save_audio_file(recording_data, audio_uid, frame_timestamp, audio_tags)
+            self.logger.info(
+                f"after save file, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}"
+            )
+
+    def _save_audio_file(self, recording_np, audio_uid: str, frame_timestamp: str, audio_tags: str):
+        # 生成文件名
+        filename = (
+            f"{audio_uid}_{frame_timestamp.replace(':', ';').replace(' ', '_')}.wav"
+        )
+
+        self.logger.debug("保存文件開始")
+        # 檢查並創建輸出目錄
+        os.makedirs(self.output_directory, exist_ok=True)
+
+        # 完整文件路徑
+        full_path = os.path.join(self.output_directory, filename)
+
+        # 確保 recording_np 是正確的 numpy array 格式
+        if isinstance(recording_np, list):
+            # 如果是 list，轉換為 numpy array
+            audio_array = np.array(recording_np, dtype=np.float32)
+        else:
+            # 如果已經是 numpy array，確保格式正確
+            audio_array = np.array(recording_np, dtype=np.float32)
+        
+        self.logger.debug(f"音頻數據格式: type={type(audio_array)}, shape={audio_array.shape}, dtype={audio_array.dtype}")
+
+        # 保存文件
+        sf.write(full_path, audio_array, SAMPLERATE)
+        self.logger.debug(f"Saved file: {full_path}")        
+        self.logger.debug("保存文件結束")
+
+        self.stt_processor.send_to_stt(audio_array, audio_uid, frame_timestamp, audio_tags=audio_tags)
+
     def _generate_uid(self):
         return str(
             uuid.uuid3(
@@ -165,4 +239,3 @@ class AudioProcessor:
         
     def _clear_pre_buffer(self):
         self.pre_buffer.clear()
-        

@@ -14,7 +14,7 @@ from threading import Thread, Event
 from api.model import Model  
 from api.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse
 from lib.base_object import BaseResponse, Status
-from lib.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES
+from lib.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
 from api.utils import write_txt
 from api import websocket_router
 
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     # load model  
     default_model = "large_v2"  
     model.load_model(default_model)  # Directly load the default model  
-    logger.info(f" | Default model {default_model} has been loaded successfully. | ")  
+    logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(model)} | ")  
     # preheat  
     logger.info(f" | Start to preheat model. | ")  
     default_audio = "audio/test.wav"  
@@ -83,6 +83,11 @@ async def lifespan(app: FastAPI):
     # set default prompt
     model.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
     logger.info(f" | Default prompt has been set. | ")  
+    
+    # 設置 websocket 的 model
+    set_global_model(model)
+    logger.info(f" | WebSocket model has been set. Model ID: {id(model)} | ")
+    
     logger.info(f" | ##################################################### | ")  
     # delete_old_audio_files()
     

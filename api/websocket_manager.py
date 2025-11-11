@@ -20,28 +20,23 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket, connection_id: str, payload_data: dict):
         meeting_id = payload_data.get("meeting_id", "default_meeting_id")
-        speaker_id = payload_data.get("speaker_id", "default_speaker_id")
-        speaker_name = payload_data.get("speaker_name", "default_speaker_name")
-        recording_id = payload_data.get("recording_id", "default_recording_id")
-        
+
         await websocket.accept()
         self.logger.info(f"🔗 WebSocket 連線已建立: {connection_id}, meeting_id: {meeting_id}")
         
         self.connections[connection_id] = websocket
-        
-        processor = AudioProcessor(
-                recording_id, meeting_id, speaker_id, speaker_name, self.logger
-            )
+
+        processor = AudioProcessor(self.logger, payload_data, self.connections, connection_id)
         
         self.audio_processors[connection_id] = processor
-
+    
         status_data = {
             "connection_id": connection_id,
             "meeting_id": meeting_id,
-            "speaker_id": speaker_id,
-            "speaker_name": speaker_name,
-            "recording_id": recording_id,
-            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
+            "speaker_id": payload_data.get("speaker_id", "default_speaker_id"),
+            "speaker_name": payload_data.get("speaker_name", "default_speaker_name"),
+            "recording_id": payload_data.get("recording_id", "default_recording_id"),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
             "samplerate": SAMPLERATE,
             "frame_duration_for_webrtc": FRAME_DURATION,
         }   
@@ -56,7 +51,7 @@ class ConnectionManager:
         self.logger.info(f" | {return_message} | ")
         
         message_data = {"get_message": message,
-                          "return_message": return_message,
+                        "return_message": return_message,
         }
         
         await self._send_message(
@@ -65,8 +60,7 @@ class ConnectionManager:
 
     async def handle_binary_data(self, connection_id: str, data: bytes):
         """處理接收到的二進位音訊資料."""
-        connection_state = self.connection_states.get(connection_id)
-        if not connection_state:
+        if connection_id not in self.connections:
             return
         
         processor: Optional[AudioProcessor] = self.audio_processors.get(connection_id)
@@ -117,7 +111,7 @@ class ConnectionManager:
             return
         
         try:
-            await websocket.send_text(message.json())
+            await websocket.send_text(json.dumps(message))
         except Exception:
             # 連線可能已斷開，清理資源
             await self.disconnect(connection_id)

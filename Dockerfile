@@ -11,9 +11,28 @@ WORKDIR /mnt
 
 # 更新系統並安裝必要的軟體包  
 RUN apt-get update && apt-get install -y --no-install-recommends \  
-    tzdata libgl1 libglib2.0-0 vim ffmpeg zip unzip htop screen tree build-essential gcc g++ make unixodbc-dev curl python3-dev python3-distutils git wget libvulkan1 libfreeimage-dev \  
+    tzdata libgl1 libglib2.0-0 vim ffmpeg zip unzip htop screen tree build-essential gcc g++ make unixodbc-dev curl python3-dev python3-distutils git wget libvulkan1 libfreeimage-dev gnupg2 \  
     && apt-get clean && rm -rf /var/lib/apt/lists/*  
 
+# 安裝 Microsoft ODBC Driver 17 for SQL Server
+RUN if ! [[ "8 9 10 11 12" == *"$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2 | cut -d '.' -f 1)"* ]]; then \
+        echo "Debian $(grep VERSION_ID /etc/os-release | cut -d '"' -f 2 | cut -d '.' -f 1) is not currently supported."; \
+        exit 1; \
+    fi
+
+RUN curl -sSL -O https://packages.microsoft.com/config/debian/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2 | cut -d '.' -f 1)/packages-microsoft-prod.deb \
+    && dpkg -i packages-microsoft-prod.deb \
+    && rm packages-microsoft-prod.deb
+
+RUN apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
+    && ACCEPT_EULA=Y apt-get install -y mssql-tools \
+    && apt-get install -y libgssapi-krb5-2 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 設置 SQL Server 工具路徑
+ENV PATH="$PATH:/opt/mssql-tools/bin"  
+    
 # 升級 pip  
 RUN pip3 install --upgrade pip  
   
@@ -37,5 +56,13 @@ RUN ln -sf /usr/share/zoneinfo/Asia/Taipei /etc/localtime && \
     echo "Asia/Taipei" > /etc/timezone
 
 # huggingface-cli login (要用 Gemma 要先登入 huggingface 要有 token)
+# HUGGINGFACE_HUB_TOKEN
 # hf auth login
 
+# 該專案有寫 DB + Blob Storage 功能，請自行在 .env 裡面設定相關參數
+# SAVE_AUDIO_TO_AZURE_BLOB
+# AZURE_STORAGE_CONNECTION_STRING
+# AZURE_STORAGE_CONTAINER_NAME
+
+# DB -> alembic init -> alembic.ini 刪除 sqlalchemy.url 內容 -> alembic revision --autogenerate -m "init table" -> alembic upgrade head
+ 

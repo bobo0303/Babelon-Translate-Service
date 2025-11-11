@@ -3,8 +3,10 @@ models/*
 deb/*
 lib/azure_config.yaml
 lib/azure_config_inside.yaml
+lib/db.yml
+lib/launch.json
 app.yml
-audio/202*
+audio/*
 whl/*
 test
 logs/*
@@ -12,6 +14,14 @@ rtt_test
 tools
 old
 azure_speech
+
+# Audio test files
+*audio_test*.py
+run_audio_test.sh
+README_audio_test.md
+quick_audio_test.py
+advanced_audio_test.py
+
 
 
 # Byte-compiled / optimized / DLL files  
