@@ -75,11 +75,11 @@ async def lifespan(app: FastAPI):
     logger.info(f" | WebSocket model has been set. Model ID: {id(model)} | ")
     
     logger.info(f" | ##################################################### | ")  
-    # delete_old_audio_files()
+    delete_old_audio_files()
     
     # Start daily task scheduling  
-    # task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
-    # task_thread.start()
+    task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
+    task_thread.start()
     
     yield  # Application starts receiving requests
     
@@ -279,8 +279,10 @@ async def translate(
     )  
   
     # Save the uploaded audio file  
-    file_name = times + ".wav"  
-    audio_buffer = f"audio/{file_name}"  
+    filename = (
+                f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
+            )
+    audio_buffer = f"audio/{meeting_id}/{filename}"  
     
     # Read file content once
     file_content = file.file.read()
@@ -511,8 +513,10 @@ async def sse_audio_translate(
             waiting_list.append([response_data, other_information])  
           
         if previous_waiting_list != waiting_list:  
-            file_name = f"{response_data.times}.wav"  
-            audio_buffer = f"audio/{file_name}"  
+            filename = (
+                f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
+            )
+            audio_buffer = f"audio/{response_data.meeting_id}/{filename}"  
             
             # Read file content once and save
             file_content = file.file.read()
@@ -538,7 +542,7 @@ async def sse_audio_translate():
             while not sse_stop_event.is_set():  
                 if waiting_list and not model.processing:  
                     response_data, other_information = waiting_list.pop(0)  
-                    audio_buffer = f"audio/{response_data.times}.wav"  
+                    audio_buffer = f"audio/{response_data.meeting_id}/{response_data.times}.wav" 
                     o_lang = response_data.ori_lang  
       
                     try:  
@@ -556,8 +560,8 @@ async def sse_audio_translate():
                         time_thread.join()  
                         stop_thread(inference_thread)  
                         
-                        if os.path.exists(audio_buffer):
-                            os.remove(audio_buffer)  
+                        # if os.path.exists(audio_buffer):
+                        #     os.remove(audio_buffer)  
       
                         # Process all available results from the result queue
                         while not model.result_queue.empty():
@@ -626,7 +630,7 @@ async def stop_sse():
 # Clean up audio files  
 def delete_old_audio_files():  
     """  
-    The process of deleting old audio files  
+    The process of deleting old audio files recursively and removing empty directories  
     :param  
     ----------  
     None: The function does not take any parameters  
@@ -635,20 +639,33 @@ def delete_old_audio_files():
     None: The function does not return any value  
     :logs  
     ----------  
-    Deleted old files  
+    Deleted old files and empty directories  
     """  
     current_time = time.time()  
     audio_dir = "./audio"  
-    for filename in os.listdir(audio_dir):  
-        if filename == "test.wav":  # Skip specific file  
-            continue  
-        file_path = os.path.join(audio_dir, filename)  
-        if os.path.isfile(file_path):  
-            file_creation_time = os.path.getctime(file_path)  
-            # Delete files older than a day  
-            if current_time - file_creation_time > 24 * 60 * 60:  
-                os.remove(file_path)  
-                logger.info(f" | Deleted old file: {file_path} | ")  
+    
+    # Recursively walk through all subdirectories
+    for root, dirs, files in os.walk(audio_dir, topdown=False):
+        # Process files in current directory
+        for filename in files:
+            if filename == "test.wav":  # Skip specific file
+                continue
+            file_path = os.path.join(root, filename)
+            file_creation_time = os.path.getctime(file_path)
+            # Delete files older than a day
+            if current_time - file_creation_time > 24 * 60 * 60:
+                os.remove(file_path)
+                logger.info(f" | Deleted old file: {file_path} | ")
+        
+        # Remove empty directories (skip the main audio directory)
+        if root != audio_dir:
+            try:
+                if not os.listdir(root):  # Check if directory is empty
+                    os.rmdir(root)
+                    logger.info(f" | Deleted empty directory: {root} | ")
+            except OSError:
+                # Directory not empty or other error, continue
+                pass  
   
 # Daily task scheduling  
 def schedule_daily_task(stop_event):  
