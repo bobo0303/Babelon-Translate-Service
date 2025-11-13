@@ -1,6 +1,7 @@
 # My files
 models/*
 deb/*
+lib/config/*
 lib/azure_config.yaml
 lib/azure_config_inside.yaml
 lib/db.yml

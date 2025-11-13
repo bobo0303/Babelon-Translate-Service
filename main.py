@@ -10,14 +10,14 @@ import uvicorn
 import datetime  
 import threading 
 from queue import Queue  
-from threading import Thread, Event  
+from threading import Event  
 from api.model import Model  
 from api.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse
-from lib.base_object import BaseResponse, Status
-from lib.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
+from wjy3 import BaseResponse, Status
+from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
 from api.utils import write_txt
 from api import websocket_router
-from lib.logging_config import setup_application_logger
+from lib.core.logging_config import setup_application_logger
 
 # Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  

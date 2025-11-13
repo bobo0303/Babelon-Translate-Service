@@ -10,8 +10,8 @@ from fastapi import (
     Query,
 )
 
-from api.websocket_manager import ConnectionManager
-from lib.logging_config import get_configured_logger
+from api.websocket.websocket_manager import ConnectionManager
+from lib.core.logging_config import get_configured_logger
 
 # 獲取配置好的日誌器
 logger = get_configured_logger(__name__)
@@ -61,7 +61,7 @@ async def websocket_audio_vad_and_translate(
             try:
                 # 等待訊息
                 message = await websocket.receive()
-                
+
                 # 檢查是否收到斷線訊息
                 if message.get("type") == "websocket.disconnect":
                     logger.info(f" | 🔌 WebSocket 收到斷線訊息: {connection_id} | ")

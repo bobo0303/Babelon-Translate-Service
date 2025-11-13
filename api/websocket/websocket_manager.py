@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Dict, Optional, Set
 
 from fastapi import WebSocket
-from api.audio_process import AudioProcessor
-from lib.constant import SAMPLERATE, FRAME_DURATION
+from api.audio.audio_process import AudioProcessor
+from lib.config.constant import SAMPLERATE, FRAME_DURATION
 
 
 class ConnectionManager:

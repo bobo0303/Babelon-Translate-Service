@@ -4,10 +4,10 @@ import threading
 import numpy as np
 from queue import Queue  
 from datetime import datetime
-from api.threading_api import audio_translate, waiting_times, stop_thread
+from api.core.threading_api import audio_translate, waiting_times, stop_thread
 
-from lib.constant import SAMPLERATE, DEFAULT_RESULT, LANGUAGE_LIST, WAITING_TIME, AudioTranslationResponse, get_global_model
-from lib.response_manager import process_stt_response
+from lib.config.constant import SAMPLERATE, DEFAULT_RESULT, LANGUAGE_LIST, WAITING_TIME, AudioTranslationResponse, get_global_model
+from lib.core.response_manager import process_stt_response
 
 is_call_stt = False
 call_web_api_threads = {}

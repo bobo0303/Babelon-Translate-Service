@@ -4,7 +4,7 @@ import silero_vad.utils_vad
 import threading
 import numpy as np
 
-from lib.constant import SAMPLERATE, FRAME_DURATION
+from lib.config.constant import SAMPLERATE, FRAME_DURATION
 
 class WebrtcVAD:
     def __init__(

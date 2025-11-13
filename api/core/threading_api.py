@@ -2,8 +2,8 @@ import logging
 import threading  
 import ctypes
 
-from api.audio_utils import calculate_rtf
-from lib.constant import DEFAULT_RESULT  
+from api.audio.audio_utils import calculate_rtf
+from lib.config.constant import DEFAULT_RESULT  
   
 logger = logging.getLogger(__name__)  
   

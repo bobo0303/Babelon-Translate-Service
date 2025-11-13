@@ -6,9 +6,8 @@ import numpy as np
 import soundfile as sf
 from datetime import datetime
 
-from api.vad_manager import VADProcessors
-from api.websocket_stt_manager import WebSocketSttManager
-from lib.constant import SAMPLERATE, NO_SPEECH_DURATION_THRESHOLD, BATCH_SIZE, MAX_DURATION
+from api.audio.vad_manager import VADProcessors
+from lib.config.constant import SAMPLERATE, NO_SPEECH_DURATION_THRESHOLD, BATCH_SIZE, MAX_DURATION
 
 class AudioProcessor:
     def __init__(self, logger, payload_data: dict, connection, connection_id):
@@ -31,6 +30,8 @@ class AudioProcessor:
         
         self.no_speech_duration_threshold = NO_SPEECH_DURATION_THRESHOLD
         self.vad_processor = VADProcessors(self.logger)
+        # Lazy import to avoid circular import
+        from api.websocket.websocket_stt_manager import WebSocketSttManager
         self.stt_processor = WebSocketSttManager(self.logger, payload_data, connection, connection_id)
 
     async def preprocess_chunk(self, audio_bytes: bytes):
@@ -46,7 +47,7 @@ class AudioProcessor:
     def _recording_audio_stream_block(self, audio_stream_block: np.ndarray):
         frame_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         self.logger.debug(
-            f"new sound stream block, audio length:{round(len(audio_stream_block)/self.samplerate ,3)} sec, frame_timestamp:{frame_timestamp}"
+            f" | new sound stream block, audio length:{round(len(audio_stream_block)/self.samplerate ,3)} sec, frame_timestamp:{frame_timestamp} | "
         )
         
         try:
@@ -58,7 +59,7 @@ class AudioProcessor:
             
         except Exception as e:
             self.logger.error(
-                f"recording_audio_stream_block exception, frame_timestamp:{frame_timestamp}, error:{e}"
+                f" | recording_audio_stream_block exception, frame_timestamp:{frame_timestamp}, error:{e} | "
             )
             
     def _handle_speech_detection(self, audio_data: np.array) -> bool:
@@ -94,7 +95,6 @@ class AudioProcessor:
             self.last_speech_time = None
             self.recording_data.extend(audio_data)
                 
-
         if (
             self.is_speech
             and duration >= self.batch_size
@@ -102,13 +102,11 @@ class AudioProcessor:
             and duration % self.batch_size == 0
             and duration not in self.batch_list
         ):
-            # 超過batch_size，透過小batch 來提升UI的即時性
-            self.logger.info(
-                f"length: {len(self.recording_data)}, 到達 batch_size:{self.batch_list}, frame_timestamp:{frame_timestamp}"
-            )
+            
 
             if self.audio_uid == "":
                 self.audio_uid = self._generate_uid()
+                self.logger.info(f" | ▶︎ | length: {len(self.recording_data)} | audio UID: {self.audio_uid} | frame timestamp: {frame_timestamp} | audio start | ")
                 self.vad_processor.create_silero_vad_step(
                     self.audio_uid, 
                     self.recording_data, 
@@ -118,6 +116,7 @@ class AudioProcessor:
                 )
 
             else:
+                self.logger.info(f" | ▶︎ | length: {len(self.recording_data)} | audio UID: {self.audio_uid} | frame timestamp: {frame_timestamp} | audio duration | ")
                 self.vad_processor.create_silero_vad_step(
                     self.audio_uid, 
                     self.recording_data, 
@@ -130,7 +129,7 @@ class AudioProcessor:
 
         elif self.is_speech and duration >= self.max_duration:
             # 超過最大錄音時間
-            self.logger.info(f" | 超過最大錄音時間, frame_timestamp:{frame_timestamp} | ")
+            self.logger.info(f" | ⏹︎ | over the upper limit audio length | audio UID: {self.audio_uid} | frame timestamp: {frame_timestamp} | audio end | ")
             self.vad_processor.create_silero_vad_step(
                 self.audio_uid, 
                 self.recording_data, 
@@ -148,21 +147,21 @@ class AudioProcessor:
             if self.last_speech_time:
                 time_diff = (datetime.now() - self.last_speech_time).total_seconds()
                 if time_diff < self.no_speech_duration_threshold:
-                    if self.audio_uid == "":
+                    if self.audio_uid != "":
                         self.recording_data.extend(audio_data)
                     return
                 self.last_speech_time = None
             else:
                 self.last_speech_time = datetime.now()
-                if self.audio_uid == "":
+                if self.audio_uid != "":
                    self.recording_data.extend(audio_data)
                 return
 
             # 語音結束
             if self.audio_uid == "":
-                self.logger.warning(f" | audio lower limit not over 0.5s, skip this audio | frame_timestamp:{frame_timestamp} | ")
+                self.logger.warning(f" | The audio duration doesn't exceed the minimum limit (0.5 sec), skip this audio. | frame timestamp: {frame_timestamp} | audio skiped |  ")
             else:
-                self.logger.info(f" | Silent over limit time | batch_size:{self.batch_list} | frame_timestamp:{frame_timestamp} | ")
+                self.logger.info(f" | ⏹︎ | Silent over limit time | audio UID: {self.audio_uid} | frame timestamp: {frame_timestamp} | audio end | ")
                 self.vad_processor.create_silero_vad_step(
                     self.audio_uid, 
                     self.recording_data, 
@@ -189,11 +188,11 @@ class AudioProcessor:
         # 保存錄音檔案
         if self.save_file:
             self.logger.debug(
-                f"before save file, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}"
+                f" | before save file | audio UID:{audio_uid} | frame timestamp:{frame_timestamp} | "
             )
             self._save_audio_file(recording_data, audio_uid, frame_timestamp, audio_tags)
             self.logger.debug(
-                f"after save file, audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}"
+                f" | after save file | audio UID: {audio_uid} | frame timestamp:{frame_timestamp} | "
             )
 
     def _save_audio_file(self, recording_np, audio_uid: str, frame_timestamp: str, audio_tags: str):

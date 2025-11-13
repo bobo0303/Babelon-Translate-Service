@@ -7,7 +7,7 @@ import re
 from ollama import Client
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, LANGUAGE_LIST, DEFAULT_RESULT
+from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, LANGUAGE_LIST, DEFAULT_RESULT
 
 logger = logging.getLogger(__name__)
  

@@ -9,8 +9,8 @@ import yaml
 import json
 from openai import AzureOpenAI
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2
-from lib.logging_config import get_configured_logger
+from lib.config.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2
+from lib.core.logging_config import get_configured_logger
 
 # 獲取配置好的日誌器
 logger = get_configured_logger(__name__)

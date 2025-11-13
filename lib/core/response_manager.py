@@ -1,16 +1,12 @@
 
 
 import json
-import httpx
 import asyncio
 
-from typing import Any, Dict, List
-from lib.logging_config import get_configured_logger
-
-from lib.constant import AudioTranslationResponse
-from lib.base_object import BaseResponse, Status
-from lib.meeting_record import MeetingRecord, MeetingRecordSql
-from lib.azure_blob_service import get_azure_blob_service
+from lib.config.constant import AudioTranslationResponse
+from wjy3 import BaseResponse, Status
+from lib.storage.meeting_record import MeetingRecord, MeetingRecordSql
+from lib.storage.azure_blob_service import get_azure_blob_service
 
 def process_stt_response(logger, response_data: AudioTranslationResponse, other_info: dict):
     connections = other_info.get("connection")  # 這是 Dict[str, WebSocket]
@@ -67,7 +63,7 @@ def _save_trans_history_to_db(
     儲存轉錄歷史至資料庫
     """
     logger.debug(
-        f"before save to db,\naudio_uid: {response_data.audio_uid}, \ntimestamp:{response_data.times}\n"
+        f" | before save to db,\naudio_uid: {response_data.audio_uid}, \ntimestamp:{response_data.times}  | \n"
     )
 
     # 解析時間戳記
@@ -120,11 +116,11 @@ def _save_trans_history_to_db(
     )
 
     logger.debug(
-        f'after save to db,\naudio_uid: {response_data.audio_uid}, \ntimestamp:{response_data.times}\n'
+        f' | after save to db | audio UID: {response_data.audio_uid} | timestamp: {response_data.times} | '
     )
     
     logger.info(
-        f' | Save to db, audio_uid: {response_data.audio_uid}, timestamp:{response_data.times} | ')
+        f' | Save to db | audio UID: {response_data.audio_uid} | timestamp:{response_data.times} | ')
     
 def _upload_audio_to_azure_blob(logger, meeting_id: str, audio_file_name: str):
     """
@@ -134,7 +130,7 @@ def _upload_audio_to_azure_blob(logger, meeting_id: str, audio_file_name: str):
         local_file_path = f"audio/{meeting_id}/{audio_file_name}"
 
         logger.debug(
-            f"Uploading audio file to Azure Blob: {audio_file_name}, meeting_id: {meeting_id}"
+            f" | Uploading audio file to Azure Blob | audio file name: {audio_file_name} | meeting ID: {meeting_id} | "
         )
 
         # 取得 Azure Blob Service 實例
@@ -148,10 +144,10 @@ def _upload_audio_to_azure_blob(logger, meeting_id: str, audio_file_name: str):
         )
         
         if blob_url:
-            logger.debug(f" | Successfully uploaded audio file to Azure Blob: {blob_url} | ")
+            logger.debug(f" | Successfully uploaded audio file to Azure Blob | audio file name: {audio_file_name} | meeting ID: {meeting_id} | blob URL: {blob_url} | ")
         else:
             logger.warning(
-                f"Failed to upload audio file to Azure Blob: {audio_file_name}"
+                f" | Failed to upload audio file to Azure Blob | audio file name: {audio_file_name} | meeting ID: {meeting_id} | "
             )
             
         

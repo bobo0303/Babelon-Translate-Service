@@ -2,7 +2,7 @@ import re
 import logging
 import logging.handlers
 import opencc
-from lib.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL, Q1, Q3, IQR_RATIO, TOLERANCE_RATE
+from lib.config.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL, Q1, Q3, IQR_RATIO, TOLERANCE_RATE
 
 logger = logging.getLogger(__name__)  
   

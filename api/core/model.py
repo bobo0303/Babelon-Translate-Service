@@ -9,13 +9,13 @@ import numpy as np
 from transformers import pipeline, AutoProcessor
 from queue import Queue  
 
-from api.gemma_translate import Gemma4BTranslate  
-from api.ollama_translate import OllamaChat
-from api.gpt_translate import GptTranslate  
-from api.post_process import post_process
-from api.audio_utils import get_audio_duration
+from api.translation.gemma_translate import Gemma4BTranslate  
+from api.translation.ollama_translate import OllamaChat
+from api.translation.gpt_translate import GptTranslate  
+from api.core.post_process import post_process
+from api.audio.audio_utils import get_audio_duration
 
-from lib.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES, FALLBACK_METHOD
+from lib.config.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES, FALLBACK_METHOD
   
   
 logger = logging.getLogger(__name__)  
