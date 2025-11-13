@@ -10,7 +10,7 @@ import uvicorn
 import datetime  
 import threading 
 from queue import Queue  
-from threading import Event  
+from threading import Thread, Event  
 from api.model import Model  
 from api.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse
 from wjy3 import BaseResponse, Status
