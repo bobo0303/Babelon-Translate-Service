@@ -289,6 +289,7 @@ async def translate(
     filename = (
                 f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
             )
+    os.makedirs(f"audio/{meeting_id}", exist_ok=True)
     audio_buffer = f"audio/{meeting_id}/{filename}"  
     
     # Read file content once
@@ -523,6 +524,7 @@ async def sse_audio_translate(
             filename = (
                 f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
             )
+            os.makedirs(f"audio/{response_data.meeting_id}", exist_ok=True)
             audio_buffer = f"audio/{response_data.meeting_id}/{filename}"  
             
             # Read file content once and save
