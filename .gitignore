@@ -15,6 +15,7 @@ rtt_test
 tools
 old
 azure_speech
+test*.py
 
 # Audio test files
 test_*.py
