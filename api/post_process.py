@@ -393,6 +393,43 @@ def post_process(text, audio_duration=None, prompt_name=None):
                                 logger.warning(f" | Prompt leakage with repetition detected: {len(final_two_plus_segments)} segments removed: '{sequences_str}' | Total {total_removed_count} prompt terms | Remaining text: '{cleaned_text}' | ")
                                 retry_flag = True
                                 # Continue processing (don't return early)
+                    
+                    # Rule 3: Single prompt term only → if text contains only one or more prompt terms, remove entire text
+                    if not final_segments and not (two_plus_segments and has_repetition):
+                        # Check if the entire text consists of only prompt terms
+                        # Remove punctuation and extra spaces from the text
+                        text_normalized = re.sub(r'[.,!?;:\u3002\uff0c\uff01\uff1f\uff1b\uff1a\u201c\u201d\u2018\u2019\uff08\uff09\u3001\s]+', ' ', cleaned_text).strip()
+                        
+                        # Split into words and remove empty strings
+                        text_only_words = [word.strip() for word in text_normalized.split() if word.strip()]
+                        
+                        # Check if text contains only one or more words that are ALL prompt terms
+                        if text_only_words:  # Make sure there are words to check
+                            all_words_are_prompt_terms = True
+                            matched_prompt_terms = []
+                            
+                            for word in text_only_words:
+                                word_lower = word.lower()
+                                # Check if this word matches any prompt term (case insensitive)
+                                word_is_prompt_term = False
+                                for prompt_term in prompt_terms:
+                                    if word_lower == prompt_term.lower():
+                                        matched_prompt_terms.append(word)
+                                        word_is_prompt_term = True
+                                        break
+                                
+                                # If any word is NOT a prompt term, break
+                                if not word_is_prompt_term:
+                                    all_words_are_prompt_terms = False
+                                    break
+                            
+                            # If all words in the text are prompt terms, remove the entire text
+                            if all_words_are_prompt_terms and matched_prompt_terms:
+                                logger.warning(f" | Single prompt term(s) only detected: '{', '.join(matched_prompt_terms)}' → removing entire text | ")
+                                cleaned_text = ""
+                                retry_flag = True
+                                return retry_flag, cleaned_text
+
         except Exception as e:
             logger.error(f" | Step 7 (prompt leakage check) error: {e} | ")
 
