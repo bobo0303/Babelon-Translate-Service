@@ -28,7 +28,7 @@ class WebSocketSttManager:
         self.use_prev_text = payload_data.get("use_prev_text", False)
         self.prev_text = ""
         self.prev_text_timestamp = datetime.now()  # 直接存 datetime 對象
-        self.output_directory = f"audio/{payload_data.get('meeting_id', 'default_meeting_id')}/"
+        self.output_directory = f"audio/{self.meeting_id}/"
         self.logger = logger
         self.stt_lock = threading.Lock()
 
@@ -38,7 +38,7 @@ class WebSocketSttManager:
         else:
             self.logger.warning(" | Model 尚未設置到註冊表中 | ")
             
-        self.post_processing = True
+        self.use_post_processing = True
         self.language = "zh"
         
     def send_to_stt(self, audio_data: np.ndarray, audio_uid: str, frame_timestamp: str, audio_tags=""):
@@ -62,7 +62,7 @@ class WebSocketSttManager:
                             "ori_lang": self.language,
                             "prev_text": self.prev_text,
                             "use_prev_text": self.use_prev_text,
-                            "post_processing": self.post_processing,
+                            "use_post_processing": self.use_post_processing,
                             "use_translate": self.use_translate,
                         }
                 
@@ -108,7 +108,7 @@ class WebSocketSttManager:
         ori_lang: str,
         prev_text: str,
         use_prev_text: bool,
-        post_processing: bool,
+        use_post_processing: bool,
         use_translate: bool,
         ):
         """實際的 STT 處理邏輯"""
@@ -169,7 +169,7 @@ class WebSocketSttManager:
     
             # Create timing thread and inference thread  
             time_thread = threading.Thread(target=waiting_times, args=(stop_event, self.model, WAITING_TIME))  
-            inference_thread = threading.Thread(target=audio_translate, args=(self.model, audio_buffer, result_queue, o_lang, stop_event, multi_strategy_transcription, post_processing, prev_text, use_translate))  
+            inference_thread = threading.Thread(target=audio_translate, args=(self.model, audio_buffer, result_queue, o_lang, stop_event, multi_strategy_transcription, use_post_processing, prev_text, use_translate))  
     
             # Start the threads  
             time_thread.start()  
@@ -227,7 +227,7 @@ class WebSocketSttManager:
                 "use_prev_text": use_prev_text,
                 "prev_text": prev_text,
                 "prev_text_timestamp": frame_timestamp if use_prev_text else None,
-                "post_processing": post_processing,
+                "use_post_processing": use_post_processing,
                 "audio_tags": audio_tags,
                 "strategy": multi_strategy_transcription,
                 "connection": self.connection,
@@ -262,3 +262,43 @@ class WebSocketSttManager:
                 
                 is_call_stt = True
                 
+    def set_translation(self, use_translate: bool):
+        self.use_translate = use_translate
+    
+    def set_post_processing_usage(self, use_post_processing: bool):
+        self.use_post_processing = use_post_processing
+    
+    def set_prev_text_usage(self, use_prev_text: str):
+        self.use_prev_text = use_prev_text
+        
+    def set_prev_text(self, prev_text: str):
+        self.prev_text = prev_text
+        self.prev_text_timestamp = datetime.now()  
+        
+    def set_language(self, language: str):
+        self.language = language.lower()
+    
+    def set_meeting_id(self, meeting_id: str):
+        self.meeting_id = meeting_id
+        self.output_directory = f"audio/{self.meeting_id}/"
+    
+    def set_recording_id(self, recording_id: str):
+        self.recording_id = recording_id
+    
+    def set_speaker_id(self, speaker_id: str):
+        self.speaker_id = speaker_id
+    
+    def set_speaker_name(self, speaker_name: str):
+        self.speaker_name = speaker_name
+    
+    def set_device_id(self, device_id: str):
+        self.device_id = device_id
+        
+    def clear_stt_queue(self):
+        global audio_info_list
+        global audio_info_dict
+        
+        with self.stt_lock:
+            audio_info_list = []
+            audio_info_dict = {}
+    

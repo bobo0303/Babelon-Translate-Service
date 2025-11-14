@@ -42,7 +42,6 @@ async def websocket_audio_vad_and_translate(
     
     connection_id = f"conn_{uuid.uuid4().hex[:8]}"
     
-    # 解析 payload 中的 meeting_id
     try:
         import json
         payload_data = json.loads(payload)
@@ -70,7 +69,7 @@ async def websocket_audio_vad_and_translate(
                 if "text" in message:
                     # 處理文字訊息（控制指令）
                     await connection_manager.handle_message(
-                        connection_id, message["text"]
+                        connection_id, message["text"], websocket
                     )
                     # 目前不支援僅回覆默認訊息
 

@@ -17,6 +17,7 @@ old
 azure_speech
 
 # Audio test files
+test_*.py
 *audio_test*.py
 run_audio_test.sh
 README_audio_test.md

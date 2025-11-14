@@ -22,9 +22,10 @@ class AudioProcessor:
         self.max_duration = MAX_DURATION
         self.batch_list = []
         self.audio_uid = ""
-        self.output_directory = f"audio/{payload_data.get('meeting_id', 'default_meeting_id')}/"
+        self.output_directory = f"audio/{payload_data.get('meeting_id', 'default_meeting_id') }/"
 
         # 添加緩衝區設定
+        self.use_pre_buffer = True
         self.pre_buffer = []  # 存放語音開始前的音檔片段
         self.pre_buffer_size = 5  # 緩衝區大小（5個chunk）
         
@@ -74,7 +75,7 @@ class AudioProcessor:
         self.speech : 用來判斷語音的開始與結束  = True | False
         """
         # 如果還沒開始語音，先存到緩衝區
-        if not self.is_speech:
+        if not self.is_speech and self.use_pre_buffer:
             # 維護緩衝區大小
             self.pre_buffer.append(audio_data.copy())
             if len(self.pre_buffer) > self.pre_buffer_size:
@@ -86,7 +87,7 @@ class AudioProcessor:
         # 語音開始
         if is_speaking:
             # 第一次檢測到語音時，將緩衝區的音檔加到錄音資料前面
-            if not self.is_speech:
+            if not self.is_speech and self.use_pre_buffer:
                 # 將緩衝區的所有音檔合併到 recording_data 開頭
                 for buffered_chunk in self.pre_buffer:
                     self.recording_data.extend(buffered_chunk)
@@ -239,3 +240,15 @@ class AudioProcessor:
         
     def _clear_pre_buffer(self):
         self.pre_buffer.clear()
+        
+    def set_output_directory(self, meeting_id: str):
+        self.output_directory = f"audio/{meeting_id}/"
+
+    def set_pre_buffer_usage(self, use_pre_buffer: bool):
+        self.use_pre_buffer = use_pre_buffer
+
+    def set_pre_buffer_size(self, pre_buffer_size: int):
+        self.pre_buffer_size = pre_buffer_size
+
+    def set_silent_duration(self, silent_duration: float):
+        self.no_speech_duration_threshold = silent_duration
