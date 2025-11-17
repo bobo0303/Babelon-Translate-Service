@@ -340,7 +340,7 @@ async def translate(
             ko_result = response_data.text.get("ko", "")
             
             logger.debug(f" | {response_data.model_dump_json()} | ")  
-            logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
+            logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
             logger.info(f" | Transcription: {ori_pred} | ")
             if use_translate:
                 logger.info(f" | {'#' * 75} | ")
@@ -587,7 +587,7 @@ async def sse_audio_translate():
                             ko_result = response_data.text.get("ko", "")
                             
                             logger.debug(f" | {response_data.model_dump_json()} | ")  
-                            logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} |")  
+                            logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} |")  
                             logger.info(f" | Transcription: {ori_pred} | ")
                             if other_information["use_translate"]:
                                 logger.info(f" | {'#' * 75} | ")

@@ -197,7 +197,7 @@ class WebSocketSttManager:
                 ko_result = response_data.text.get("ko", "")
                 
                 self.logger.debug(response_data.model_dump_json())  
-                self.logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | frame timestamp: {frame_timestamp} | ")  
+                self.logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | frame timestamp: {frame_timestamp} | ")  
                 self.logger.info(f" | Transcription: {ori_pred} | ")
                 if use_translate:
                     self.logger.info(f" | {'#' * 75} | ")
