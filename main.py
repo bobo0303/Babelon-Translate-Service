@@ -336,6 +336,8 @@ async def translate(
             zh_result = response_data.text.get("zh", "")
             en_result = response_data.text.get("en", "")
             de_result = response_data.text.get("de", "")
+            ja_result = response_data.text.get("ja", "")
+            ko_result = response_data.text.get("ko", "")
             
             logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
@@ -345,15 +347,17 @@ async def translate(
                 logger.info(f" | ZH: {zh_result} | ")  
                 logger.info(f" | EN: {en_result} | ")  
                 logger.info(f" | DE: {de_result} | ")  
+                logger.info(f" | JA: {ja_result} | ")  
+                logger.info(f" | KO: {ko_result} | ")  
                 logger.info(f" | {'#' * 75} | ")
             logger.info(f" | RTF: {rtf} | total time: {transcription_time + translate_time:.2f} seconds. | transcribe {transcription_time:.2f} seconds. | translate {translate_time:.2f} seconds. | strategy: {multi_strategy_transcription} | ")  
             state = Status.OK
         else:  
             logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
-            ori_pred = zh_result = en_result = de_result = ""
+            ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
             state = Status.FAILED
 
-        return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | ", data=response_data)  
+        return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
     except Exception as e:  
         logger.error(f" | Translation() error: {e} | ")  
         return BaseResponse(status=Status.FAILED, message=f" | Translation() error: {e} | ", data=response_data)  
@@ -408,19 +412,23 @@ async def text_translate(
             zh_result = response_data.text.get("zh", "")
             en_result = response_data.text.get("en", "")
             de_result = response_data.text.get("de", "")
+            ja_result = response_data.text.get("ja", "")
+            ko_result = response_data.text.get("ko", "")
   
             logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | original language: {language} | translate_method: {translate_method} |")  
             logger.info(f" | ZH: {zh_result} | ")  
             logger.info(f" | EN: {en_result} | ")  
             logger.info(f" | DE: {de_result} | ")  
+            logger.info(f" | JA: {ja_result} | ")  
+            logger.info(f" | KO: {ko_result} | ")  
             logger.info(f" | translate has been completed in {translate_time:.2f} seconds. |")  
             state = Status.OK
         else:
             logger.info(f" | translation has exceeded the upper limit time and has been stopped |")
             state = Status.FAILED
 
-        return BaseResponse(status=state, message=f" | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | ", data=response_data)
+        return BaseResponse(status=state, message=f" | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)
     except Exception as e:
         logger.error(f" | translation() error: {e} | ")
         return BaseResponse(status=Status.FAILED, message=f" | translation() error: {e} | ", data=response_data)
@@ -575,6 +583,8 @@ async def sse_audio_translate():
                             zh_result = response_data.text.get("zh", "")
                             en_result = response_data.text.get("en", "")
                             de_result = response_data.text.get("de", "")
+                            ja_result = response_data.text.get("ja", "")
+                            ko_result = response_data.text.get("ko", "")
                             
                             logger.debug(f" | {response_data.model_dump_json()} | ")  
                             logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} |")  
@@ -584,15 +594,17 @@ async def sse_audio_translate():
                                 logger.info(f" | ZH: {zh_result} | ")  
                                 logger.info(f" | EN: {en_result} | ")  
                                 logger.info(f" | DE: {de_result} | ")  
+                                logger.info(f" | JA: {ja_result} | ")  
+                                logger.info(f" | KO: {ko_result} | ")  
                                 logger.info(f" | {'#' * 75} | ")
                             else:
-                                zh_result = en_result = de_result = ""
+                                zh_result = en_result = de_result = ja_result = ko_result = ""
                                 
                             logger.info(f" | RTF: {rtf} | total time: {transcription_time + translate_time:.2f} seconds. | transcribe {transcription_time:.2f} seconds. | translate {translate_time:.2f} seconds. | strategy: {other_information['multi_strategy_transcription']} | ")  
 
                             base_response = BaseResponse(  
                                 status=Status.OK,  
-                                message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result } | ",  
+                                message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result } | JA: {ja_result} | KO: {ko_result} | ",  
                                 data=response_data  
                             )  
                             yield f"data: {base_response.model_dump_json()}\n\n"

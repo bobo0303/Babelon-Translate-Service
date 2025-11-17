@@ -193,6 +193,8 @@ class WebSocketSttManager:
                 zh_result = response_data.text.get("zh", "")
                 en_result = response_data.text.get("en", "")
                 de_result = response_data.text.get("de", "")
+                ja_result = response_data.text.get("ja", "")
+                ko_result = response_data.text.get("ko", "")
                 
                 self.logger.debug(response_data.model_dump_json())  
                 self.logger.info(f" | device_id: {response_data.device_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | frame timestamp: {frame_timestamp} | ")  
@@ -202,12 +204,14 @@ class WebSocketSttManager:
                     self.logger.info(f" | ZH: {zh_result} | ")  
                     self.logger.info(f" | EN: {en_result} | ")  
                     self.logger.info(f" | DE: {de_result} | ")  
+                    self.logger.info(f" | JA: {ja_result} | ")  
+                    self.logger.info(f" | KO: {ko_result} | ")  
                     self.logger.info(f" | {'#' * 75} | ")
                 self.logger.info(f" | RTF: {rtf} | audio length: {audio_length} seconds. | total time: {transcription_time + translate_time:.2f} seconds. | transcribe {transcription_time:.2f} seconds. | translate {translate_time:.2f} seconds. | strategy: {multi_strategy_transcription} | ")  
             else:  
                 self.logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
                 rtf = 0.0
-                ori_pred = zh_result = en_result = de_result = ""
+                ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
             
             if save_prev_text:
                 frame_dt = datetime.strptime(frame_timestamp, "%Y-%m-%d %H:%M:%S.%f")

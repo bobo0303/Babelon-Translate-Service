@@ -9,7 +9,7 @@ import yaml
 import json
 from openai import AzureOpenAI
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2
+from lib.config.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2
 from lib.core.logging_config import get_configured_logger
 
 # 獲取配置好的日誌器
@@ -32,7 +32,9 @@ class GptTranslate:
         self.lang_names = {
             'zh': 'Traditional Chinese (繁體中文)',
             'en': 'English',
-            'de': 'German (Deutsch)'
+            'de': 'German (Deutsch)',
+            'ja': 'Japanese (日本語)',
+            'ko': 'Korean (한국어)'
         }
 
     def _parse_response(self, response_text):
@@ -60,7 +62,7 @@ class GptTranslate:
             # Check required language keys
             for lang in LANGUAGE_LIST:
                 if lang not in result:
-                    logger.warning(f" | Missing language key: {lang}, ignoring response | ")
+                    logger.warning(f" | GPT() | Missing language key: {lang}, ignoring response | ")
                     return None
             
             # Create standard format response
@@ -100,9 +102,9 @@ class GptTranslate:
                 source_text = source_text[:8000] + "..."
 
             if not prev_text:
-                system_prompt = SYSTEM_PROMPT_V3
+                system_prompt = SYSTEM_PROMPT_5LANGUAGES_V3
             else:
-                system_prompt = SYSTEM_PROMPT_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_V4_2
+                system_prompt = SYSTEM_PROMPT_5LANGUAGES_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_5LANGUAGES_V4_2
             user_prompt = source_text
 
             logger.debug(f" | Translating from {source_lang}: {source_text[:100]}... | ")
@@ -126,7 +128,7 @@ class GptTranslate:
             parsed_result = self._parse_response(response_text)
             
             if parsed_result is None:
-                logger.warning(" | Failed to parse response, using fallback | ")
+                logger.warning(" | GPT() | Failed to parse response, using fallback | ")
                 # When parsing fails, return result containing original text
                 result = DEFAULT_RESULT.copy()
                 result[source_lang] = source_text
