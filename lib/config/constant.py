@@ -107,6 +107,7 @@ CONTAINS_UNUSUAL = [
     "索蘭婭",
     "許維銘",
 ]
+
 ONLY_UNUSUAL = [
     "Youtube",
     "by 沛隊字幕組",
@@ -168,6 +169,9 @@ ONLY_UNUSUAL = [
     "謝謝觀看",
     "音樂",
     "我們繼續吧",
+    "讓我們繼續",
+    "Let' s continue",
+    "好了",
     "嗯",
     "恩",
     "See you next time",
