@@ -58,18 +58,18 @@ class TextTranslationResponse(BaseModel):
 #############################################################################
 
 # LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', "de", "es"]
-LANGUAGE_LIST = ['zh', 'en', 'de', 'ja', 'ko']
+LANGUAGE_LIST = ['zh', 'en']
 DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
 #############################################################################
 
 # no used just for reference
 DEFAULT_PROMPTS = {
-    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi",
+    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul",
     "JAMES": "GRC, DSBG, ADP, OLED, SRBG, RBU, In-cel one chip, monitor, Sports Gaming, High Frame Rate Full HD 320Hz, Kiosk, Frank, Vertical, ARHUD, 手扶屏, 空調屏, 後視鏡的屏, 達擎, 產能, 忠達.",
     "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo.",
-    "EAPC_1118_19": "策略領導力, 四大構面, 形塑與溝通整體策略, 智仁勇, 知者不惑, 仁者不憂, 勇者不懼, 孔子登東山而小魯, 登泰山而小天下, 加法和減法經營, 兼聽則明, 偏信則暗, 江海所以能為百谷王者, 以其善下之 ,故能為百谷王者, 將者, 嚴也, 企圖心, 狼性, 君子之德風, 小人之德草, 草上之風必偃, 顏淵,  爭與不爭, 不爭是爭, 爭是擔當, 京都賞, 稻盛哲學, 阿米巴經營成功方程式, 盛和塾, 上善若水, 水善利萬物而不爭, 處眾人之所惡, 破除我執, 謝明慧, 如洪峰, 如瀑布",
-}
+    "EAPC_1118_19": "業說會, foreX, NT dollars, Monitor, MS, BS, FindARTs, DSBG, Vertical, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Pillar, 凌華, ComQi, 四大構面, 形塑, 智仁勇, 知者不惑, 仁者不憂, 勇者不懼, 孔子登東山而小魯, 登泰山而小天下, 加法和減法經營, 兼聽則明, 偏信則暗, 江海所以能為百谷王者, 以其善下之, 故能為百谷王者, 將者, 嚴也, 狼性, 君子之德風, 小人之德草, 草上之風必偃, 爭與不爭, 不爭是爭, 爭是擔當, 顏淵, 京都賞, 稻盛哲學, 阿米巴經營成功方程式, 盛和塾, 上善若水, 水善利萬物而不爭, 處眾人之所惡, 破除我執, 謝明慧, 如洪峰, 如瀑布, paul",
+    }
 
 #############################################################################
 
@@ -615,3 +615,102 @@ def get_global_model():
     """獲取全域 model"""
     return _global_model
 
+#############################################################################
+
+
+#############################################################################
+ 
+SYSTEM_PROMPT_EAPC_V3 = """
+# ASR-Aware Translation (zh ↔ en)
+ 
+## Real-time Fragment Processing
+Input may be INCOMPLETE sentences or fragments from audio stream.
+- DO NOT complete partial sentences - translate fragments as-is
+- Only add words if input is clearly complete
+- PRIORITY: Preserve fragmented structure
+ 
+## Whisper ASR Error Correction
+This text has systematic ASR errors:
+- Brand names corrupted (`Oracle → Oraclo`)
+- Hallucinations (1-2% during silence)
+- Phonetic substitutions
+- Truncated technical terms
+ 
+**Processing Priority**: Reconstruct intended meaning, but preserve fragment structure.
+ 
+## Terminology Protection
+Preserve EXACTLY (case-sensitive): `AUO`, `Microsoft`, `Google`, `Apple`, `TikTok`, `Oracle`
+ 
+Protect all capitalized terms, proper nouns, technical abbreviations unless explicitly listed for translation.
+ 
+## Language Requirements
+- **zh**: Traditional Chinese (Taiwan) - NEVER use Simplified Chinese
+- **en**: Standard American English
+ 
+## Translation Process
+1. **Detect & Correct**: Identify source language, fix obvious ASR errors (brand names, grammar), preserve speaker intent
+2. **Protect Entities**: Cross-reference terminology, apply fuzzy matching, default to preservation
+3. **Translate**: Keep fragments as fragments, ensure natural fluency and terminology consistency
+ 
+## Output Format
+**STRICT JSON**:
+{"zh": "繁體中文翻譯", "en": "Corrected English"}
+ 
+**Quality**: Correct syntax, consistent terminology, preserve ASR-corrected meaning, incomplete input = incomplete output, native-level fluency.
+ 
+## Input Text:
+ 
+"""
+ 
+#############################################################################
+ 
+SYSTEM_PROMPT_EAPC_V4_1 = """
+# ASR-Aware Translation (zh ↔ en)
+ 
+## Real-time Fragment Processing
+Input may be INCOMPLETE sentences or fragments from audio stream.
+- DO NOT complete partial sentences - translate fragments as-is
+- Only add words if input is clearly complete
+- PRIORITY: Preserve fragmented structure
+
+## Optional Previous Context (if available)
+- Use the following text for context ONLY to improve translation accuracy (e.g., pronoun resolution, terminology consistency).
+- CRITICAL: Do NOT use this context to complete or extend the current "Input Text".
+- If no context is provided, this section will be empty.
+[PASTE PREVIOUS TRANSCRIPTION HERE]
+"""
+
+SYSTEM_PROMPT_EAPC_V4_2 = """
+
+## Whisper ASR Error Correction
+This text has systematic ASR errors:
+- Brand names corrupted (`Oracle → Oraclo`)
+- Hallucinations (1-2% during silence)
+- Phonetic substitutions
+- Truncated technical terms
+ 
+**Processing Priority**: Reconstruct intended meaning, but preserve fragment structure.
+ 
+## Terminology Protection
+Preserve EXACTLY (case-sensitive): `AUO`, `Microsoft`, `Google`, `Apple`, `TikTok`, `Oracle`
+ 
+Protect all capitalized terms, proper nouns, technical abbreviations unless explicitly listed for translation.
+ 
+## Language Requirements
+- **zh**: Traditional Chinese (Taiwan) - NEVER use Simplified Chinese
+- **en**: Standard American English
+ 
+## Translation Process
+1. **Detect & Correct**: Identify source language, fix obvious ASR errors (brand names, grammar), preserve speaker intent
+2. **Protect Entities**: Cross-reference terminology, apply fuzzy matching, default to preservation
+3. **Translate**: Keep fragments as fragments, ensure natural fluency and terminology consistency
+ 
+## Output Format
+**STRICT JSON**:
+{"zh": "繁體中文翻譯", "en": "Corrected English"}
+ 
+**Quality**: Correct syntax, consistent terminology, preserve ASR-corrected meaning, incomplete input = incomplete output, native-level fluency.
+ 
+## Input Text:
+    
+"""

@@ -7,7 +7,7 @@ import re
 from ollama import Client
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, LANGUAGE_LIST, DEFAULT_RESULT
+from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2
 
 logger = logging.getLogger(__name__)
  
@@ -129,9 +129,9 @@ class OllamaChat:
         """
         
         if not prev_text:
-            system_prompt = SYSTEM_PROMPT_5LANGUAGES_V3
+            system_prompt = SYSTEM_PROMPT_EAPC_V3
         else:
-            system_prompt = SYSTEM_PROMPT_5LANGUAGES_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_5LANGUAGES_V4_2
+            system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
 
         messages = [
             {"role": "system", "content": self.think + system_prompt},

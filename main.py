@@ -78,11 +78,11 @@ async def lifespan(app: FastAPI):
     logger.info(f" | WebSocket model has been set. Model ID: {id(model)} | ")
     
     logger.info(f" | ##################################################### | ")  
-    delete_old_audio_files()
+    # delete_old_audio_files()
     
     # Start daily task scheduling  
-    task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
-    task_thread.start()
+    # task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
+    # task_thread.start()
     
     yield  # Application starts receiving requests
     
