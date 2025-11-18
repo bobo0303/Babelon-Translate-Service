@@ -319,7 +319,11 @@ class Model:
                         prev_prompt = self.processor.get_prompt_ids(prev_text, return_tensors="pt")
                         prev_prompt = prev_prompt.to(self.device) if self.device == "cuda" else prev_prompt
                         prompt = torch.cat([self.prompt, prev_prompt], dim=-1) if self.prompt is not None else prev_prompt
-                        generate_kwargs["prompt_ids"] = prompt
+                        if prompt.size() >= 448:    
+                            logger.warning(f" | len of prompt: {prompt.size()} voer the limit 448 tokens. Use no prev_text prompt. | ")
+                            generate_kwargs["prompt_ids"] = self.prompt.to(self.device) if self.device == "cuda" else self.prompt
+                        else:
+                            generate_kwargs["prompt_ids"] = prompt
                     # strategy 0 without prev_text (handled strategy 1)
                     else:
                         if self.prompt is not None:
