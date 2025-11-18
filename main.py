@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import StreamingResponse  
+from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import os  
 import time  
 import pytz  
@@ -23,7 +24,9 @@ from lib.core.logging_config import setup_application_logger
 if not os.path.exists("./audio"):  
     os.mkdir("./audio")  
 if not os.path.exists("./logs"):  
-    os.mkdir("./logs")  
+    os.mkdir("./logs")
+if not os.path.exists("./static"):
+    os.mkdir("./static")
     
 # Configure logging using centralized configuration
 logger = setup_application_logger(
@@ -67,7 +70,7 @@ async def lifespan(app: FastAPI):
     end = time.time()  
     logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
     # set default prompt
-    model.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
+    model.set_prompt(DEFAULT_PROMPTS["EAPC_1118_19"])
     logger.info(f" | Default prompt has been set. | ")  
     
     # 設置 websocket 的 model
@@ -92,6 +95,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.include_router(websocket_router)
 
+# Mount static files for admin page
+if os.path.exists("./static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
 ##############################################################################  
 # API Endpoints
 ##############################################################################  
@@ -100,6 +107,26 @@ app.include_router(websocket_router)
 def HelloWorld(name:str=None):  
     """Health check endpoint."""
     return {"Hello": f"World {name}"}  
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page():
+    """
+    WebSocket Admin Console page.
+    
+    Provides a web-based interface for:
+    - Monitoring WebSocket connections
+    - Testing WebSocket messages
+    - Streaming audio from microphone
+    - Viewing real-time message logs
+    """
+    admin_html_path = os.path.join("static", "admin.html")
+    if os.path.exists(admin_html_path):
+        return FileResponse(admin_html_path)
+    else:
+        return HTMLResponse(
+            content="<h1>Admin page not found</h1><p>Please ensure static/admin.html exists.</p>",
+            status_code=404
+        )
 
 ##############################################################################  
 
@@ -356,6 +383,7 @@ async def translate(
             logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
             ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
             state = Status.FAILED
+        # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
     except Exception as e:  
@@ -518,7 +546,7 @@ async def sse_audio_translate(
                         os.remove(audio)  
                 break  
           
-        if not audio_uid_exist:  
+        if not audio_uid_exist:
             waiting_list.append([response_data, other_information])  
           
         if previous_waiting_list != waiting_list:  
@@ -601,6 +629,9 @@ async def sse_audio_translate():
                                 zh_result = en_result = de_result = ja_result = ko_result = ""
                                 
                             logger.info(f" | RTF: {rtf} | total time: {transcription_time + translate_time:.2f} seconds. | transcribe {transcription_time:.2f} seconds. | translate {translate_time:.2f} seconds. | strategy: {other_information['multi_strategy_transcription']} | ")  
+
+                            # Write translation results to txt files
+                            # write_txt(zh_result, en_result, de_result, ja_result, ko_result, response_data.meeting_id, response_data.audio_uid, response_data.times)
 
                             base_response = BaseResponse(  
                                 status=Status.OK,  

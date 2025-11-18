@@ -8,7 +8,7 @@ audio_uid_line_map = {}  # {audio_uid: line_number}
 audio_uid_times_map = {}  # {audio_uid: latest_times}
 current_line_number = 0
 
-def write_txt(zh_text: str, en_text: str, de_text: str, meeting_id: str, audio_uid: str, times: str = None):
+def write_txt(zh_text: str, en_text: str, de_text: str, ja_text: str, ko_text: str, meeting_id: str, audio_uid: str, times: str = None):
     """
     Write translation results to txt files
     
@@ -30,19 +30,12 @@ def write_txt(zh_text: str, en_text: str, de_text: str, meeting_id: str, audio_u
         current_line_number = 0
         
         # Clear old files or create new files
-        for lang, text in [("zh", zh_text), ("en", en_text), ("de", de_text)]:
+        for lang, text in [("zh", zh_text), ("en", en_text), ("de", de_text), ("ja", ja_text), ("ko", ko_text)]:
             filename = f"transcription_{lang}.txt"
             with open(filename, "w", encoding="utf-8") as f:
                 f.write("")  # Clear file
     
-    # If times is provided, check if this is a more recent version
-    if times is not None and audio_uid in audio_uid_times_map:
-        if times <= audio_uid_times_map[audio_uid]:
-            # Current times is older than or equal to existing, don't write
-            print(f"Skipping write for audio_uid {audio_uid}: current times {times} <= existing times {audio_uid_times_map[audio_uid]}")
-            return
-    
-    # Update times record
+    # Update times record (removed time comparison check as it was causing data loss)
     if times is not None:
         audio_uid_times_map[audio_uid] = times
     
@@ -50,16 +43,16 @@ def write_txt(zh_text: str, en_text: str, de_text: str, meeting_id: str, audio_u
     if audio_uid in audio_uid_line_map:
         # Same audio_uid, overwrite corresponding line
         line_number = audio_uid_line_map[audio_uid]
-        _update_line_in_files(line_number, zh_text, en_text, de_text)
+        _update_line_in_files(line_number, zh_text, en_text, de_text, ja_text, ko_text)
     else:
         # New audio_uid, add a new line
         current_line_number += 1
         audio_uid_line_map[audio_uid] = current_line_number
-        _append_line_to_files(zh_text, en_text, de_text)
+        _append_line_to_files(zh_text, en_text, de_text, ja_text, ko_text)
 
-def _update_line_in_files(line_number: int, zh_text: str, en_text: str, de_text: str):
+def _update_line_in_files(line_number: int, zh_text: str, en_text: str, de_text: str, ja_text: str, ko_text: str):
     """Update the content of a specific line in files"""
-    for lang, text in [("zh", zh_text), ("en", en_text), ("de", de_text)]:
+    for lang, text in [("zh", zh_text), ("en", en_text), ("de", de_text), ("ja", ja_text), ("ko", ko_text)]:
         filename = f"transcription_{lang}.txt"
         
         # Read all lines
@@ -79,9 +72,9 @@ def _update_line_in_files(line_number: int, zh_text: str, en_text: str, de_text:
         with open(filename, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
-def _append_line_to_files(zh_text: str, en_text: str, de_text: str):
+def _append_line_to_files(zh_text: str, en_text: str, de_text: str, ja_text: str, ko_text: str):
     """Append a new line to the end of files"""
-    for lang, text in [("zh", zh_text), ("en", en_text), ("de", de_text)]:
+    for lang, text in [("zh", zh_text), ("en", en_text), ("de", de_text), ("ja", ja_text), ("ko", ko_text)]:
         filename = f"transcription_{lang}.txt"
         with open(filename, "a", encoding="utf-8") as f:
             f.write(text + "\n") 

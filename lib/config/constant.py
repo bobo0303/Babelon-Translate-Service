@@ -67,7 +67,8 @@ DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 DEFAULT_PROMPTS = {
     "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi",
     "JAMES": "GRC, DSBG, ADP, OLED, SRBG, RBU, In-cel one chip, monitor, Sports Gaming, High Frame Rate Full HD 320Hz, Kiosk, Frank, Vertical, ARHUD, 手扶屏, 空調屏, 後視鏡的屏, 達擎, 產能, 忠達.",
-    "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo."
+    "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo.",
+    "EAPC_1118_19": "策略領導力, 四大構面, 形塑與溝通整體策略, 智仁勇, 知者不惑, 仁者不憂, 勇者不懼, 孔子登東山而小魯, 登泰山而小天下, 加法和減法經營, 兼聽則明, 偏信則暗, 江海所以能為百谷王者, 以其善下之 ,故能為百谷王者, 將者, 嚴也, 企圖心, 狼性, 君子之德風, 小人之德草, 草上之風必偃, 顏淵,  爭與不爭, 不爭是爭, 爭是擔當, 京都賞, 稻盛哲學, 阿米巴經營成功方程式, 盛和塾, 上善若水, 水善利萬物而不爭, 處眾人之所惡, 破除我執, 謝明慧, 如洪峰, 如瀑布",
 }
 
 #############################################################################

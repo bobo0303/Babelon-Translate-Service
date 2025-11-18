@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Admin Console</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #667eea;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background-color: #10b981;
+        }
+
+        .status-dot.disconnected {
+            background-color: #ef4444;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .panel-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background-color: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #5568d3;
+        }
+
+        .btn-success {
+            background-color: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background-color: #059669;
+        }
+
+        .btn-danger {
+            background-color: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #dc2626;
+        }
+
+        .btn-secondary {
+            background-color: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Connection Panel */
+        .connection-panel {
+            grid-column: 1 / -1;
+        }
+
+        .connection-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .form-group label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #4b5563;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .connection-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        /* Message Test Panel */
+        .message-type-selector {
+            margin-bottom: 15px;
+        }
+
+        .message-params {
+            background-color: #f9fafb;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .param-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .param-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #4b5563;
+        }
+
+        .param-input {
+            display: flex;
+            gap: 10px;
+        }
+
+        .param-input input,
+        .param-input select {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .message-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        /* Audio Panel */
+        .audio-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .audio-status {
+            background-color: #f9fafb;
+            border-radius: 6px;
+            padding: 15px;
+            font-size: 14px;
+        }
+
+        .audio-status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .audio-status-label {
+            color: #6b7280;
+        }
+
+        .audio-status-value {
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .audio-visualizer {
+            height: 100px;
+            background-color: #f9fafb;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 15px;
+        }
+
+        .audio-bars {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 3px;
+            height: 80px;
+        }
+
+        .audio-bar {
+            width: 4px;
+            background: linear-gradient(to top, #667eea, #764ba2);
+            border-radius: 2px;
+            transition: height 0.1s ease;
+        }
+
+        /* Logs Panel */
+        .logs-panel {
+            grid-column: 1 / -1;
+        }
+
+        .logs-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .log-container {
+            background-color: #1e1e1e;
+            border-radius: 6px;
+            padding: 15px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 6px 10px;
+            border-radius: 4px;
+            line-height: 1.5;
+        }
+
+        .log-entry.sent {
+            background-color: rgba(59, 130, 246, 0.1);
+            border-left: 3px solid #3b82f6;
+        }
+
+        .log-entry.received {
+            background-color: rgba(16, 185, 129, 0.1);
+            border-left: 3px solid #10b981;
+        }
+
+        .log-entry.error {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-left: 3px solid #ef4444;
+        }
+
+        .log-entry.info {
+            background-color: rgba(107, 114, 128, 0.1);
+            border-left: 3px solid #6b7280;
+        }
+
+        .log-timestamp {
+            color: #9ca3af;
+            font-size: 11px;
+            margin-right: 8px;
+        }
+
+        .log-type {
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        .log-type.sent {
+            color: #3b82f6;
+        }
+
+        .log-type.received {
+            color: #10b981;
+        }
+
+        .log-type.error {
+            color: #ef4444;
+        }
+
+        .log-type.info {
+            color: #9ca3af;
+        }
+
+        .log-content {
+            color: #d1d5db;
+            word-break: break-all;
+        }
+
+        /* Scrollbar */
+        .log-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .log-container::-webkit-scrollbar-track {
+            background: #2d2d2d;
+            border-radius: 4px;
+        }
+
+        .log-container::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        .log-container::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat-card {
+            background-color: #f9fafb;
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 WebSocket Admin Console</h1>
+            <p style="color: #6b7280; margin-top: 5px;">即時監控和測試 WebSocket 連線</p>
+            <div class="status-bar">
+                <div class="status-indicator">
+                    <div class="status-dot disconnected" id="statusDot"></div>
+                    <span id="statusText">未連線</span>
+                </div>
+                <div class="stats-grid" style="flex: 1;">
+                    <div class="stat-card">
+                        <div class="stat-value" id="sentCount">0</div>
+                        <div class="stat-label">已發送</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="receivedCount">0</div>
+                        <div class="stat-label">已接收</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="audioChunks">0</div>
+                        <div class="stat-label">音訊區塊</div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <!-- Connection Panel -->
+            <div class="panel connection-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">🔌 連線設定</h2>
+                </div>
+                <div class="connection-controls">
+                    <div class="form-group">
+                        <label>Meeting ID</label>
+                        <input type="text" id="meetingId" value="admin_test_meeting" placeholder="輸入會議 ID">
+                    </div>
+                    <div class="form-group">
+                        <label>Speaker ID</label>
+                        <input type="text" id="speakerId" value="admin_speaker" placeholder="輸入講者 ID">
+                    </div>
+                    <div class="form-group">
+                        <label>Speaker Name</label>
+                        <input type="text" id="speakerName" value="Admin User" placeholder="輸入講者名稱">
+                    </div>
+                    <div class="form-group">
+                        <label>Device ID</label>
+                        <input type="text" id="deviceId" value="admin_device_001" placeholder="輸入設備 ID">
+                    </div>
+                </div>
+                <div class="connection-buttons">
+                    <button class="btn btn-success" id="connectBtn">🔗 連線</button>
+                    <button class="btn btn-danger" id="disconnectBtn" disabled>🔌 斷線</button>
+                    <button class="btn btn-secondary" id="reconnectBtn" disabled>🔄 重新連線</button>
+                </div>
+            </div>
+
+            <!-- Message Test Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">💬 訊息測試</h2>
+                </div>
+                <div class="message-type-selector">
+                    <div class="form-group">
+                        <label>訊息類型</label>
+                        <select id="messageType">
+                            <option value="">-- 選擇訊息類型 --</option>
+                            <option value="set_translate">設定翻譯開關 (set_translate)</option>
+                            <option value="set_prev_text">設定前文 (set_prev_text)</option>
+                            <option value="set_post_processing">設定後處理 (set_post_processing)</option>
+                            <option value="set_language">設定語言 (set_language)</option>
+                            <option value="set_meeting_id">設定會議 ID (set_meeting_id)</option>
+                            <option value="set_recording_id">設定錄音 ID (set_recording_id)</option>
+                            <option value="set_speaker">設定講者資訊 (set_speaker)</option>
+                            <option value="set_device_id">設定設備 ID (set_device_id)</option>
+                            <option value="clear_stt_queue">清除 STT 佇列 (clear_stt_queue)</option>
+                            <option value="set_pre_buffer">設定預緩衝 (set_pre_buffer)</option>
+                            <option value="set_silent_duration">設定靜音時長 (set_silent_duration)</option>
+                            <option value="get_prams">取得參數 (get_prams)</option>
+                            <option value="ping">Ping 測試</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="message-params" id="messageParams">
+                    <p style="color: #6b7280; text-align: center;">請選擇訊息類型</p>
+                </div>
+                <div class="message-actions">
+                    <button class="btn btn-primary" id="sendMessageBtn" disabled>📤 發送訊息</button>
+                    <button class="btn btn-secondary" id="clearParamsBtn">🗑️ 清除</button>
+                </div>
+            </div>
+
+            <!-- Audio Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">🎤 音訊串流</h2>
+                </div>
+                <div class="audio-controls">
+                    <div class="form-group">
+                        <label>選擇麥克風</label>
+                        <select id="microphoneSelect">
+                            <option value="">-- 選擇麥克風 --</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-success" id="startAudioBtn" disabled>🎙️ 開始錄音</button>
+                    <button class="btn btn-danger" id="stopAudioBtn" disabled>⏹️ 停止錄音</button>
+                    <div class="audio-status">
+                        <div class="audio-status-item">
+                            <span class="audio-status-label">錄音狀態:</span>
+                            <span class="audio-status-value" id="audioStatus">未開始</span>
+                        </div>
+                        <div class="audio-status-item">
+                            <span class="audio-status-label">已發送區塊:</span>
+                            <span class="audio-status-value" id="audioChunksValue">0</span>
+                        </div>
+                        <div class="audio-status-item">
+                            <span class="audio-status-label">錄音時長:</span>
+                            <span class="audio-status-value" id="audioDuration">0.0s</span>
+                        </div>
+                    </div>
+                    <div class="audio-visualizer">
+                        <div class="audio-bars" id="audioBars">
+                            <!-- Audio bars will be generated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Panel -->
+        <div class="panel logs-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">📋 訊息日誌</h2>
+                <div class="logs-controls">
+                    <button class="btn btn-secondary" id="clearLogsBtn">🗑️ 清除日誌</button>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 14px;">
+                        <input type="checkbox" id="autoScrollCheckbox" checked>
+                        自動捲動
+                    </label>
+                </div>
+            </div>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry info">
+                    <span class="log-timestamp">[等待連線]</span>
+                    <span class="log-type info">系統</span>
+                    <span class="log-content">請點擊「連線」按鈕開始</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket Admin Console
+        class WebSocketAdminConsole {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.messageCount = { sent: 0, received: 0, audioChunks: 0 };
+                this.audioContext = null;
+                this.audioStream = null;
+                this.audioProcessor = null;
+                this.isRecording = false;
+                this.audioStartTime = null;
+                
+                this.initializeUI();
+                this.setupEventListeners();
+                this.loadMicrophones();
+            }
+
+            initializeUI() {
+                // Initialize audio visualizer bars
+                const audioBars = document.getElementById('audioBars');
+                for (let i = 0; i < 20; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'audio-bar';
+                    bar.style.height = '5px';
+                    audioBars.appendChild(bar);
+                }
+            }
+
+            setupEventListeners() {
+                // Connection buttons
+                document.getElementById('connectBtn').addEventListener('click', () => this.connect());
+                document.getElementById('disconnectBtn').addEventListener('click', () => this.disconnect());
+                document.getElementById('reconnectBtn').addEventListener('click', () => this.reconnect());
+
+                // Message test
+                document.getElementById('messageType').addEventListener('change', (e) => this.updateMessageParams(e.target.value));
+                document.getElementById('sendMessageBtn').addEventListener('click', () => this.sendMessage());
+                document.getElementById('clearParamsBtn').addEventListener('click', () => this.clearParams());
+
+                // Audio controls
+                document.getElementById('microphoneSelect').addEventListener('change', (e) => {
+                    document.getElementById('startAudioBtn').disabled = !e.target.value || !this.isConnected;
+                });
+                document.getElementById('startAudioBtn').addEventListener('click', () => this.startAudio());
+                document.getElementById('stopAudioBtn').addEventListener('click', () => this.stopAudio());
+
+                // Logs
+                document.getElementById('clearLogsBtn').addEventListener('click', () => this.clearLogs());
+            }
+
+            async loadMicrophones() {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                    
+                    const select = document.getElementById('microphoneSelect');
+                    select.innerHTML = '<option value="">-- 選擇麥克風 --</option>';
+                    
+                    audioInputs.forEach((device, index) => {
+                        const option = document.createElement('option');
+                        option.value = device.deviceId;
+                        option.textContent = device.label || `麥克風 ${index + 1}`;
+                        select.appendChild(option);
+                    });
+
+                    if (audioInputs.length === 0) {
+                        this.addLog('error', '未找到麥克風設備');
+                    }
+                } catch (error) {
+                    this.addLog('error', `載入麥克風失敗: ${error.message}`);
+                }
+            }
+
+            connect() {
+                if (this.isConnected) return;
+
+                const meetingId = document.getElementById('meetingId').value;
+                const speakerId = document.getElementById('speakerId').value;
+                const speakerName = document.getElementById('speakerName').value;
+                const deviceId = document.getElementById('deviceId').value;
+
+                const payload = {
+                    meeting_id: meetingId,
+                    speaker_id: speakerId,
+                    speaker_name: speakerName,
+                    recording_id: `admin_${Date.now()}`,
+                    device_id: deviceId
+                };
+
+                const encodedPayload = encodeURIComponent(JSON.stringify(payload));
+                const wsUrl = `ws://${window.location.hostname}:${window.location.port || 80}/S2TT/vad_translate_stream?payload=${encodedPayload}`;
+
+                this.addLog('info', `連線至: ${wsUrl}`);
+
+                try {
+                    this.ws = new WebSocket(wsUrl);
+
+                    this.ws.onopen = () => {
+                        this.isConnected = true;
+                        this.updateConnectionStatus(true);
+                        this.addLog('info', '✅ WebSocket 連線成功');
+                    };
+
+                    this.ws.onmessage = (event) => {
+                        this.messageCount.received++;
+                        this.updateStats();
+                        
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.addLog('received', JSON.stringify(data, null, 2));
+                        } catch (e) {
+                            this.addLog('received', event.data);
+                        }
+                    };
+
+                    this.ws.onerror = (error) => {
+                        this.addLog('error', `WebSocket 錯誤: ${error.message || '未知錯誤'}`);
+                    };
+
+                    this.ws.onclose = () => {
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                        this.addLog('info', '🔌 WebSocket 連線已關閉');
+                        
+                        // Stop audio if recording
+                        if (this.isRecording) {
+                            this.stopAudio();
+                        }
+                    };
+                } catch (error) {
+                    this.addLog('error', `連線失敗: ${error.message}`);
+                }
+            }
+
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                }
+            }
+
+            reconnect() {
+                this.disconnect();
+                setTimeout(() => this.connect(), 500);
+            }
+
+            updateConnectionStatus(connected) {
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+                const connectBtn = document.getElementById('connectBtn');
+                const disconnectBtn = document.getElementById('disconnectBtn');
+                const reconnectBtn = document.getElementById('reconnectBtn');
+                const sendMessageBtn = document.getElementById('sendMessageBtn');
+                const startAudioBtn = document.getElementById('startAudioBtn');
+
+                if (connected) {
+                    statusDot.classList.remove('disconnected');
+                    statusDot.classList.add('connected');
+                    statusText.textContent = '已連線';
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    reconnectBtn.disabled = false;
+                    sendMessageBtn.disabled = !document.getElementById('messageType').value;
+                    startAudioBtn.disabled = !document.getElementById('microphoneSelect').value;
+                } else {
+                    statusDot.classList.remove('connected');
+                    statusDot.classList.add('disconnected');
+                    statusText.textContent = '未連線';
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    reconnectBtn.disabled = true;
+                    sendMessageBtn.disabled = true;
+                    startAudioBtn.disabled = true;
+                }
+            }
+
+            updateMessageParams(messageType) {
+                const paramsDiv = document.getElementById('messageParams');
+                const sendBtn = document.getElementById('sendMessageBtn');
+                
+                if (!messageType) {
+                    paramsDiv.innerHTML = '<p style="color: #6b7280; text-align: center;">請選擇訊息類型</p>';
+                    sendBtn.disabled = true;
+                    return;
+                }
+
+                sendBtn.disabled = !this.isConnected;
+                let paramsHTML = '';
+
+                switch (messageType) {
+                    case 'set_translate':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">use_translate:</span>
+                                <div class="param-input">
+                                    <select id="param_use_translate">
+                                        <option value="true">true</option>
+                                        <option value="false">false</option>
+                                    </select>
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'set_prev_text':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">use_prev_text:</span>
+                                <div class="param-input">
+                                    <select id="param_use_prev_text">
+                                        <option value="">-- 不設定 --</option>
+                                        <option value="true">true</option>
+                                        <option value="false">false</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="param-row">
+                                <span class="param-label">prev_text:</span>
+                                <div class="param-input">
+                                    <input type="text" id="param_prev_text" placeholder="輸入前文內容">
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'set_post_processing':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">use_post_processing:</span>
+                                <div class="param-input">
+                                    <select id="param_use_post_processing">
+                                        <option value="true">true</option>
+                                        <option value="false">false</option>
+                                    </select>
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'set_language':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">language:</span>
+                                <div class="param-input">
+                                    <select id="param_language">
+                                        <option value="zh">中文 (zh)</option>
+                                        <option value="en">英文 (en)</option>
+                                        <option value="de">德文 (de)</option>
+                                        <option value="ja">日文 (ja)</option>
+                                        <option value="ko">韓文 (ko)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'set_meeting_id':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">meeting_id:</span>
+                                <div class="param-input">
+                                    <input type="text" id="param_meeting_id" placeholder="輸入會議 ID">
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'set_recording_id':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">recording_id:</span>
+                                <div class="param-input">
+                                    <input type="text" id="param_recording_id" placeholder="輸入錄音 ID">
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'set_speaker':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">speaker_id:</span>
+                                <div class="param-input">
+                                    <input type="text" id="param_speaker_id" placeholder="輸入講者 ID">
+                                </div>
+                            </div>
+                            <div class="param-row">
+                                <span class="param-label">speaker_name:</span>
+                                <div class="param-input">
+                                    <input type="text" id="param_speaker_name" placeholder="輸入講者名稱">
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'set_device_id':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">device_id:</span>
+                                <div class="param-input">
+                                    <input type="text" id="param_device_id" placeholder="輸入設備 ID">
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'clear_stt_queue':
+                        paramsHTML = '<p style="color: #6b7280; text-align: center;">此訊息不需要參數</p>';
+                        break;
+                    case 'set_pre_buffer':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">use_pre_buffer:</span>
+                                <div class="param-input">
+                                    <select id="param_use_pre_buffer">
+                                        <option value="">-- 不設定 --</option>
+                                        <option value="true">true</option>
+                                        <option value="false">false</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="param-row">
+                                <span class="param-label">pre_buffer_size:</span>
+                                <div class="param-input">
+                                    <input type="number" id="param_pre_buffer_size" placeholder="輸入緩衝大小">
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'set_silent_duration':
+                        paramsHTML = `
+                            <div class="param-row">
+                                <span class="param-label">silent_duration:</span>
+                                <div class="param-input">
+                                    <input type="number" step="0.1" id="param_silent_duration" placeholder="輸入靜音時長 (秒)">
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    case 'get_prams':
+                        paramsHTML = '<p style="color: #6b7280; text-align: center;">此訊息不需要參數</p>';
+                        break;
+                    case 'ping':
+                        paramsHTML = '<p style="color: #6b7280; text-align: center;">此訊息不需要參數</p>';
+                        break;
+                }
+
+                paramsDiv.innerHTML = paramsHTML;
+            }
+
+            sendMessage() {
+                if (!this.isConnected || !this.ws) {
+                    this.addLog('error', '請先連線 WebSocket');
+                    return;
+                }
+
+                const messageType = document.getElementById('messageType').value;
+                if (!messageType) {
+                    this.addLog('error', '請選擇訊息類型');
+                    return;
+                }
+
+                const message = { type: messageType };
+
+                // Add parameters based on message type
+                switch (messageType) {
+                    case 'set_translate':
+                        message.use_translate = document.getElementById('param_use_translate').value === 'true';
+                        break;
+                    case 'set_prev_text':
+                        const usePrevText = document.getElementById('param_use_prev_text').value;
+                        if (usePrevText) message.use_prev_text = usePrevText === 'true';
+                        const prevText = document.getElementById('param_prev_text').value;
+                        if (prevText) message.prev_text = prevText;
+                        break;
+                    case 'set_post_processing':
+                        message.use_post_processing = document.getElementById('param_use_post_processing').value === 'true';
+                        break;
+                    case 'set_language':
+                        message.language = document.getElementById('param_language').value;
+                        break;
+                    case 'set_meeting_id':
+                        message.meeting_id = document.getElementById('param_meeting_id').value;
+                        break;
+                    case 'set_recording_id':
+                        message.recording_id = document.getElementById('param_recording_id').value;
+                        break;
+                    case 'set_speaker':
+                        const speakerId = document.getElementById('param_speaker_id').value;
+                        const speakerName = document.getElementById('param_speaker_name').value;
+                        if (speakerId) message.speaker_id = speakerId;
+                        if (speakerName) message.speaker_name = speakerName;
+                        break;
+                    case 'set_device_id':
+                        message.device_id = document.getElementById('param_device_id').value;
+                        break;
+                    case 'set_pre_buffer':
+                        const usePreBuffer = document.getElementById('param_use_pre_buffer').value;
+                        if (usePreBuffer) message.use_pre_buffer = usePreBuffer === 'true';
+                        const preBufferSize = document.getElementById('param_pre_buffer_size').value;
+                        if (preBufferSize) message.pre_buffer_size = parseInt(preBufferSize);
+                        break;
+                    case 'set_silent_duration':
+                        message.silent_duration = parseFloat(document.getElementById('param_silent_duration').value);
+                        break;
+                }
+
+                try {
+                    const messageJson = JSON.stringify(message);
+                    this.ws.send(messageJson);
+                    this.messageCount.sent++;
+                    this.updateStats();
+                    this.addLog('sent', messageJson);
+                } catch (error) {
+                    this.addLog('error', `發送訊息失敗: ${error.message}`);
+                }
+            }
+
+            clearParams() {
+                document.getElementById('messageType').value = '';
+                this.updateMessageParams('');
+            }
+
+            async startAudio() {
+                if (this.isRecording) return;
+
+                const deviceId = document.getElementById('microphoneSelect').value;
+                if (!deviceId) {
+                    this.addLog('error', '請選擇麥克風');
+                    return;
+                }
+
+                if (!this.isConnected) {
+                    this.addLog('error', '請先連線 WebSocket');
+                    return;
+                }
+
+                try {
+                    // Request microphone access
+                    this.audioStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            deviceId: { exact: deviceId },
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    });
+
+                    // Create audio context
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 16000
+                    });
+
+                    const source = this.audioContext.createMediaStreamSource(this.audioStream);
+                    
+                    // Create script processor for audio chunks
+                    const bufferSize = 512; // 32ms at 16kHz
+                    this.audioProcessor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+                    this.audioProcessor.onaudioprocess = (e) => {
+                        if (!this.isRecording) return;
+
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const audioChunk = new Float32Array(inputData);
+
+                        // Send to WebSocket
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            this.ws.send(audioChunk.buffer);
+                            this.messageCount.audioChunks++;
+                            this.updateStats();
+
+                            // Update visualizer
+                            this.updateVisualizer(audioChunk);
+                        }
+                    };
+
+                    source.connect(this.audioProcessor);
+                    this.audioProcessor.connect(this.audioContext.destination);
+
+                    this.isRecording = true;
+                    this.audioStartTime = Date.now();
+                    this.updateAudioStatus('錄音中', true);
+                    this.addLog('info', '🎙️ 開始錄音');
+                    this.startAudioTimer();
+
+                } catch (error) {
+                    this.addLog('error', `啟動錄音失敗: ${error.message}`);
+                    this.stopAudio();
+                }
+            }
+
+            stopAudio() {
+                this.isRecording = false;
+
+                if (this.audioProcessor) {
+                    this.audioProcessor.disconnect();
+                    this.audioProcessor = null;
+                }
+
+                if (this.audioContext) {
+                    this.audioContext.close();
+                    this.audioContext = null;
+                }
+
+                if (this.audioStream) {
+                    this.audioStream.getTracks().forEach(track => track.stop());
+                    this.audioStream = null;
+                }
+
+                if (this.audioTimer) {
+                    clearInterval(this.audioTimer);
+                    this.audioTimer = null;
+                }
+
+                this.updateAudioStatus('已停止', false);
+                this.addLog('info', '⏹️ 停止錄音');
+                this.resetVisualizer();
+            }
+
+            startAudioTimer() {
+                this.audioTimer = setInterval(() => {
+                    if (this.isRecording && this.audioStartTime) {
+                        const duration = (Date.now() - this.audioStartTime) / 1000;
+                        document.getElementById('audioDuration').textContent = `${duration.toFixed(1)}s`;
+                    }
+                }, 100);
+            }
+
+            updateAudioStatus(status, isRecording) {
+                document.getElementById('audioStatus').textContent = status;
+                document.getElementById('startAudioBtn').disabled = isRecording || !this.isConnected;
+                document.getElementById('stopAudioBtn').disabled = !isRecording;
+                document.getElementById('audioChunksValue').textContent = this.messageCount.audioChunks;
+            }
+
+            updateVisualizer(audioData) {
+                const bars = document.querySelectorAll('.audio-bar');
+                const samples = 20;
+                const step = Math.floor(audioData.length / samples);
+
+                for (let i = 0; i < samples; i++) {
+                    const sum = Math.abs(audioData[i * step]);
+                    const height = Math.min(80, sum * 200);
+                    bars[i].style.height = `${Math.max(5, height)}px`;
+                }
+            }
+
+            resetVisualizer() {
+                const bars = document.querySelectorAll('.audio-bar');
+                bars.forEach(bar => {
+                    bar.style.height = '5px';
+                });
+            }
+
+            updateStats() {
+                document.getElementById('sentCount').textContent = this.messageCount.sent;
+                document.getElementById('receivedCount').textContent = this.messageCount.received;
+                document.getElementById('audioChunks').textContent = this.messageCount.audioChunks;
+            }
+
+            addLog(type, content) {
+                const logContainer = document.getElementById('logContainer');
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry ${type}`;
+
+                const timestamp = new Date().toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+                
+                const typeLabel = {
+                    'sent': '發送',
+                    'received': '接收',
+                    'error': '錯誤',
+                    'info': '資訊'
+                }[type] || '未知';
+
+                logEntry.innerHTML = `
+                    <span class="log-timestamp">[${timestamp}]</span>
+                    <span class="log-type ${type}">${typeLabel}</span>
+                    <span class="log-content">${this.escapeHtml(content)}</span>
+                `;
+
+                logContainer.appendChild(logEntry);
+
+                // Auto scroll if enabled
+                if (document.getElementById('autoScrollCheckbox').checked) {
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+
+                // Limit log entries to prevent memory issues
+                const maxLogs = 500;
+                while (logContainer.children.length > maxLogs) {
+                    logContainer.removeChild(logContainer.firstChild);
+                }
+            }
+
+            clearLogs() {
+                document.getElementById('logContainer').innerHTML = '';
+                this.addLog('info', '日誌已清除');
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        }
+
+        // Initialize the console
+        const console = new WebSocketAdminConsole();
+    </script>
+</body>
+</html>

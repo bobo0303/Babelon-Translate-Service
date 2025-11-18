@@ -5,6 +5,7 @@ import numpy as np
 from queue import Queue  
 from datetime import datetime
 from api.core.threading_api import audio_translate, waiting_times, stop_thread
+from api.core.utils import write_txt
 
 from lib.config.constant import SAMPLERATE, DEFAULT_RESULT, LANGUAGE_LIST, WAITING_TIME, AudioTranslationResponse, get_global_model
 from lib.core.response_manager import process_stt_response
@@ -212,6 +213,9 @@ class WebSocketSttManager:
                 self.logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
                 rtf = 0.0
                 ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
+            
+            # Write translation results to txt files
+            # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, frame_timestamp)
             
             if save_prev_text:
                 frame_dt = datetime.strptime(frame_timestamp, "%Y-%m-%d %H:%M:%S.%f")
