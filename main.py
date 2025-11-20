@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
     end = time.time()  
     logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
     # set default prompt
-    model.set_prompt(DEFAULT_PROMPTS["EAPC_1118_19"])
+    model.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
     logger.info(f" | Default prompt has been set. | ")  
     
     # 設置 websocket 的 model
