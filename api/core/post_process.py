@@ -2,7 +2,7 @@ import re
 import logging
 import logging.handlers
 import opencc
-from lib.config.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL, Q1, Q3, IQR_RATIO, TOLERANCE_RATE
+from lib.config.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL, Q1, Q3, IQR_RATIO, TOLERANCE_RATE, ALLOWED_REPETITIONS, ALLOWED_REPETITIONS
 
 logger = logging.getLogger(__name__)  
   
@@ -476,10 +476,17 @@ def post_process(text, audio_duration=None, prompt_name=None):
                         j += 1
                     
                     if repeat_count >= 3:
-                        logger.warning(f" | Repeated word hallucination: '{word}' appears {repeat_count} times consecutively, removing all | ")
-                        retry_flag = True
-                        repetition_cleaned = True
-                        i = j  # Skip all repetitions without adding to cleaned_words
+                        # Check if word is in allowed repetitions whitelist (case-insensitive)
+                        if word.lower() in ALLOWED_REPETITIONS:
+                            # Keep the word (add once, not multiple times)
+                            cleaned_words.append(word)
+                            i += 1
+                        else:
+                            # Remove all repetitions
+                            logger.warning(f" | Repeated word hallucination: '{word}' appears {repeat_count} times consecutively, removing all | ")
+                            retry_flag = True
+                            repetition_cleaned = True
+                            i = j  # Skip all repetitions without adding to cleaned_words
                     else:
                         cleaned_words.append(word)
                         i += 1
@@ -548,6 +555,37 @@ def post_process(text, audio_duration=None, prompt_name=None):
                 logger.info(f" | Cleaned repetition hallucinations: result length {len(phrase_check_words)} words | ")
         except Exception as e:
             logger.error(f" | Step 8c (phrase repetition check) error: {e} | ")
+
+        # Step 8d: Check for repeated Chinese words 
+        try:
+            # Detect patterns where the same 1-4 character Chinese word repeats multiple times consecutively
+            chinese_word_repeat_patterns = [
+                (r'([\u4e00-\u9fff])\1{4,}', 1),     # 1-char word repeated 5+ times (e.g., 好好好好好)
+                (r'([\u4e00-\u9fff]{2})\1{3,}', 2),  # 2-char word repeated 4+ times (e.g., 我們我們我們我們)
+                (r'([\u4e00-\u9fff]{3})\1{3,}', 3),  # 3-char word repeated 4+ times (e.g., 怎麼樣怎麼樣怎麼樣怎麼樣)
+                (r'([\u4e00-\u9fff]{4})\1{2,}', 4),  # 4-char word repeated 3+ times (e.g., 不知道啊不知道啊不知道啊)
+            ]
+            
+            for pattern, word_len in chinese_word_repeat_patterns:
+                if re.search(pattern, cleaned_text):
+                    matches = list(re.finditer(pattern, cleaned_text))
+                    # Process matches from end to start to avoid position shifts
+                    for match in reversed(matches):
+                        start, end = match.span()
+                        repeated_word = match.group(1)
+                        
+                        # Check if word is in allowed repetitions whitelist (case-insensitive)
+                        if repeated_word.lower() in ALLOWED_REPETITIONS:
+                            continue  # Skip this match, it's a normal repetition
+                        
+                        repeat_count = (end - start) // word_len
+                        logger.warning(f" | Repeated Chinese word hallucination: '{repeated_word}' appears {repeat_count} times consecutively, removing all | ")
+                        # Remove only this specific position match
+                        cleaned_text = cleaned_text[:start] + cleaned_text[end:]
+                        retry_flag = True
+                        repetition_cleaned = True
+        except Exception as e:
+            logger.error(f" | Step 8d (Chinese word repetition check) error: {e} | ")
 
         # 9. Common Hallucination Check (Enhanced with Normalization)
         try:

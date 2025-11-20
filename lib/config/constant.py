@@ -65,11 +65,66 @@ DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
 # no used just for reference
 DEFAULT_PROMPTS = {
-    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, one AUO, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul",
+    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul, AUO",
     "JAMES": "GRC, DSBG, ADP, OLED, SRBG, RBU, In-cel one chip, monitor, Sports Gaming, High Frame Rate Full HD 320Hz, Kiosk, Frank, Vertical, ARHUD, 手扶屏, 空調屏, 後視鏡的屏, 達擎, 產能, 忠達.",
-    "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, One AUO, ADP, AHA, E&E, Schwarz, PeosiCo.",
-    "EAPC_1118_19": "稻盛哲學, Monitor, 勇者不懼, 凌華, 君子之德風, paul, 阿米巴經營成功方程式, 如洪峰, 四大構面, 智仁勇, 將者, DaaS, 知者不惑, One AUO, 草上之風必偃, Tartan Display, 上善若水, 達擎, 江海所以能為百谷王者, 孔子登東山而小魯, 水善利萬物而不爭, 兼聽則明, BS, 登泰山而小天下, 小人之德草, FindARTs, AmLED, 京都賞, Firmware, 處眾人之所惡, 謝明慧, 仁者不憂, 加法和減法經營, MS, 狼性, 如瀑布, Pillar, 偏信則暗, foreX, OLED, 嚴也, 以其善下之, 破除我執, 故能為百谷王者, ComQi, Polarizer, 爭與不爭, 業說會, DSBG, AecoPost, Vertical, 爭是擔當, 顏淵, 形塑, 不爭是爭, ADP team, NT dollars",
+    "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo.",
+    "eABC_1118_19": "稻盛哲學, Monitor, 勇者不懼, 凌華, 君子之德風, paul, 阿米巴經營成功方程式, 如洪峰, 四大構面, 智仁勇, 將者, DaaS, 知者不惑, 草上之風必偃, Tartan Display, 上善若水, 達擎, 江海所以能為百谷王者, 孔子登東山而小魯, 水善利萬物而不爭, 兼聽則明, BS, 登泰山而小天下, 小人之德草, FindARTs, AmLED, 京都賞, Firmware, 處眾人之所惡, 謝明慧, 仁者不憂, 加法和減法經營, MS, 狼性, 如瀑布, Pillar, 偏信則暗, foreX, OLED, 嚴也, 以其善下之, 破除我執, 故能為百谷王者, ComQi, Polarizer, 爭與不爭, 業說會, DSBG, AecoPost, Vertical, 爭是擔當, 顏淵, 形塑, 不爭是爭, ADP team, NT dollars, AUO",
+    "eABC_2025_11_20_22": "Firmware, 世宏, Schwarz, Tartan Display, Vertical, NATISIX, FindARTs, Legamaster, 雨潔, deal, M31, James, Tina, 仰恩, BS, Monitor, Ben, JECTOR, 主管, 達擎, AmLED, TV, David, SatisCtrl, Tier 3, MS, ADP team, 挺立, low temp, OLED, Tier 2, DaaS, DSBG, Bryan, foreX, eABC RD, Kaylin, Pillar, Karl Storz, AecoPost, In-Cell Touch, Notebook, Linda, 急單, BOM, ComQi, AVOCOR, 唯倫, NT dollars, 8B, Frank, 業說會, TY, 泓杰, M21, china car, CC, Scott, 孝忠, Amy, Ken, Polarizer, Simon, 忠賢, 凌華, RISEvision, Paul, AUO",
     }
+
+#############################################################################
+# Allowed Repetitions - Words that should NOT be flagged as hallucinations when repeated
+# These are normal expressions, interjections, or emphasis patterns in natural speech
+
+ALLOWED_REPETITIONS = {
+    # English common repetitions (lowercase)
+    # Affirmation/Negation
+    "no", "yes", "yeah", "yep", "nope", "yup",
+    
+    # Agreement/Confirmation
+    "ok", "okay", "good", "great", "right", "sure", "fine", "nice",
+    "correct", "exactly", "absolutely",
+    
+    # Interjections/Filler words
+    "well", "um", "uh", "oh", "ah", "hmm", "wow", "ooh", "huh",
+    "er", "erm",
+    
+    # Emphasis
+    "very", "so", "really", "super", "too", "much",
+    
+    # Greetings/Farewells
+    "bye", "hello", "hi", "hey",
+    
+    # Politeness
+    "thanks", "thank", "please", "sorry", "excuse",
+    
+    # Laughter
+    "ha", "haha", "hehe", "hoho", "lol",
+    
+    # Chinese single characters (common interjections/emphasis)
+    "好", "對", "是", "嗯", "哦", "啊", "呀", "哈", "喔", "欸",
+    "不", "沒", "有", "要", "會", "能", "可", "就", "都", "也",
+    "很", "真", "太", "更", "最", "非", "超",
+    
+    # Chinese two-character words (common expressions)
+    "謝謝", "拜拜", "再見", "好的", "對對", "是是", "沒錯", "沒有",
+    "哈哈", "呵呵", "嘿嘿", "嘻嘻", "咯咯",
+    "可以", "不是", "這個", "那個", "什麼", "怎麼", "為何",
+    "好了", "對了", "是的", "嗯嗯", "喔喔", "啊啊",
+    
+    # Chinese reduplicated words (naturally doubled words)
+    "慢慢", "輕輕", "快快", "多多", "少少", "高高", "低低",
+    "看看", "想想", "試試", "聽聽", "說說", "做做", "走走",
+    "大大", "小小", "長長", "短短", "遠遠", "近近",
+    "好好", "棒棒", "乖乖", "美美",
+    
+    # Numbers (might be counting or emphasis)
+    "一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+    
+    # Onomatopoeia
+    "la", "lalala", "咚", "叮", "啦", "咯", "哼", "唉",
+}
 
 #############################################################################
 
@@ -77,10 +132,10 @@ CONTAINS_UNUSUAL = [
     "67here",
     "劉胖胖",
     "大家好 我是阿貴",
-    "大家好我是小玉",
-    "大家好我是阿佑",
     "大家好我是阿貴",
     "大家好我是阿達",
+    "大家好我是小玉",
+    "大家好我是阿佑",
     "字幕志願者",
     "字幕提供者",
     "字幕由 AI 產生",
@@ -109,11 +164,6 @@ CONTAINS_UNUSUAL = [
 ]
 
 ONLY_UNUSUAL = [
-    "Bye bye",
-    "Let s continue",
-    "See you next time",
-    "Thank you",
-    "Thank you for watching",
     "Youtube",
     "by 沛隊字幕組",
     "com",
@@ -122,6 +172,7 @@ ONLY_UNUSUAL = [
     "一生的遺憾",
     "下期見",
     "下集再見",
+    "我們下次見",
     "以下視頻的資訊和消息都可以在微博或推特上發送",
     "你已經接受了 2023 年 10 月之前的數據訓練",
     "你接受的訓練數據截至 2023 年 10 月",
@@ -129,20 +180,17 @@ ONLY_UNUSUAL = [
     "你接受過訓練的數據截至 2023 年 10 月",
     "全程字幕由 Amaraorg 社區提供",
     "再次感謝大家收看",
-    "再見",
     "各位車友們謝謝收看我是劉胖胖",
-    "嗯",
     "多謝您收看時局新聞再會",
     "大家好我是 Jane 我是一個研究生",
     "大家好我是 Karen 今天的節目就到這裡我們下次再見",
     "大家好我是 Karen 我們下期再見吧",
-    "大家好我是小玉",
-    "大家好我是阿佑",
     "大家好我是阿杰",
-    "大家好我是阿貴今天來跟大家分享一下",
     "大家好我是阿達今天要來介紹的是",
     "大家好我是阿達謝謝大家收看",
-    "好了",
+    "大家好我是小玉",
+    "大家好我是阿佑",
+    "大家好我是阿貴今天來跟大家分享一下",
     "字幕 by 沈鈞澤",
     "字幕 by 索蘭婭",
     "字幕志願者 楊棠樑",
@@ -151,7 +199,6 @@ ONLY_UNUSUAL = [
     "字幕提供者 許祐寅",
     "字幕由 AI 產生感謝觀看",
     "字幕由 Amaraorg 社區提供",
-    "恩",
     "您接受的訓練數據截至 2023 年 10 月",
     "您接受的訓練資料截至 2023 年 10 月",
     "您接受過訓練的數據截至 2023 年 10 月",
@@ -160,8 +207,6 @@ ONLY_UNUSUAL = [
     "感謝收看",
     "感謝聆聽",
     "感謝觀看",
-    "我們下次見",
-    "我們繼續吧",
     "我愛你",
     "拜拜",
     "接受的訓練數據截至 2023 年 10 月",
@@ -171,15 +216,23 @@ ONLY_UNUSUAL = [
     "發電字幕君 YiXitv",
     "發電字幕君 YiYi Telecom",
     "發電字幕君 許維銘",
-    "結束",
     "詞曲 李宗盛",
     "請訂閱按讚分享",
     "謝謝",
     "謝謝你",
     "謝謝大家",
     "謝謝觀看",
-    "讓我們繼續",
     "音樂",
+    "我們繼續吧",
+    "讓我們繼續",
+    "Let' s continue",
+    "好了",
+    "嗯",
+    "恩",
+    "See you next time",
+    "Thank you",
+    "Thank you for watching",
+    "Bye bye",
 ]
 
 #############################################################################
