@@ -4,10 +4,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH  
   
 # 設置工作目錄  
-# WORKDIR /app  
-# COPY . /app  
+WORKDIR /app  
+COPY . /app  
 
-WORKDIR /mnt
+# WORKDIR /mnt
 
 # 更新系統並安裝必要的軟體包  
 RUN apt-get update && apt-get install -y --no-install-recommends \  
@@ -15,12 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*  
 
 # 安裝 Microsoft ODBC Driver 17 for SQL Server
-RUN if ! [[ "8 9 10 11 12" == *"$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2 | cut -d '.' -f 1)"* ]]; then \
-        echo "Debian $(grep VERSION_ID /etc/os-release | cut -d '"' -f 2 | cut -d '.' -f 1) is not currently supported."; \
-        exit 1; \
-    fi
-
-RUN curl -sSL -O https://packages.microsoft.com/config/debian/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2 | cut -d '.' -f 1)/packages-microsoft-prod.deb \
+RUN curl -sSL https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -o packages-microsoft-prod.deb \
     && dpkg -i packages-microsoft-prod.deb \
     && rm packages-microsoft-prod.deb
 

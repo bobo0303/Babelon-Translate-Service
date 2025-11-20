@@ -149,8 +149,6 @@ def _upload_audio_to_azure_blob(logger, meeting_id: str, audio_file_name: str):
             logger.warning(
                 f" | Failed to upload audio file to Azure Blob | audio file name: {audio_file_name} | meeting ID: {meeting_id} | "
             )
-            
-        
 
     except Exception as e:
         logger.error(f" | Error uploading audio file to Azure Blob: {e} | ")
