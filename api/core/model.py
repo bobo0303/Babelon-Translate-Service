@@ -9,7 +9,7 @@ import numpy as np
 from transformers import pipeline, AutoProcessor
 from queue import Queue  
 
-from api.translation.gemma_translate import Gemma4BTranslate  
+# from api.translation.gemma_translate import Gemma4BTranslate  
 from api.translation.ollama_translate import OllamaChat
 from api.translation.gpt_translate import GptTranslate  
 from api.core.post_process import post_process
@@ -46,12 +46,12 @@ class Model:
     def __init__(self):  
         """Initialize the Model class with default attributes."""  
         self.models_path = ModelPath()
-        # Handle Gemma4B initialization with proper error handling
-        try:
-            self.gemma_translator = Gemma4BTranslate()
-        except Exception as e:
-            logger.warning(f" | Failed to initialize Gemma4B translator: {e} | ")
-            self.gemma_translator = None
+
+        # try:
+        #     self.gemma_translator = Gemma4BTranslate()
+        # except Exception as e:
+        #     logger.warning(f" | Failed to initialize Gemma4B translator: {e} | ")
+        #     self.gemma_translator = None
             
         try:
             self.ollama_gemma_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])  # Use correct key
@@ -65,9 +65,37 @@ class Model:
             logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
             self.ollama_qwen_translator = None
             
-        self.gpt_translator = GptTranslate()
-        self.gpt_translator = self.gpt_translator if self.gpt_translator.test_gpt_model() else None 
+        # Ollama 翻譯器（已有，追加狀態管理）
+        self.ollama_translators = {
+            'ollama-gemma': {'instance': self.ollama_gemma_translator, 'busy': False},
+            'ollama-qwen': {'instance': self.ollama_qwen_translator, 'busy': False},
+        }
             
+        # self.gpt_translator = GptTranslate()
+        # self.gpt_translator = self.gpt_translator if self.gpt_translator.test_gpt_model() else None 
+        
+        
+        # 初始化 3 個 GPT 翻譯器
+        self.gpt_translators = {
+            'gpt-4.1-mini': {'instance': None, 'busy': False},
+            'gpt-4.1': {'instance': None, 'busy': False},
+            'gpt-4o': {'instance': None, 'busy': False},
+        }
+
+        # 嘗試初始化每個 GPT 翻譯器
+        for model_name in ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o']:
+            try:
+                translator = GptTranslate(model_name)
+                if translator.test_gpt_model():
+                    self.gpt_translators[model_name]['instance'] = translator
+                else:
+                    logger.warning(f" | GPT {model_name} test failed | ")
+            except Exception as e:
+                logger.warning(f" | Failed to init GPT {model_name}: {e} | ")
+
+
+        self.translator_priority = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o', 'ollama-gemma', 'ollama-qwen']
+        self.translate_queue = Queue()
             
         self.device = "cuda" if torch.cuda.is_available() else "cpu"  
         self.prompt = None
