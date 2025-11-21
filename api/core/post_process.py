@@ -456,8 +456,8 @@ def post_process(text, audio_duration=None, prompt_name=None):
             logger.error(f" | Step 8a (character repetition check) error: {e} | ")
         
         try:
-            # Split by both spaces and Chinese punctuation
-            words = re.split(r'[\s、，,]+', cleaned_text)
+            # Split by both spaces and Chinese punctuation (including period)
+            words = re.split(r'[\s、，,。.]+', cleaned_text)
             # Filter out empty strings
             words = [word.strip() for word in words if word.strip()]
             
@@ -502,7 +502,7 @@ def post_process(text, audio_duration=None, prompt_name=None):
                 words = [word.strip() for word in words if word.strip()]
             
             # Use cleaned_words from 8b if available, otherwise use words
-            if 'cleaned_words' in locals() and cleaned_words:
+            if 'cleaned_words' in locals():
                 phrase_check_words = cleaned_words
             else:
                 phrase_check_words = words

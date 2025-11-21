@@ -69,7 +69,8 @@ DEFAULT_PROMPTS = {
     "JAMES": "GRC, DSBG, ADP, OLED, SRBG, RBU, In-cel one chip, monitor, Sports Gaming, High Frame Rate Full HD 320Hz, Kiosk, Frank, Vertical, ARHUD, 手扶屏, 空調屏, 後視鏡的屏, 達擎, 產能, 忠達.",
     "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo.",
     "eABC_1118_19": "稻盛哲學, Monitor, 勇者不懼, 凌華, 君子之德風, paul, 阿米巴經營成功方程式, 如洪峰, 四大構面, 智仁勇, 將者, DaaS, 知者不惑, 草上之風必偃, Tartan Display, 上善若水, 達擎, 江海所以能為百谷王者, 孔子登東山而小魯, 水善利萬物而不爭, 兼聽則明, BS, 登泰山而小天下, 小人之德草, FindARTs, AmLED, 京都賞, Firmware, 處眾人之所惡, 謝明慧, 仁者不憂, 加法和減法經營, MS, 狼性, 如瀑布, Pillar, 偏信則暗, foreX, OLED, 嚴也, 以其善下之, 破除我執, 故能為百谷王者, ComQi, Polarizer, 爭與不爭, 業說會, DSBG, AecoPost, Vertical, 爭是擔當, 顏淵, 形塑, 不爭是爭, ADP team, NT dollars, AUO",
-    "eABC_2025_11_20_22": "Firmware, 世宏, Schwarz, Tartan Display, Vertical, NATISIX, FindARTs, Legamaster, 雨潔, deal, M31, James, Tina, 仰恩, BS, Monitor, Ben, JECTOR, 主管, 達擎, AmLED, TV, David, SatisCtrl, Tier 3, MS, ADP team, 挺立, low temp, OLED, Tier 2, DaaS, DSBG, Bryan, foreX, eABC RD, Kaylin, Pillar, Karl Storz, AecoPost, In-Cell Touch, Notebook, Linda, 急單, BOM, ComQi, AVOCOR, 唯倫, NT dollars, 8B, Frank, 業說會, TY, 泓杰, M21, china car, CC, Scott, 孝忠, Amy, Ken, Polarizer, Simon, 忠賢, 凌華, RISEvision, Paul, AUO",
+    "eABC_2025_11_20_22": "Firmware, 達運, 世宏, Schwarz, 創利, Tartan Display, Vertical, 宇沛永續, 詠山館, PILLAR, NATISIX, Legamaster, 雨潔, M31, 晶電, James, Tina, 仰恩, BS, 電子紙, Monitor, Ben, 達智匯, JECTOR, 主管, 達擎, AmLED, TV, David, 元豐新, SatisCtrl, amsc, Tier 1, MS, ADP team, 挺立, low temp, 隆達, OLED, 麻布山林, Tier 2, pillar head, DaaS, Micro LED, DSBG, Bryan, foreX, eABC RD, Kaylin, 達基教育, Pillar, Karl Storz, AecoPost, working capital, In-Cell Touch, 富采, Notebook, Linda, Tier 1, MSBG, ComQi, AVOCOR, 唯倫, NT dollars, 8B, 友達數位, Frank, 業說會, TY, 泓杰, M21, china car, CC, Scott, 孝忠, Amy, Ken, Polarizer, Simon, 忠賢, 凌華, RISEvision, Paul, AUO",
+    "eABC_2025_11_20_22_Sccot": "Firmware, Schwarz, Tartan Display, Vertical, PILLAR, NATISIX, Legamaster, M31, James, Tina, BS, Monitor, Ben, JECTOR, AmLED, TV, David, SatisCtrl, amsc, Tier 1, MS, ADP team, low temp, OLED, FindARTs, Tier 2, pillar head, DaaS, Micro LED, DSBG, Bryan, foreX, eABC RD, Kaylin, Pillar, Karl Storz, AecoPost, working capital, In-Cell Touch, Notebook, Linda, MSBG, ComQi, AVOCOR, NT dollars, 8B, Frank, TY, M21, china car, CC, Scott, Amy, Ken, Polarizer, Simon, RISEvision, Paul, AUO",
     }
 
 #############################################################################
@@ -166,6 +167,7 @@ CONTAINS_UNUSUAL = [
 ONLY_UNUSUAL = [
     "Bye bye",
     "Let s continue",
+    "Music",
     "See you next time",
     "Thank you",
     "Thank you for watching",
@@ -220,6 +222,7 @@ ONLY_UNUSUAL = [
     "拜拜",
     "接受的訓練數據截至 2023 年 10 月",
     "整理字幕由 Amaraorg 社區提供",
+    "歡迎訂閱按讚分享留言打開小鈴鐺",
     "發電字幕君 67here",
     "發電字幕君 YK",
     "發電字幕君 YiXitv",
@@ -233,6 +236,7 @@ ONLY_UNUSUAL = [
     "謝謝觀看",
     "讓我們繼續",
     "音樂",
+    "謝謝大家的收看",
 ]
 
 #############################################################################
