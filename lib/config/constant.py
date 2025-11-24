@@ -25,7 +25,8 @@ OLLAMA_MODEL = {
 GEMMA_4B_IT = "google/gemma-3-4b-it"
 
 TRANSCRIPTION_METHODS = ['large-v2', 'large-v3', 'turbo']
-TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
+# TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
+TRANSLATE_METHODS = ['ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
 
 #############################################################################
 
@@ -58,7 +59,7 @@ class TextTranslationResponse(BaseModel):
 #############################################################################
 
 # LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', "de", "es"]
-LANGUAGE_LIST = ['zh', 'en']
+LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de']
 DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
 #############################################################################
@@ -780,3 +781,106 @@ Protect all capitalized terms, proper nouns, technical abbreviations unless expl
 ## Input Text:
     
 """
+
+#############################################################################
+
+DYNAMIC_LANGUAGE_DICTIONARY = {"zh": "繁體中文", 
+                               "en": "English",
+                               "de": "Deutsch",
+                               "ja": "日本語",
+                               "ko": "한국어"}
+
+def get_system_prompt_dynamic_language(target_languages: list, previous_context: str = "") -> str:
+    """
+    Generate system prompt based on target languages with optional previous context.
+    
+    Args:
+        target_languages: List of target language codes (e.g., ['zh', 'en'])
+        previous_context: Optional previous transcription for context (default: "")
+    
+    Returns:
+        Formatted system prompt with dynamic output format and optional context
+    
+    Examples:
+        # Without context
+        prompt = get_system_prompt_dynamic_language(['zh', 'en'])
+        
+        # With context
+        prompt = get_system_prompt_dynamic_language(['zh', 'en'], "Previous transcription text...")
+    """
+    # Generate Language Requirements section
+    lang_requirements = []
+    for lang_code in target_languages:
+        if lang_code == "zh":
+            lang_requirements.append(
+                "- **Chinese (zh)**: Traditional Chinese, Taiwan (繁體中文)\n"
+                "    CRITICAL NOTE: The zh output MUST strictly be Traditional Chinese (Taiwan),\n"
+                "    regardless of the source language (including Japanese).\n"
+                "    Under no circumstances should Simplified Chinese be generated for the zh field."
+            )
+        elif lang_code == "en":
+            lang_requirements.append("- **English (en)**: Standard American English")
+        elif lang_code == "de":
+            lang_requirements.append("- **German (de)**: Standard High German")
+        elif lang_code == "ja":
+            lang_requirements.append("- **Japanese (ja)**: Standard Japanese (標準日本語)")
+        elif lang_code == "ko":
+            lang_requirements.append("- **Korean (ko)**: Standard Korean (표준 한국어)")
+    
+    lang_requirements_str = "\n".join(lang_requirements)
+    
+    # Generate output format example
+    output_format_dict = {lang: DYNAMIC_LANGUAGE_DICTIONARY.get(lang, lang) for lang in target_languages}
+    output_format_example = ", ".join([f'"{k}": "{v} translation"' for k, v in output_format_dict.items()])
+    
+    # Context section (only include if previous_context is provided)
+    context_section = ""
+    if previous_context:
+        context_section = f"""
+## Optional Previous Context (if available)
+- Use the following text for context ONLY to improve translation accuracy (e.g., pronoun resolution, terminology consistency).
+- CRITICAL: Do NOT use this context to complete or extend the current "Input Text".
+{previous_context}
+"""
+    
+    return f"""# ASR-Aware Translation
+ 
+## Real-time Fragment Processing
+Input may be INCOMPLETE sentences or fragments from audio stream.
+- DO NOT complete partial sentences - translate fragments as-is
+- Only add words if input is clearly complete
+- PRIORITY: Preserve fragmented structure
+{context_section}
+## Whisper ASR Error Correction
+This text has systematic ASR errors:
+- Brand names corrupted (`Oracle → Oraclo`)
+- Hallucinations (1-2% during silence)
+- Phonetic substitutions
+- Truncated technical terms
+ 
+**Processing Priority**: Reconstruct intended meaning, but preserve fragment structure.
+ 
+## Terminology Protection
+Preserve EXACTLY (case-sensitive): `AUO`, `Microsoft`, `Google`, `Apple`, `TikTok`, `Oracle`
+ 
+Protect all capitalized terms, proper nouns, technical abbreviations unless explicitly listed for translation.
+ 
+## Language Requirements
+{lang_requirements_str}
+ 
+## Translation Process
+1. **Detect & Correct**: Identify source language, fix obvious ASR errors (brand names, grammar), preserve speaker intent
+2. **Protect Entities**: Cross-reference terminology, apply fuzzy matching, default to preservation
+3. **Translate**: Keep fragments as fragments, ensure natural fluency and terminology consistency
+ 
+## Output Format
+**STRICT JSON**:
+{{{output_format_example}}}
+ 
+**Quality**: Correct syntax, consistent terminology, preserve ASR-corrected meaning, incomplete input = incomplete output, native-level fluency.
+ 
+## Input Text:
+ 
+"""
+
+#############################################################################

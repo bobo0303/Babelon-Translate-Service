@@ -9,7 +9,7 @@ import yaml
 import json
 from openai import AzureOpenAI
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2
+from lib.config.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language
 from lib.core.logging_config import get_configured_logger
 
 # 獲取配置好的日誌器
@@ -83,7 +83,7 @@ class GptTranslate:
             logger.error(f" | Error parsing response: {e} | ")
             return "403_Forbidden"
         
-    def translate(self, source_text, source_lang, prev_text=""):
+    def translate(self, source_text, source_lang='zh', target_lang='en', prev_text=""):
         """
         Translation method - using new security strategy
         
@@ -101,10 +101,11 @@ class GptTranslate:
                 logger.warning(f" | Text too long ({len(source_text)} chars), truncating | ")
                 source_text = source_text[:8000] + "..."
 
-            if not prev_text:
-                system_prompt = SYSTEM_PROMPT_EAPC_V3
-            else:
-                system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
+            # if not prev_text:
+            #     system_prompt = SYSTEM_PROMPT_EAPC_V3
+            # else:
+            #     system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
+            system_prompt = get_system_prompt_dynamic_language([source_lang, target_lang], prev_text)
             user_prompt = source_text
 
             logger.debug(f" | Translating from {source_lang}: {source_text[:100]}... | ")

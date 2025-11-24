@@ -9,13 +9,13 @@ import numpy as np
 from transformers import pipeline, AutoProcessor
 from queue import Queue  
 
-from api.translation.gemma_translate import Gemma4BTranslate  
+# from api.translation.gemma_translate import Gemma4BTranslate  
 from api.translation.ollama_translate import OllamaChat
 from api.translation.gpt_translate import GptTranslate  
 from api.core.post_process import post_process
 from api.audio.audio_utils import get_audio_duration
 
-from lib.config.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES, FALLBACK_METHOD
+from lib.config.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES, FALLBACK_METHOD, get_system_prompt_dynamic_language
   
   
 logger = logging.getLogger(__name__)  
@@ -46,12 +46,12 @@ class Model:
     def __init__(self):  
         """Initialize the Model class with default attributes."""  
         self.models_path = ModelPath()
-        # Handle Gemma4B initialization with proper error handling
-        try:
-            self.gemma_translator = Gemma4BTranslate()
-        except Exception as e:
-            logger.warning(f" | Failed to initialize Gemma4B translator: {e} | ")
-            self.gemma_translator = None
+
+        # try:
+        #     self.gemma_translator = Gemma4BTranslate()
+        # except Exception as e:
+        #     logger.warning(f" | Failed to initialize Gemma4B translator: {e} | ")
+        #     self.gemma_translator = None
             
         try:
             self.ollama_gemma_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])  # Use correct key
@@ -372,7 +372,7 @@ class Model:
         result[ori] = ori_pred
         return result
 
-    def translate(self, ori_pred, ori, prev_text=""):
+    def translate(self, ori_pred, ori, tar, prev_text=""):
         """
         Translate the given text from the original language to the target language.
 
@@ -391,6 +391,10 @@ class Model:
         if ori not in LANGUAGE_LIST:
             logger.error(f" | Error: ori \"{ori}\" not in LANGUAGE_LIST \"{LANGUAGE_LIST}\" | ")
             return translated_pred, 0, translate_method
+
+        if tar not in LANGUAGE_LIST:
+            logger.error(f" | Error: tar \"{tar}\" not in LANGUAGE_LIST \"{LANGUAGE_LIST}\" | ")
+            return translated_pred, 0, translate_method
         
         if prev_text:
             prev_text = prev_text if prev_text.endswith((',', '.', '。', '!', '！', '?', '？')) else prev_text + '.'
@@ -404,7 +408,7 @@ class Model:
                         logger.error(f" | {reason} | use ollama-qwen translate to retry | ")
                         if self.ollama_qwen_translator is not None:
                             try:
-                                return self.ollama_qwen_translator.translate(source_text=ori_pred, prev_text=prev_text)
+                                return self.ollama_qwen_translator.translate(source_text=ori_pred, target_language=tar, prev_text=prev_text)
                             except Exception as e:
                                 logger.error(f" | ollama-qwen translate error: {e} | ")
                                 logger.error(f" | backup translate failed return default result | ")
@@ -417,30 +421,30 @@ class Model:
                             translate_method = "ollama-qwen"
                             translated_pred = _fallback_to_ollama_qwen("GPT translator not initialized", prev_text=prev_text)
                         else:
-                            translated_pred = self.gpt_translator.translate(ori_pred, ori, prev_text=prev_text)
+                            translated_pred = self.gpt_translator.translate(ori_pred, ori, tar, prev_text=prev_text)
                             if translated_pred == "403_Forbidden":
                                 translate_method = "ollama-qwen"
                                 translated_pred = _fallback_to_ollama_qwen("gpt rejected translate due to security violation", prev_text=prev_text)
                     except Exception as e:
                         logger.error(f" | translate failed use default result | Error: {e} | ")
                                                         
-                elif self.translate_method == "gemma4b":  
-                    try:
-                        if self.gemma_translator is not None:
-                            translated_pred = self.gemma_translator.translate(ori_pred, prev_text=prev_text)  
-                    except Exception as e:
-                        logger.error(f" | gemma4b translate error: {e} | ")
+                # elif self.translate_method == "gemma4b":  
+                #     try:
+                #         if self.gemma_translator is not None:
+                #             translated_pred = self.gemma_translator.translate(ori_pred, ori, tar, prev_text=prev_text)  
+                #     except Exception as e:
+                #         logger.error(f" | gemma4b translate error: {e} | ")
                 elif self.translate_method == "ollama-gemma":
                     try:
                         if self.ollama_gemma_translator is not None:
-                            translated_pred = self.ollama_gemma_translator.translate(source_text=ori_pred, prev_text=prev_text)
+                            translated_pred = self.ollama_gemma_translator.translate(source_text=ori_pred, target_language=tar, prev_text=prev_text)
                     except Exception as e:
                         logger.error(f" | ollama '{self.translate_method}' translate error: {e} | ")
                         
                 elif self.translate_method == "ollama-qwen":
                     try:
                         if self.ollama_qwen_translator is not None:
-                            translated_pred = self.ollama_qwen_translator.translate(source_text=ori_pred, prev_text=prev_text)
+                            translated_pred = self.ollama_qwen_translator.translate(source_text=ori_pred, target_language=tar, prev_text=prev_text)
                     except Exception as e:
                         logger.error(f" | ollama '{self.translate_method}' translate error: {e} | ")  
                 

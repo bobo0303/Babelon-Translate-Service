@@ -11,7 +11,7 @@ from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 from huggingface_hub import login
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, GEMMA_4B_IT, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2
+from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, GEMMA_4B_IT, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class Gemma4BTranslate:
             logger.error(f" | Error parsing response: {e} | ")
             return "403_Forbidden"
     
-    def translate(self, source_text, prev_text=""):
+    def translate(self, source_text, source_lang='zh', target_lang='en', prev_text=""):
         """
         Translate text from source language to supported target languages.
         
@@ -112,10 +112,11 @@ class Gemma4BTranslate:
             dict or str: Translation result
         """
         
-        if not prev_text:
-                system_prompt = SYSTEM_PROMPT_EAPC_V3
-        else:
-            system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
+        # if not prev_text:
+        #         system_prompt = SYSTEM_PROMPT_EAPC_V3
+        # else:
+        #     system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
+        system_prompt = get_system_prompt_dynamic_language([source_lang, target_lang], prev_text)
             
         try:
             messages = [
