@@ -42,6 +42,7 @@ logger = setup_application_logger(
 utc_now = datetime.datetime.now(pytz.utc)  
 tz = pytz.timezone('Asia/Taipei')  
 local_now = utc_now.astimezone(tz)  
+use_pretext = True
   
 # Initialize global objects and variables
 model = Model()  
@@ -248,6 +249,43 @@ async def set_prompt(prompts = Form(None)):
         else:
             return BaseResponse(message=f" | Prompt setting failed. Error: {error} | ", data=None)
 
+@app.post("/enable_pretext")
+async def enable_pretext():
+    """
+    Enable the use of previous text context for transcription.
+    
+    Returns:
+        BaseResponse: Status of the operation
+    """
+    global use_pretext
+    use_pretext = True
+    logger.info(f" | Previous text context has been enabled. | ")
+    return BaseResponse(message=" | Previous text context has been enabled. | ", data={"use_pretext": use_pretext})
+
+@app.post("/disable_pretext")
+async def disable_pretext():
+    """
+    Disable the use of previous text context for transcription.
+    
+    Returns:
+        BaseResponse: Status of the operation
+    """
+    global use_pretext
+    use_pretext = False
+    logger.info(f" | Previous text context has been disabled. | ")
+    return BaseResponse(message=" | Previous text context has been disabled. | ", data={"use_pretext": use_pretext})
+
+@app.get("/get_pretext_status")
+async def get_pretext_status():
+    """
+    Get the current status of previous text context usage.
+    
+    Returns:
+        BaseResponse: Current status of use_pretext
+    """
+    logger.info(f" | Current pretext status: {use_pretext} | ")
+    return BaseResponse(message=f" | Current pretext status: {'enabled' if use_pretext else 'disabled'} | ", data={"use_pretext": use_pretext})
+
 
 @app.post("/translate")
 async def translate(
@@ -290,6 +328,10 @@ async def translate(
     if multi_strategy_transcription == 1:
         prev_text = ""  # Clear previous text if only one strategy is used
     
+    # 20251121 use_pretext global control
+    if not use_pretext:
+        logger.info(f" | Previous text context usage is disabled. Overriding prev_text to empty. | ")
+        prev_text = ""
     
     # Convert times to string format  
     times = str(times)  
