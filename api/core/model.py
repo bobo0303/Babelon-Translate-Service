@@ -270,17 +270,27 @@ class Model:
         :param ori: str  
             The original language of the audio.
         :rtype: tuple  
-            A tuple containing the original transcription and inference time.  
+            A tuple containing the original transcription, inference time, and timing details dict.  
         :logs: Inference status and time.  
         """  
         start = time.time()  # Start timing the transcription process  
+        timing_details = {}  # Store detailed timing information
 
         try:
             # Store original file path for duration calculation
             original_audio_file_path = audio_file_path
             
+            # Get audio duration before padding
+            audio_duration = get_audio_duration(original_audio_file_path)
+            timing_details['audio_duration'] = audio_duration
+            
+            paddind_start = time.time()
             if SILENCE_PADDING:
                 audio_file_path = self._add_silence_padding(audio_file_path)
+            paddind_end = time.time()
+            silence_padding_time = paddind_end - paddind_start
+            timing_details['silence_padding_time'] = silence_padding_time
+            logger.debug(f" | Silence padding time: {silence_padding_time:.4f} seconds. | ")
                 
             # Process previous text context
             if prev_text.strip() != "" and len(prev_text.replace('.', '').replace('。', '').replace(',', '').replace('，', '').strip()) >= 1:
@@ -342,9 +352,13 @@ class Model:
                 ori_pred = transcription_result["text"]
                 logger.debug(f" | Raw Transcription: {ori_pred} | ")
                 
+                post_processing_start = time.time()
                 if post_processing:
-                    audio_duration = get_audio_duration(original_audio_file_path)
                     retry_flag, ori_pred = post_process(ori_pred, audio_duration, self.prompt_name)
+                post_processing_end = time.time()
+                post_processing_time = post_processing_end - post_processing_start
+                timing_details['post_processing_time'] = post_processing_time
+                logger.debug(f" | Post-processing time: {post_processing_time:.4f} seconds. | ")
                 
                 if retry_flag:
                     end = time.time() 
@@ -362,9 +376,10 @@ class Model:
         except Exception as e:
             ori_pred = ""
             inference_time = 0
+            timing_details = {'audio_duration': None, 'silence_padding_time': None, 'post_processing_time': None}
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori_pred, inference_time  
+        return ori_pred, inference_time, timing_details  
     
     def _create_default_result(self, ori_pred, ori):
         """Helper function to create default translation result"""

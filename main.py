@@ -19,6 +19,7 @@ from lib.config.constant import AudioTranslationResponse, TextTranslationRespons
 from api.utils import write_txt
 from api import websocket_router
 from lib.core.logging_config import setup_application_logger
+from lib.core.performance_logger import get_performance_logger
 
 # Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  
@@ -359,11 +360,18 @@ async def translate(
     os.makedirs(f"audio/{meeting_id}", exist_ok=True)
     audio_buffer = f"audio/{meeting_id}/{filename}"  
     
+    read_start = time.time()
     # Read file content once
     file_content = file.file.read()
+    read_end = time.time()
+    logger.debug(f" | Audio file read time: {read_end - read_start:.4f} seconds. | ")
     
+    save_start = time.time()
     with open(audio_buffer, 'wb') as f:  
         f.write(file_content)
+    save_end = time.time()
+    logger.debug(f" | Audio file save time: {save_end - save_start:.4f} seconds. | ")    
+
   
     # Check if the audio file exists  
     if not os.path.exists(audio_buffer):  
@@ -378,6 +386,16 @@ async def translate(
         logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
         return BaseResponse(status=Status.FAILED, message=f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
+    inference_start = time.time()
+    
+    # Initialize performance metrics dictionary
+    perf_metrics = {
+        'meeting_id': meeting_id,
+        'audio_uid': audio_uid,
+        'file_read_time': read_end - read_start,
+        'file_save_time': save_end - save_start,
+    }
+    
     try:  
         # Create a queue to hold the return value  
         result_queue = Queue()  
@@ -399,10 +417,14 @@ async def translate(
         # Remove the audio buffer file  
         # if os.path.exists(audio_buffer):
         #     os.remove(audio_buffer)  
-  
+        inference_end = time.time()
+        perf_metrics['total_inference_time'] = inference_end - inference_start
+        logger.debug(f" | Inference total time: {inference_end - inference_start:.4f} seconds. | ")
+
+        get_results_start = time.time()
         # Get the result from the queue  
         if not result_queue.empty():  
-            ori_pred, result, rtf, transcription_time, translate_time, translate_method = result_queue.get()  
+            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_details = result_queue.get()  
             response_data.transcription_text = ori_pred
             response_data.text = result  
             response_data.transcribe_time = transcription_time  
@@ -412,6 +434,16 @@ async def translate(
             de_result = response_data.text.get("de", "")
             ja_result = response_data.text.get("ja", "")
             ko_result = response_data.text.get("ko", "")
+            
+            # Update performance metrics with timing details from transcribe() and translate()
+            perf_metrics.update({
+                'audio_duration': timing_details.get('audio_duration'),
+                'silence_padding_time': timing_details.get('silence_padding_time'),
+                'post_processing_time': timing_details.get('post_processing_time'),
+                'transcription_time': transcription_time,
+                'translation_time': translate_time,
+                'rtf': rtf
+            })
             
             logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
@@ -431,6 +463,22 @@ async def translate(
             ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
             state = Status.FAILED
         # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)
+
+        get_results_end = time.time()
+        perf_metrics['get_results_time'] = get_results_end - get_results_start
+        logger.debug(f" | Get results time: {get_results_end - get_results_start:.4f} seconds. | ")
+        
+        # Calculate total request time
+        request_end = time.time()
+        perf_metrics['total_request_time'] = request_end - inference_start
+        
+        # Log performance metrics to CSV
+        try:
+            perf_logger = get_performance_logger()
+            perf_logger.log_metrics(perf_metrics)
+            logger.debug(f" | Performance metrics logged to CSV | ")
+        except Exception as e:
+            logger.error(f" | Failed to log performance metrics: {e} | ")
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
     except Exception as e:  

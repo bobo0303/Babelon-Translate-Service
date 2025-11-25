@@ -21,7 +21,8 @@ def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi
     :param stop_event: threading.Event  
         The event used to signal stopping.
     """  
-    ori_pred, inference_time = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
+    # Unpack timing_details from transcribe()
+    ori_pred, inference_time, timing_details = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
     if use_translate:
         translated_pred, translate_time, translate_method = model.translate(ori_pred, ori, prev_text)  
     else:
@@ -32,7 +33,8 @@ def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi
     # Calculate RTF using audio_utils
     rtf = calculate_rtf(audio_file_path, inference_time, translate_time)
 
-    result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method))  
+    # Pass timing_details in result_queue
+    result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_details))  
     stop_event.set()  # Signal to stop the waiting thread  
     
 def texts_translate(model, text, result_queue, ori, stop_event):  
@@ -68,7 +70,8 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
     """  
     model.processing = True
     
-    ori_pred, inference_time = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
+    # Unpack timing_details from transcribe()
+    ori_pred, inference_time, timing_details = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
     if other_information["use_translate"]:
         translated_pred, translate_time, translate_method = model.translate(ori_pred, ori)  
     else:
@@ -79,7 +82,8 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
     # Calculate RTF using audio_utils
     rtf = calculate_rtf(audio_file_path, inference_time, translate_time) 
     
-    model.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method))
+    # Pass timing_details through result_queue
+    model.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_details))
     model.processing = False
     stop_event.set()  # Signal to stop the waiting thread
 
