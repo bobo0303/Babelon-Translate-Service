@@ -4,10 +4,11 @@ import ctypes
 
 from api.audio.audio_utils import calculate_rtf
 from lib.config.constant import DEFAULT_RESULT  
+
   
 logger = logging.getLogger(__name__)  
   
-def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi_strategy_transcription=1, transcription_post_processing=True, prev_text="", use_translate=True):  
+def audio_translate(model, audio_file_path, result_queue, ori, tar, stop_event, multi_strategy_transcription=1, transcription_post_processing=True, prev_text="", use_translate=True, multi_translate=True):  
     """  
     Transcribe and translate an audio file, then store the results in a queue.  
   
@@ -17,13 +18,16 @@ def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi
     :param result_queue: Queue  
         The queue to store the results.  
     :param ori: str  
-        The original language of the audio.  
+        The original language of the audio.
+    :param tar: str or list
+        Target language(s) for translation
     :param stop_event: threading.Event  
         The event used to signal stopping.
     """  
     ori_pred, inference_time = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
     if use_translate:
-        translated_pred, translate_time, translate_method = model.translate(ori_pred, ori, prev_text)  
+        # tar is already a list from main.py
+        translated_pred, translate_time, translate_method, timing_dict = model.translate(ori_pred, ori, tar, prev_text, multi_translate)  
     else:
         translated_pred = DEFAULT_RESULT.copy()
         translate_time = 0
@@ -32,10 +36,10 @@ def audio_translate(model, audio_file_path, result_queue, ori, stop_event, multi
     # Calculate RTF using audio_utils
     rtf = calculate_rtf(audio_file_path, inference_time, translate_time)
 
-    result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method))  
+    result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict))  
     stop_event.set()  # Signal to stop the waiting thread  
     
-def texts_translate(model, text, result_queue, ori, stop_event):  
+def texts_translate(model, text, result_queue, ori, tar, stop_event):  
     """  
     Translate a given text using the specified model.  
   
@@ -45,11 +49,14 @@ def texts_translate(model, text, result_queue, ori, stop_event):
     :param result_queue: Queue  
         The queue to store the results.  
     :param ori: str  
-        The original language of the text.  
+        The original language of the text.
+    :param tar: str or list
+        Target language(s) for translation
     :param stop_event: threading.Event  
         The event used to signal stopping.  
     """  
-    translated_pred, translate_time, translate_method = model.translate(text, ori)  
+    # tar is already a list from main.py
+    translated_pred, translate_time, translate_method = model.translate(text, ori, tar, prev_text="")  
 
     result_queue.put((translated_pred, translate_time, translate_method))  
     stop_event.set()  # Signal to stop the waiting thread  
@@ -62,7 +69,9 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
     :param audio_file_path: str  
         The path to the audio file to be processed.  
     :param ori: str  
-        The original language of the audio.  
+        The original language of the audio.
+    :param other_information: dict
+        Contains target_langs and other settings
     :param stop_event: threading.Event  
         The event used to signal stopping.  
     """  
@@ -70,7 +79,9 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
     
     ori_pred, inference_time = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
     if other_information["use_translate"]:
-        translated_pred, translate_time, translate_method = model.translate(ori_pred, ori)  
+        # Get target_langs from other_information or default to all languages
+        target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != ori])
+        translated_pred, translate_time, translate_method = model.translate(ori_pred, ori, target_langs, other_information["prev_text"])  
     else:
         translated_pred = DEFAULT_RESULT.copy()
         translate_time = 0

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from typing import List
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -90,7 +91,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     service_stop_event.set()  
     # task_thread.join()  
-    model.close()
+    model.translate_manager.close()
     logger.info(" | Scheduled task has been stopped. | ")
 
 app = FastAPI(lifespan=lifespan)
@@ -192,41 +193,6 @@ async def change_transcription_model(model_name: str = Form(...)):
     else:  
         return BaseResponse(status=Status.FAILED, message=f" | Model {model_name} loading failed: {message} | ", data=None)  
     
-@app.post("/change_translation_method")  
-async def change_translation_method(method_name: str = Form(...)):  
-    """  
-    Change the translation method.  
-      
-    This endpoint allows the user to change the translation method used  
-    by the model.  
-      
-    :param request: LoadMethodRequest  
-        The request object containing the new translation method's name.  
-    :rtype: BaseResponse  
-        A response indicating the success or failure of changing the translation method.  
-    """  
-    # Convert the method name to lowercase  
-    method_name = method_name.lower()  
-      
-    # Check if the method name is in the list of supported translation methods  
-    if method_name not in TRANSLATE_METHODS:  
-        logger.info(f" | Translate method '{method_name}' is not supported. Supported methods: {TRANSLATE_METHODS}. | ")  
-        return BaseResponse(status=Status.FAILED, message=f" | Translate method '{method_name}' is not supported. Supported methods: {TRANSLATE_METHODS}. | ", data=None)
-    
-    # Change the translation method  
-    model.change_translate_method(method_name)  
-    active_method = getattr(model, "translate_method", None)
-
-    if active_method == method_name:
-        logger.info(f" | Translate method '{method_name}' has been changed successfully. | ")  
-        return BaseResponse(message=f" | Translate method '{method_name}' has been changed successfully. | ", data=active_method)
-    elif active_method is None:
-        logger.info(f" | Translate method change failed. and all fallback methods are failed. Can't translate now. | ")
-        return BaseResponse(status=Status.FAILED, message=f" | Translate method change failed. and all fallback methods are failed. Can't translate now. | ", data=active_method)
-    else:
-        logger.info(f" | Translate method change failed. Fallback to '{active_method}'. | ")
-        return BaseResponse(message=f" | Translate method change failed. Fallback to '{active_method}'. | ", data=active_method)
-        
 @app.post("/set_prompt")
 async def set_prompt(prompts = Form(None)):
     """
@@ -295,10 +261,12 @@ async def translate(
     audio_uid: str = Form(123),  
     times: datetime.datetime = Form(...),  
     o_lang: str = Form("zh"),  
+    t_lang: List[str] = Form(...),
     prev_text: str = Form(""),
     multi_strategy_transcription: int = Form(1), # 1~MAX_NUM_STRATEGIES others 1
     transcription_post_processing: bool = Form(True), # True/False
-    use_translate: bool = Form(True) # True/False
+    use_translate: bool = Form(True), # True/False
+    multi_translate: bool = Form(True)
 ):  
     """  
     Transcribe and translate an audio file.  
@@ -333,10 +301,17 @@ async def translate(
         logger.info(f" | Previous text context usage is disabled. Overriding prev_text to empty. | ")
         prev_text = ""
     
+    # Handle case where t_lang might be a single comma-separated string
+    if isinstance(t_lang, list) and len(t_lang) == 1 and ',' in t_lang[0]:
+        # Split comma-separated string into list
+        t_lang = [lang.strip() for lang in t_lang[0].split(',')]
+        logger.info(f" | Converted t_lang from '{t_lang[0]}' to list: {t_lang} | ")
+    
     # Convert times to string format  
     times = str(times)  
     # Convert original language and target language to lowercase  
     o_lang = o_lang.lower()  
+    t_lang = [lang.lower() for lang in t_lang]  # Convert list of target languages to lowercase
     multi_strategy_transcription = multi_strategy_transcription if 0 < multi_strategy_transcription <= MAX_NUM_STRATEGIES else 1
     
     # Create response data structure  
@@ -378,6 +353,12 @@ async def translate(
         logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
         return BaseResponse(status=Status.FAILED, message=f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
+    # Check if all target languages are in the supported language list
+    for lang in t_lang:
+        if lang not in LANGUAGE_LIST:  
+            logger.info(f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
+            return BaseResponse(status=Status.FAILED, message=f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
+  
     try:  
         # Create a queue to hold the return value  
         result_queue = Queue()  
@@ -386,7 +367,7 @@ async def translate(
   
         # Create timing thread and inference thread  
         time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, use_translate))  
+        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, t_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, use_translate, multi_translate))  
   
         # Start the threads  
         time_thread.start()  
@@ -402,7 +383,7 @@ async def translate(
   
         # Get the result from the queue  
         if not result_queue.empty():  
-            ori_pred, result, rtf, transcription_time, translate_time, translate_method = result_queue.get()  
+            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict = result_queue.get()  
             response_data.transcription_text = ori_pred
             response_data.text = result  
             response_data.transcribe_time = transcription_time  
@@ -412,7 +393,7 @@ async def translate(
             de_result = response_data.text.get("de", "")
             ja_result = response_data.text.get("ja", "")
             ko_result = response_data.text.get("ko", "")
-            
+            # print(timing_dict)
             logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
             logger.info(f" | Transcription: {ori_pred} | ")
@@ -437,163 +418,12 @@ async def translate(
         logger.error(f" | Translation() error: {e} | ")  
         return BaseResponse(status=Status.FAILED, message=f" | Translation() error: {e} | ", data=response_data)  
     
-
- @app.post("/translate_v2")
-async def translate_v2(
-    file: UploadFile = File(...),  
-    meeting_id: str = Form(123),  
-    device_id: str = Form(123),  
-    audio_uid: str = Form(123),  
-    times: datetime.datetime = Form(...),  
-    o_lang: str = Form("zh"),  
-    prev_text: str = Form(""),
-    multi_strategy_transcription: int = Form(1), # 1~MAX_NUM_STRATEGIES others 1
-    transcription_post_processing: bool = Form(True), # True/False
-    use_translate: bool = Form(True) # True/False
-):  
-    
-    """  
-    Transcribe and translate an audio file.  
-      
-    This endpoint receives an audio file and its associated metadata, and  
-    performs transcription and translation on the audio file.  
-      
-    :param file: UploadFile  
-        The audio file to be transcribed.  
-    :param meeting_id: str  
-        The ID of the meeting.  
-    :param device_id: str  
-        The ID of the device.  
-    :param audio_uid: str  
-        The unique ID of the audio.  
-    :param times: datetime.datetime  
-        The start time of the audio.  
-    :param o_lang: str  
-        The original language of the audio.  
-    :param prev_text: str
-        The previous text for context (will be overridden by global previous translation)
-    :rtype: BaseResponse  
-        A response containing the transcription results.  
-    """  
-    
-    # 20251118 we found if we use prev_text in 0.5 sec audio it will cause worse results
-    if multi_strategy_transcription == 1:
-        prev_text = ""  # Clear previous text if only one strategy is used
-    
-    # 20251121 use_pretext global control
-    if not use_pretext:
-        logger.info(f" | Previous text context usage is disabled. Overriding prev_text to empty. | ")
-        prev_text = ""
-    
-    # Convert times to string format  
-    times = str(times)  
-    # Convert original language and target language to lowercase  
-    o_lang = o_lang.lower()  
-    multi_strategy_transcription = multi_strategy_transcription if 0 < multi_strategy_transcription <= MAX_NUM_STRATEGIES else 1
-    
-    # Create response data structure  
-    response_data = AudioTranslationResponse(  
-        meeting_id=meeting_id,  
-        device_id=device_id,  
-        ori_lang=o_lang,  
-        transcription_text="",
-        text=DEFAULT_RESULT.copy(),  
-        times=str(times),  
-        audio_uid=audio_uid,  
-        transcribe_time=0.0,  
-        translate_time=0.0,  
-    )  
-  
-    # Save the uploaded audio file  
-    filename = (
-                f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
-            )
-    os.makedirs(f"audio/{meeting_id}", exist_ok=True)
-    audio_buffer = f"audio/{meeting_id}/{filename}"  
-    
-    # Read file content once
-    file_content = file.file.read()
-    
-    with open(audio_buffer, 'wb') as f:  
-        f.write(file_content)
-  
-    # Check if the audio file exists  
-    if not os.path.exists(audio_buffer):  
-        return BaseResponse(status=Status.FAILED, message=" | The audio file does not exist, please check the audio path. | ", data=response_data)  
-  
-    # Check if the model has been loaded  
-    if model.model_version is None:  
-        return BaseResponse(status=Status.FAILED, message=" | model haven't been load successfully. may out of memory please check again | ", data=response_data)  
-  
-    # Check if the languages are in the supported language list  
-    if o_lang not in LANGUAGE_LIST:  
-        logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
-        return BaseResponse(status=Status.FAILED, message=f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
-  
-    try:  
-        # Create a queue to hold the return value  
-        result_queue = Queue()  
-        # Create an event to signal stopping  
-        stop_event = threading.Event()  
-  
-        # Create timing thread and inference thread  
-        time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, use_translate))  
-  
-        # Start the threads  
-        time_thread.start()  
-        inference_thread.start()  
-  
-        # Wait for timing thread to complete and check if the inference thread is active to close  
-        time_thread.join()  
-        stop_thread(inference_thread)  
-  
-        # Remove the audio buffer file  
-        # if os.path.exists(audio_buffer):
-        #     os.remove(audio_buffer)  
-  
-        # Get the result from the queue  
-        if not result_queue.empty():  
-            ori_pred, result, rtf, transcription_time, translate_time, translate_method = result_queue.get()  
-            response_data.transcription_text = ori_pred
-            response_data.text = result  
-            response_data.transcribe_time = transcription_time  
-            response_data.translate_time = translate_time  
-            zh_result = response_data.text.get("zh", "")
-            en_result = response_data.text.get("en", "")
-            de_result = response_data.text.get("de", "")
-            ja_result = response_data.text.get("ja", "")
-            ko_result = response_data.text.get("ko", "")
-            
-            logger.debug(f" | {response_data.model_dump_json()} | ")  
-            logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
-            logger.info(f" | Transcription: {ori_pred} | ")
-            if use_translate:
-                logger.info(f" | {'#' * 75} | ")
-                logger.info(f" | ZH: {zh_result} | ")  
-                logger.info(f" | EN: {en_result} | ")  
-                logger.info(f" | DE: {de_result} | ")  
-                logger.info(f" | JA: {ja_result} | ")  
-                logger.info(f" | KO: {ko_result} | ")  
-                logger.info(f" | {'#' * 75} | ")
-            logger.info(f" | RTF: {rtf} | total time: {transcription_time + translate_time:.2f} seconds. | transcribe {transcription_time:.2f} seconds. | translate {translate_time:.2f} seconds. | strategy: {multi_strategy_transcription} | ")  
-            state = Status.OK
-        else:  
-            logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
-            ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
-            state = Status.FAILED
-        # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)
-
-        return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
-    except Exception as e:  
-        logger.error(f" | Translation() error: {e} | ")  
-        return BaseResponse(status=Status.FAILED, message=f" | Translation() error: {e} | ", data=response_data)  
-
 
 @app.post("/text_translate")  
 async def text_translate(  
     text: str = Form(...),
-    language: str = Form(...)
+    source_language: str = Form(...),
+    target_language: list[str] = Form(...),
 ):  
     """  
     Translate a text.  
@@ -605,7 +435,25 @@ async def text_translate(
     :rtype: BaseResponse  
         A response containing the translation results.  
     """  
-    language = language.lower()  
+    # Handle case where target_language might be a single comma-separated string
+    if isinstance(target_language, list) and len(target_language) == 1 and ',' in target_language[0]:
+        # Split comma-separated string into list
+        target_language = [lang.strip() for lang in target_language[0].split(',')]
+        logger.debug(f" | Converted target_language to list: {target_language} | ")
+    
+    source_language = source_language.lower()  
+    target_language = [lang.lower() for lang in target_language]  # Convert list of target languages to lowercase
+  
+    # Check if the languages are in the supported language list  
+    if source_language not in LANGUAGE_LIST:  
+        logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
+        return BaseResponse(status=Status.FAILED, message=f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
+  
+    # Check if all target languages are in the supported language list
+    for lang in target_language:
+        if lang not in LANGUAGE_LIST:  
+            logger.info(f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
+            return BaseResponse(status=Status.FAILED, message=f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
     # Create response data structure  
     response_data = TextTranslationResponse(  
@@ -622,7 +470,7 @@ async def text_translate(
   
         # Create timing thread and inference thread  
         time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=texts_translate, args=(model, text, result_queue, language, stop_event))  
+        inference_thread = threading.Thread(target=texts_translate, args=(model, text, result_queue, source_language, target_language, stop_event))  
   
         # Start the threads  
         time_thread.start()  
@@ -644,7 +492,7 @@ async def text_translate(
             ko_result = response_data.text.get("ko", "")
   
             logger.debug(f" | {response_data.model_dump_json()} | ")  
-            logger.info(f" | original language: {language} | translate_method: {translate_method} |")  
+            logger.info(f" | source language: {source_language} -> target language: {target_language} | translate_method: {translate_method} |")  
             logger.info(f" | ZH: {zh_result} | ")  
             logger.info(f" | EN: {en_result} | ")  
             logger.info(f" | DE: {de_result} | ")  

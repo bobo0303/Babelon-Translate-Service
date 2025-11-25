@@ -9,11 +9,9 @@ import numpy as np
 from transformers import pipeline, AutoProcessor
 from queue import Queue  
 
-# from api.translation.gemma_translate import Gemma4BTranslate  
-from api.translation.ollama_translate import OllamaChat
-from api.translation.gpt_translate import GptTranslate  
 from api.core.post_process import post_process
 from api.audio.audio_utils import get_audio_duration
+from api.core.translate_manager import TranslateManager
 
 from lib.config.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES, FALLBACK_METHOD, get_system_prompt_dynamic_language
   
@@ -46,38 +44,22 @@ class Model:
     def __init__(self):  
         """Initialize the Model class with default attributes."""  
         self.models_path = ModelPath()
-
-        # try:
-        #     self.gemma_translator = Gemma4BTranslate()
-        # except Exception as e:
-        #     logger.warning(f" | Failed to initialize Gemma4B translator: {e} | ")
-        #     self.gemma_translator = None
-            
-        try:
-            self.ollama_gemma_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])  # Use correct key
-        except Exception as e:
-            logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
-            self.ollama_gemma_translator = None
-        
-        try:
-            self.ollama_qwen_translator = OllamaChat(OLLAMA_MODEL['ollama-qwen'])  # Use correct key
-        except Exception as e:
-            logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
-            self.ollama_qwen_translator = None
-            
-        self.gpt_translator = GptTranslate()
-        self.gpt_translator = self.gpt_translator if self.gpt_translator.test_gpt_model() else None 
-            
-            
         self.device = "cuda" if torch.cuda.is_available() else "cpu"  
         self.prompt = None
         self.prompt_name = None  # Store original prompt name for post-processing
         self.processor = None
         self.pipe = None  
         self.model_version = None  
-        self.translate_method = "gpt-4.1-mini" 
         self.result_queue = Queue()  
         self.processing = False
+        
+        # Initialize TranslateManager for parallel translation
+        try:
+            self.translate_manager = TranslateManager()
+            logger.info(" | TranslateManager initialized successfully | ")
+        except Exception as e:
+            logger.error(f" | Failed to initialize TranslateManager: {e} | ")
+            self.translate_manager = None
   
     def load_model(self, models_name):  
         """Load the specified model based on the model's name."""  
@@ -114,71 +96,6 @@ class Model:
             torch.cuda.empty_cache()  
             logger.info(" | Previous model resources have been released. | ")  
   
-    def change_translate_method(self, method_name):  
-        """
-        Change the translation method used by the model.
-
-        Fallback logic:
-            - GPT -> ollama-gemma -> None
-            - Ollama -> ollama-gemma -> None
-            - Gemma4B -> ollama-gemma -> None
-
-        :param method_name: str, the desired translation method
-        """
-        self.translate_method = method_name
-
-        def init_translator(translator_cls, *args, test_method=None):
-            """Helper to initialize a translator and test availability"""
-            try:
-                translator = translator_cls(*args)
-                if test_method and not test_method(translator):
-                    raise RuntimeError("Translator test failed")
-                return translator
-            except Exception as e:
-                logger.warning(f" | Failed to initialize {translator_cls.__name__}: {e} | ")
-                return None
-
-        # --- GPT 系列 ---
-        if method_name.startswith("gpt"):
-            self.gpt_translator = init_translator(GptTranslate, method_name, test_method=lambda t: t.test_gpt_model())
-            if self.gpt_translator:
-                logger.info(" | GPT translator initialized successfully. | ")
-                return
-            logger.info(f" | Falling back to '{FALLBACK_METHOD}' | ")
-            self.translate_method = FALLBACK_METHOD
-
-        # --- Ollama 系列 ---
-        if method_name.startswith("ollama") or self.translate_method.startswith("ollama"):
-            try:
-                if self.translate_method == "ollama-gemma" and self.ollama_gemma_translator is None:
-                    self.ollama_gemma_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])
-                elif self.translate_method == "ollama-qwen" and self.ollama_qwen_translator is None:
-                    self.ollama_qwen_translator = OllamaChat(OLLAMA_MODEL['ollama-qwen'])
-                logger.info(f" | Ollama translator '{self.translate_method}' is ready. | ")
-                return
-            except Exception as e:
-                logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
-                self.translate_method = FALLBACK_METHOD
-
-        # --- Gemma4B ---
-        if method_name == "gemma4b" or self.translate_method == "gemma4b":
-            self.gemma_translator = init_translator(Gemma4BTranslate)
-            if self.gemma_translator:
-                logger.info(" | Gemma4B translator is ready. | ")
-                return
-            logger.info(f" | Falling back to '{FALLBACK_METHOD}' | ")
-            self.translate_method = FALLBACK_METHOD
-
-        # --- 最後 fallback 到 ollama-gemma 或 None ---
-        if self.translate_method == FALLBACK_METHOD:
-            try:
-                if self.ollama_gemma_translator is None:
-                    self.ollama_gemma_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])
-                logger.info(" | Fallback Ollama-Gemma translator is ready. | ")
-            except Exception as e:
-                logger.error(f" | Fallback Ollama-Gemma translator failed: {e} | ")
-                self.translate_method = None
-                logger.info(" | No translator available, set translate_method to None | ")
         
     def set_prompt(self, prompt_name):  
         """  
@@ -366,115 +283,53 @@ class Model:
 
         return ori_pred, inference_time  
     
-    def _create_default_result(self, ori_pred, ori):
-        """Helper function to create default translation result"""
-        result = DEFAULT_RESULT.copy()
-        result[ori] = ori_pred
-        return result
-
-    def translate(self, ori_pred, ori, tar, prev_text=""):
+    def translate(self, text, source_lang, target_langs, prev_text="", multi_translate=True):
         """
-        Translate the given text from the original language to the target language.
-
-        :param ori_pred: str  
-            The original text to be translated.  
-        :param ori: str  
-            The original language of the text.  
-        :return: tuple  
-            A tuple containing the translated text, the translation time, and the translation method used.  
-        """  
-        start = time.time()  
-        ori_pred = ori_pred if ori_pred != "." else ""  # Ensure the original prediction is not just a period  
-        translated_pred = self._create_default_result(ori_pred, ori) 
-        translate_method = self.translate_method
+        Translate text to multiple target languages using TranslateManager.
         
-        if ori not in LANGUAGE_LIST:
-            logger.error(f" | Error: ori \"{ori}\" not in LANGUAGE_LIST \"{LANGUAGE_LIST}\" | ")
-            return translated_pred, 0, translate_method
-
-        if tar not in LANGUAGE_LIST:
-            logger.error(f" | Error: tar \"{tar}\" not in LANGUAGE_LIST \"{LANGUAGE_LIST}\" | ")
-            return translated_pred, 0, translate_method
+        Args:
+            text: Text to translate
+            source_lang: Source language code (e.g., 'zh', 'en')
+            target_langs: Target language code(s), can be:
+                - str: single language (e.g., 'en')
+                - list: multiple languages (e.g., ['en', 'de', 'ja', 'ko'])
+            prev_text: Previous text context (optional)
+            
+        Returns:
+            tuple: (result_dict, translate_time, translate_method)
+                - result_dict: {lang: translated_text} including source language
+                - translate_time: Time taken for translation
+                - translate_method: List of translators used
+        """
+        if self.translate_manager is None:
+            logger.error(" | TranslateManager not available, returning empty results | ")
+            return DEFAULT_RESULT.copy(), 0.0, "FAILED"
         
-        if prev_text:
-            prev_text = prev_text if prev_text.endswith((',', '.', '。', '!', '！', '?', '？')) else prev_text + '.'
-
-        try:  
-            if ori_pred != "":  # Proceed with translation only if text is not empty  
-                # Translation method handling
-                if self.translate_method.startswith("gpt"):
-                    def _fallback_to_ollama_qwen(reason, prev_text=""):
-                        """Helper function to handle fallback to ollama-qwen translator"""
-                        logger.error(f" | {reason} | use ollama-qwen translate to retry | ")
-                        if self.ollama_qwen_translator is not None:
-                            try:
-                                return self.ollama_qwen_translator.translate(source_text=ori_pred, target_language=tar, prev_text=prev_text)
-                            except Exception as e:
-                                logger.error(f" | ollama-qwen translate error: {e} | ")
-                                logger.error(f" | backup translate failed return default result | ")
-                        else:
-                            logger.error(f" | ollama-qwen translator not available | ")
-                        return None
-                    
-                    try:
-                        if self.gpt_translator is None:
-                            translate_method = "ollama-qwen"
-                            translated_pred = _fallback_to_ollama_qwen("GPT translator not initialized", prev_text=prev_text)
-                        else:
-                            translated_pred = self.gpt_translator.translate(ori_pred, ori, tar, prev_text=prev_text)
-                            if translated_pred == "403_Forbidden":
-                                translate_method = "ollama-qwen"
-                                translated_pred = _fallback_to_ollama_qwen("gpt rejected translate due to security violation", prev_text=prev_text)
-                    except Exception as e:
-                        logger.error(f" | translate failed use default result | Error: {e} | ")
-                                                        
-                # elif self.translate_method == "gemma4b":  
-                #     try:
-                #         if self.gemma_translator is not None:
-                #             translated_pred = self.gemma_translator.translate(ori_pred, ori, tar, prev_text=prev_text)  
-                #     except Exception as e:
-                #         logger.error(f" | gemma4b translate error: {e} | ")
-                elif self.translate_method == "ollama-gemma":
-                    try:
-                        if self.ollama_gemma_translator is not None:
-                            translated_pred = self.ollama_gemma_translator.translate(source_text=ori_pred, target_language=tar, prev_text=prev_text)
-                    except Exception as e:
-                        logger.error(f" | ollama '{self.translate_method}' translate error: {e} | ")
-                        
-                elif self.translate_method == "ollama-qwen":
-                    try:
-                        if self.ollama_qwen_translator is not None:
-                            translated_pred = self.ollama_qwen_translator.translate(source_text=ori_pred, target_language=tar, prev_text=prev_text)
-                    except Exception as e:
-                        logger.error(f" | ollama '{self.translate_method}' translate error: {e} | ")  
-                
-                if translated_pred is None:
-                    logger.error(f" | translate failed. return default result | ")
-                    translate_method = "FAILED"
-                    translated_pred = self._create_default_result(ori_pred, ori)
-
+        # Convert target_langs to list if it's a single string
+        if isinstance(target_langs, str):
+            target_langs = [target_langs]
+        
+        try:
+            # Use TranslateManager's assign_task for parallel translation
+            result_dict, translate_time, methods_used, timing_dict = self.translate_manager.assign_task(
+                text=text,
+                source_lang=source_lang,
+                target_langs=target_langs,
+                prev_text=prev_text,
+                return_timing=True,
+                multi_translate=multi_translate
+            )
+            
+            # Convert methods_used list to string for compatibility
+            translate_method = ", ".join(methods_used) if methods_used else "UNKNOWN"
+            
+            return result_dict, translate_time, translate_method, timing_dict
+            
         except Exception as e:
-            logger.error(f" | translate() '{self.translate_method}' error: {e} | ")
+            logger.error(f" | translate() error: {e} | ")
+            # Return default result with source text
+            default_result = DEFAULT_RESULT.copy()
+            default_result[source_lang] = text
+            return default_result, 0.0, "FAILED"
     
-        end = time.time()  
-        translate_time = end - start  # Calculate the time taken for translation
-
-        return translated_pred, translate_time, translate_method
-
-    def close(self):
-        """
-        Close any resources held by the translators.
-        """
-        if self.ollama_gemma_translator is not None:
-            try:    
-                self.ollama_gemma_translator.close()
-                logger.info(f" | Closed Ollama Gemma translator successfully. | ")
-            except Exception as e:
-                logger.warning(f" | Failed to close Ollama Gemma translator: {e} | ")
-        if self.ollama_qwen_translator is not None:
-            try:
-                self.ollama_qwen_translator.close()
-                logger.info(f" | Closed Ollama Qwen translator successfully. | ")
-            except Exception as e:
-                logger.warning(f" | Failed to close Ollama Qwen translator: {e} | ")
-                
+    

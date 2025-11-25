@@ -55,8 +55,13 @@ class Gemma4BTranslate:
             logger.error(f" | Failed to authenticate with HuggingFace: {e} | ")
             raise RuntimeError(f"HuggingFace authentication failed: {e}") from e
     
-    def _parse_response(self, response_text):
-        """Parse and validate response"""
+    def _parse_response(self, response_text, expected_languages):
+        """Parse and validate response
+        
+        Args:
+            response_text: The response text from Gemma
+            expected_languages: List of expected language codes in the response
+        """
         try:
             # Clean response text
             cleaned_response = response_text.strip()
@@ -77,17 +82,15 @@ class Gemma4BTranslate:
                 logger.warning(" | Response is not a dictionary, ignoring | ")
                 return None
             
-            # Check required language keys
-            for lang in LANGUAGE_LIST:
+            # Check required language keys (only check expected languages)
+            for lang in expected_languages:
                 if lang not in result:
-                    logger.warning(f" | Missing language key: {lang}, ignoring response | ")
+                    logger.warning(f" | Gemma() | Missing language key: {lang}, ignoring response | ")
                     return None
             
-            # Create standard format response
-            formatted_result = DEFAULT_RESULT.copy()
-            
-            # Set translation results for all languages (let GPT decide source language)
-            for lang in LANGUAGE_LIST:
+            # Create response with only expected languages
+            formatted_result = {}
+            for lang in expected_languages:
                 translated_text = result.get(lang, "").strip()
                 formatted_result[lang] = translated_text
             
@@ -106,17 +109,27 @@ class Gemma4BTranslate:
         Translate text from source language to supported target languages.
         
         Args:
-            source_text (str): Text to translate
+            source_text: Text to translate
+            source_lang: Source language code
+            target_lang: Target language code or list of codes (supports both str and list)
+            prev_text: Previous context text
             
         Returns:
             dict or str: Translation result
         """
         
-        # if not prev_text:
-        #         system_prompt = SYSTEM_PROMPT_EAPC_V3
-        # else:
-        #     system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
-        system_prompt = get_system_prompt_dynamic_language([source_lang, target_lang], prev_text)
+        # Handle both single string and list for target_lang
+        if isinstance(target_lang, list):
+            # Multi-language mode
+            target_languages = target_lang
+        else:
+            # Single language mode
+            target_languages = [target_lang]
+        
+        all_languages = [source_lang] + target_languages
+        
+        # Generate dynamic prompt for all target languages
+        system_prompt = get_system_prompt_dynamic_language(all_languages, prev_text)
             
         try:
             messages = [
@@ -144,12 +157,22 @@ class Gemma4BTranslate:
             decoded = self.processor.decode(generation, skip_special_tokens=True)
             logger.debug(f" | GEMMA 4B Translation result: {decoded} | ")
             
-            # Clean and parse the JSON response
-            cleaned_result = self._parse_response(decoded)
+            # Clean and parse the JSON response with expected languages
+            cleaned_result = self._parse_response(decoded, all_languages)
+            if cleaned_result is None:
+                # When parsing fails, return fallback result
+                logger.warning(" | Gemma() | Failed to parse response, using fallback | ")
+                result = {source_lang: source_text}
+                for lang in target_languages:
+                    result[lang] = ""
+                return result
             return cleaned_result
             
         except Exception as e:
             logger.error(f" | Translation failed: {str(e)} | ")
-            return None
+            result = {source_lang: source_text}
+            for lang in target_languages:
+                result[lang] = ""
+            return result
         
         

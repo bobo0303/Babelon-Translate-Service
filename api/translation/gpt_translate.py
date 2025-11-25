@@ -37,8 +37,13 @@ class GptTranslate:
             'ko': 'Korean (한국어)'
         }
 
-    def _parse_response(self, response_text):
-        """Parse and validate response"""
+    def _parse_response(self, response_text, expected_languages):
+        """Parse and validate response
+        
+        Args:
+            response_text: The response text from GPT
+            expected_languages: List of expected language codes in the response
+        """
         try:
             # Clean response text
             cleaned_response = response_text.strip()
@@ -59,17 +64,15 @@ class GptTranslate:
                 logger.warning(" | Response is not a dictionary, ignoring | ")
                 return None
             
-            # Check required language keys
-            for lang in LANGUAGE_LIST:
+            # Check required language keys (only check expected languages)
+            for lang in expected_languages:
                 if lang not in result:
                     logger.warning(f" | GPT() | Missing language key: {lang}, ignoring response | ")
                     return None
             
-            # Create standard format response
-            formatted_result = DEFAULT_RESULT.copy()
-            
-            # Set translation results for all languages (let GPT decide source language)
-            for lang in LANGUAGE_LIST:
+            # Create response with only expected languages
+            formatted_result = {}
+            for lang in expected_languages:
                 translated_text = result.get(lang, "").strip()
                 formatted_result[lang] = translated_text
             
@@ -88,7 +91,9 @@ class GptTranslate:
         Translation method - using new security strategy
         
         :param source_text: Text to be translated
-        :param source_lang: Source language ('zh', 'en', 'de') - only used for logging
+        :param source_lang: Source language code
+        :param target_lang: Target language code or list of codes (supports both str and list)
+        :param prev_text: Previous context text
         :return: Translation result dictionary (DEFAULT_RESULT format) or "403_Forbidden"
         """
         try:
@@ -96,19 +101,26 @@ class GptTranslate:
                 result = DEFAULT_RESULT.copy()
                 return result
             
+            # Handle both single string and list for target_lang
+            if isinstance(target_lang, list):
+                # Multi-language mode
+                target_languages = target_lang
+            else:
+                # Single language mode
+                target_languages = [target_lang]
+            
+            all_languages = [source_lang] + target_languages
+            
             # Check text length and handle appropriately
             if len(source_text) > 8000:  # Approximately 2000 tokens
                 logger.warning(f" | Text too long ({len(source_text)} chars), truncating | ")
                 source_text = source_text[:8000] + "..."
 
-            # if not prev_text:
-            #     system_prompt = SYSTEM_PROMPT_EAPC_V3
-            # else:
-            #     system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
-            system_prompt = get_system_prompt_dynamic_language([source_lang, target_lang], prev_text)
+            # Generate dynamic prompt for all target languages
+            system_prompt = get_system_prompt_dynamic_language(all_languages, prev_text)
             user_prompt = source_text
 
-            logger.debug(f" | Translating from {source_lang}: {source_text[:100]}... | ")
+            logger.debug(f" | Translating from {source_lang} to {target_languages}: {source_text[:100]}... | ")
             
             # Call GPT
             response = self.client.chat.completions.create(
@@ -125,14 +137,15 @@ class GptTranslate:
             
             logger.debug(f" | Raw GPT response: {response_text} | ")
             
-            # Parse response
-            parsed_result = self._parse_response(response_text)
+            # Parse response with expected languages
+            parsed_result = self._parse_response(response_text, all_languages)
             
             if parsed_result is None:
                 logger.warning(" | GPT() | Failed to parse response, using fallback | ")
-                # When parsing fails, return result containing original text
-                result = DEFAULT_RESULT.copy()
-                result[source_lang] = source_text
+                # When parsing fails, return result containing original text and empty translations
+                result = {source_lang: source_text}
+                for lang in target_languages:
+                    result[lang] = ""
                 return result
 
             logger.debug(" | Translation successful | ")
@@ -150,8 +163,8 @@ class GptTranslate:
                 max_tokens=10,   
                 temperature=0     
             )
-            logger.debug(" | Model response: | ", response.choices[0].message.content)
+            logger.debug(f" | Model response: {response.choices[0].message.content} | ")
             return True
         except Exception as e:
-            logger.error(" | Model test failed: | ", e)
+            logger.error(f" | Model test failed: {e} | ")
             return False
