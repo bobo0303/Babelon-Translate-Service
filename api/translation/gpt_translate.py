@@ -101,6 +101,11 @@ class GptTranslate:
                 logger.warning(f" | Text too long ({len(source_text)} chars), truncating | ")
                 source_text = source_text[:8000] + "..."
 
+            # if not prev_text:
+            #     system_prompt = SYSTEM_PROMPT_5LANGUAGES_V3
+            # else:
+            #     system_prompt = SYSTEM_PROMPT_5LANGUAGES_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_5LANGUAGES_V4_2
+                
             if not prev_text:
                 system_prompt = SYSTEM_PROMPT_EAPC_V3
             else:

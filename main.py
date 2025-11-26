@@ -324,7 +324,8 @@ async def translate(
     :rtype: BaseResponse  
         A response containing the transcription results.  
     """  
-    
+
+
     # 20251118 we found if we use prev_text in 0.5 sec audio it will cause worse results
     if multi_strategy_transcription == 1:
         prev_text = ""  # Clear previous text if only one strategy is used

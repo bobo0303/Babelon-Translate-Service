@@ -15,6 +15,7 @@ old
 azure_speech
 test*.py
 *.wav
+time_count
 
 # Audio test files
 test_*.py

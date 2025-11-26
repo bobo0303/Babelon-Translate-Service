@@ -75,7 +75,7 @@ class Model:
         self.processor = None
         self.pipe = None  
         self.model_version = None  
-        self.translate_method = "gpt-4.1-mini" 
+        self.translate_method = "gpt-4o" 
         self.result_queue = Queue()  
         self.processing = False
   

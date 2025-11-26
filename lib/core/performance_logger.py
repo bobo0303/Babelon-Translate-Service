@@ -24,40 +24,17 @@ class PerformanceLogger:
         """
         self.log_file = log_file
         self.lock = threading.Lock()
-        self.headers = [
-            'timestamp',
-            'meeting_id',
-            'audio_uid',
-            'audio_duration',
-            'file_read_time',
-            'file_save_time',
-            'silence_padding_time',
-            'transcription_time',
-            'post_processing_time',
-            'translation_time',
-            'get_results_time',
-            'total_inference_time',
-            'total_request_time',
-            'rtf',
-            'translate_manager_dispatch_time',
-            'translate_manager_max_llm_time',
-            'translate_manager_overhead'
-        ]
+        self.headers = None  # Will be set on first write based on actual metrics
+        self.headers_written = False
         
         # Create logs directory if it doesn't exist
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
-        
-        # Initialize CSV file with headers if it doesn't exist
-        if not os.path.exists(log_file):
-            with open(log_file, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=self.headers)
-                writer.writeheader()
-            logger.info(f" | Performance log initialized: {log_file} | ")
     
     def log_metrics(self, metrics: Dict[str, Any]) -> None:
         """
         Log performance metrics to CSV file (thread-safe).
-        Only includes columns that have non-None values in the metrics.
+        Only includes columns that have non-None values.
+        Headers are determined by the first write and remain fixed.
         
         Args:
             metrics: Dictionary containing performance metrics
@@ -67,21 +44,23 @@ class PerformanceLogger:
             if 'timestamp' not in metrics:
                 metrics['timestamp'] = datetime.now().isoformat()
             
-            # Determine which headers to use based on non-None values
-            active_headers = [header for header in self.headers if metrics.get(header) is not None]
-            
-            # Build row with only active headers
-            row = {header: metrics[header] for header in active_headers}
-            
             # Write to CSV with thread safety
             with self.lock:
-                # Check if file exists and is empty to write headers
+                # Determine headers on first write based on non-None values
+                if self.headers is None:
+                    self.headers = [key for key, value in metrics.items() if value is not None]
+                    logger.info(f" | Performance log headers initialized: {self.headers} | ")
+                
+                # Build row with current headers (fill missing with empty string)
+                row = {header: metrics.get(header, '') for header in self.headers}
+                
+                # Check if we need to write headers
                 file_exists = os.path.exists(self.log_file)
-                file_is_empty = not file_exists or os.path.getsize(self.log_file) == 0
+                write_header = not file_exists or os.path.getsize(self.log_file) == 0
                 
                 with open(self.log_file, 'a', newline='', encoding='utf-8') as f:
-                    writer = csv.DictWriter(f, fieldnames=active_headers, extrasaction='ignore')
-                    if file_is_empty:
+                    writer = csv.DictWriter(f, fieldnames=self.headers, extrasaction='ignore')
+                    if write_header:
                         writer.writeheader()
                     writer.writerow(row)
             
