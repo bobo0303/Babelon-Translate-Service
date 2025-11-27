@@ -7,8 +7,8 @@ from lib.config.constant import DEFAULT_RESULT
 
   
 logger = logging.getLogger(__name__)  
-  
-def audio_translate(model, audio_file_path, result_queue, ori, tar, stop_event, multi_strategy_transcription=1, transcription_post_processing=True, prev_text="", use_translate=True, multi_translate=True):  
+
+def audio_translate(model, audio_file_path, result_queue, ori, tar, stop_event, strategy, post_processing, prev_text, multi_translate):  
     """  
     Transcribe and translate an audio file, then store the results in a queue.  
   
@@ -18,28 +18,36 @@ def audio_translate(model, audio_file_path, result_queue, ori, tar, stop_event, 
     :param result_queue: Queue  
         The queue to store the results.  
     :param ori: str  
-        The original language of the audio.
-    :param tar: str or list
-        Target language(s) for translation
+        The original language of the audio.  
+    :param tar: str or list  
+        Target language(s) for translation  
     :param stop_event: threading.Event  
-        The event used to signal stopping.
+        The event used to signal stopping.  
     """  
-    ori_pred, inference_time = model.transcribe(audio_file_path, ori, multi_strategy_transcription, transcription_post_processing, prev_text)
-    if use_translate:
-        # tar is already a list from main.py
-        translated_pred, translate_time, translate_method, timing_dict = model.translate(ori_pred, ori, tar, prev_text, multi_translate)  
-    else:
-        translated_pred = DEFAULT_RESULT.copy()
-        translate_time = 0
-        translate_method = "none"
-    
-    # Calculate RTF using audio_utils
-    rtf = calculate_rtf(audio_file_path, inference_time, translate_time)
+    try:
+        ori_pred, inference_time = model.transcribe(audio_file_path, ori, strategy, post_processing, prev_text)
+        if tar:
+            # tar is already a list from main.py
+            translated_pred, translate_time, translate_method, timing_dict = model.translate(ori_pred, ori, tar, prev_text, multi_translate)  
+        else:
+            translated_pred = DEFAULT_RESULT.copy()
+            translate_time = 0
+            translate_method = "none"
+            timing_dict = {}
+        
+        # Calculate RTF using audio_utils
+        rtf = calculate_rtf(audio_file_path, inference_time, translate_time)
 
-    result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict))  
-    stop_event.set()  # Signal to stop the waiting thread  
-    
-def texts_translate(model, text, result_queue, ori, tar, stop_event):  
+        result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict))  
+        stop_event.set()  # Signal to stop the waiting thread
+    finally:
+        # Clean up any active translation threads when this thread is stopped
+        try:
+            model.cleanup_translation_threads()
+        except Exception as e:
+            logger.error(f" | Error during cleanup: {e} | ")
+
+def texts_translate(model, text, result_queue, ori, tar, stop_event, multi_translate=True):  
     """  
     Translate a given text using the specified model.  
   
@@ -53,13 +61,22 @@ def texts_translate(model, text, result_queue, ori, tar, stop_event):
     :param tar: str or list
         Target language(s) for translation
     :param stop_event: threading.Event  
-        The event used to signal stopping.  
+        The event used to signal stopping.
+    :param multi_translate: bool
+        If True, distribute tasks across multiple LLMs; If False, use single LLM
     """  
-    # tar is already a list from main.py
-    translated_pred, translate_time, translate_method = model.translate(text, ori, tar, prev_text="")  
+    try:
+        # tar is already a list from main.py
+        translated_pred, translate_time, translate_method, timing_dict = model.translate(text, ori, tar, prev_text="", multi_translate=multi_translate)  
 
-    result_queue.put((translated_pred, translate_time, translate_method))  
-    stop_event.set()  # Signal to stop the waiting thread  
+        result_queue.put((translated_pred, translate_time, translate_method, timing_dict))  
+        stop_event.set()  # Signal to stop the waiting thread
+    finally:
+        # Clean up any active translation threads when this thread is stopped
+        try:
+            model.cleanup_translation_threads()
+        except Exception as e:
+            logger.error(f" | Error during cleanup: {e} | ")  
   
 def audio_translate_sse(model, audio_file_path, ori, other_information, stop_event):  
     """  
@@ -71,28 +88,37 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
     :param ori: str  
         The original language of the audio.
     :param other_information: dict
-        Contains target_langs and other settings
+        Contains target_langs, multi_translate and other settings
     :param stop_event: threading.Event  
         The event used to signal stopping.  
     """  
-    model.processing = True
-    
-    ori_pred, inference_time = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
-    if other_information["use_translate"]:
-        # Get target_langs from other_information or default to all languages
-        target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != ori])
-        translated_pred, translate_time, translate_method = model.translate(ori_pred, ori, target_langs, other_information["prev_text"])  
-    else:
-        translated_pred = DEFAULT_RESULT.copy()
-        translate_time = 0
-        translate_method = "none"
-    
-    # Calculate RTF using audio_utils
-    rtf = calculate_rtf(audio_file_path, inference_time, translate_time) 
-    
-    model.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method))
-    model.processing = False
-    stop_event.set()  # Signal to stop the waiting thread
+    try:
+        model.processing = True
+        
+        ori_pred, inference_time = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
+        if other_information["use_translate"]:
+            # Get target_langs from other_information or default to all languages
+            target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != ori])
+            multi_translate = other_information.get("multi_translate", True)
+            translated_pred, translate_time, translate_method, timing_dict = model.translate(ori_pred, ori, target_langs, other_information["prev_text"], multi_translate)  
+        else:
+            translated_pred = DEFAULT_RESULT.copy()
+            translate_time = 0
+            translate_method = "none"
+            timing_dict = {}
+        
+        # Calculate RTF using audio_utils
+        rtf = calculate_rtf(audio_file_path, inference_time, translate_time) 
+        
+        model.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict))
+        model.processing = False
+        stop_event.set()  # Signal to stop the waiting thread
+    finally:
+        # Clean up any active translation threads when this thread is stopped
+        try:
+            model.cleanup_translation_threads()
+        except Exception as e:
+            logger.error(f" | Error during cleanup: {e} | ")
 
 def get_thread_id(thread):  
     """  

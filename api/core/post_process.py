@@ -2,7 +2,7 @@ import re
 import logging
 import logging.handlers
 import opencc
-from lib.config.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL, Q1, Q3, IQR_RATIO, TOLERANCE_RATE, ALLOWED_REPETITIONS, ALLOWED_REPETITIONS
+from lib.config.constant import CONTAINS_UNUSUAL, ONLY_UNUSUAL, Q1, Q3, IQR_RATIO, TOLERANCE_RATE, ALLOWED_REPETITIONS
 
 logger = logging.getLogger(__name__)  
   
@@ -147,7 +147,7 @@ def post_process(text, audio_duration=None, prompt_name=None):
             original_text = cleaned_text
             cleaned_text = convert_simplified_to_traditional(cleaned_text)
             if original_text != cleaned_text:
-                logger.info(f" | Simplified to Traditional conversion applied | ")
+                logger.debug(f" | Simplified to Traditional conversion applied | ")
         except Exception as e:
             logger.error(f" | Step 4 (simplified to traditional conversion) error: {e} | ")
 
@@ -434,156 +434,168 @@ def post_process(text, audio_duration=None, prompt_name=None):
             logger.error(f" | Step 7 (prompt leakage check) error: {e} | ")
 
         # 8. Check for word repetition hallucinations
-        repetition_cleaned = False  # Flag specifically for repetition cleaning in step 8
         
+        # Step 8a: Single character repetitions (e.g., 嗯嗯嗯嗯嗯)
         try:
-            # First check for single character repetitions (like 嗯嗯嗯嗯...)
-            # Detect patterns where the same character repeats 5 or more times consecutively
-            char_repeat_pattern = r'(.)\1{4,}'  # Same character 5+ times
+            char_repeat_pattern = r'(.)\1{4,}'  # Same character repeated 5+ times
             if re.search(char_repeat_pattern, cleaned_text):
-                matches = list(re.finditer(char_repeat_pattern, cleaned_text))  # Convert to list to avoid iterator modification
+                matches = list(re.finditer(char_repeat_pattern, cleaned_text))
                 # Process matches from end to start to avoid position shifts
                 for match in reversed(matches):
                     start, end = match.span()
                     repeated_char = match.group(1)
                     repeat_count = end - start
                     logger.warning(f" | Repeated character hallucination: '{repeated_char}' appears {repeat_count} times consecutively, removing all | ")
-                    # Remove only this specific position match
+                    # Remove the repeated characters directly from cleaned_text
                     cleaned_text = cleaned_text[:start] + cleaned_text[end:]
                     retry_flag = True
-                    repetition_cleaned = True
         except Exception as e:
             logger.error(f" | Step 8a (character repetition check) error: {e} | ")
         
+        # Step 8b: Word repetitions after splitting by punctuation (e.g., 會，會，會，會，會)
         try:
-            # Split by both spaces and Chinese punctuation (including period)
+            # Split by spaces and Chinese punctuation (including period to split decimals)
+            # This will split "P4.0" into "P4" and "0", which is intentional for word-level checking
             words = re.split(r'[\s、，,。.]+', cleaned_text)
-            # Filter out empty strings
             words = [word.strip() for word in words if word.strip()]
             
+            step8b_found_repetition = False
+            
             if len(words) >= 4:
-                # Check for obvious repeated words (3 consecutive identical words)
                 cleaned_words = []
                 i = 0
+                
+                # Scan through words looking for consecutive repetitions
                 while i < len(words):
                     word = words[i]
                     
-                    # Check for consecutive repetitions (removed length restriction)
+                    # Count how many times this word repeats consecutively
                     repeat_count = 1
                     j = i + 1
                     while j < len(words) and words[j] == word:
                         repeat_count += 1
                         j += 1
                     
+                    # Decide whether to keep or remove based on repeat count
                     if repeat_count >= 3:
-                        # Check if word is in allowed repetitions whitelist (case-insensitive)
-                        if word.lower() in ALLOWED_REPETITIONS:
-                            # Keep the word (add once, not multiple times)
-                            cleaned_words.append(word)
+                        # Check whitelist: allow up to 3 repetitions for whitelisted words
+                        if word.lower() in ALLOWED_REPETITIONS and repeat_count <= 3:
+                            cleaned_words.append(word)  # Keep only once
                             i += 1
                         else:
-                            # Remove all repetitions
+                            # Remove all repetitions (hallucination detected)
                             logger.warning(f" | Repeated word hallucination: '{word}' appears {repeat_count} times consecutively, removing all | ")
                             retry_flag = True
-                            repetition_cleaned = True
-                            i = j  # Skip all repetitions without adding to cleaned_words
+                            step8b_found_repetition = True
+                            i = j  # Skip all repetitions
                     else:
                         cleaned_words.append(word)
                         i += 1
                 
+                # Rebuild cleaned_text if we removed any repetitions
+                if step8b_found_repetition and cleaned_words:
+                    # Detect original separator style
+                    if '，' in cleaned_text:
+                        separator = '，'
+                    elif ', ' in cleaned_text:
+                        separator = ', '
+                    else:
+                        separator = ' '
+                    
+                    cleaned_text = separator.join(cleaned_words)
+                    logger.info(f" | Step 8b: Cleaned word repetitions, result length {len(cleaned_words)} words | ")
+                
         except Exception as e:
             logger.error(f" | Step 8b (word repetition check) error: {e} | ")
 
-        # Step 8c: Check for repeated phrases (2-word combinations) and clean them
+        # Step 8c: Phrase repetitions (2-word combinations, e.g., "整合 P4.0, 整合 P4.0, ...")
         try:
-            # Split by both spaces and Chinese punctuation if not already done in 8b
-            if 'words' not in locals() or not words:
-                words = re.split(r'[\s、，,]+', cleaned_text)
-                words = [word.strip() for word in words if word.strip()]
+            # Re-split WITHOUT period to preserve decimals like "P4.0" and "36.5"
+            # This is different from Step 8b which needs to split on periods
+            phrase_words = re.split(r'[\s、，,]+', cleaned_text)
+            phrase_words = [word.strip() for word in phrase_words if word.strip()]
             
-            # Use cleaned_words from 8b if available, otherwise use words
-            if 'cleaned_words' in locals():
-                phrase_check_words = cleaned_words
-            else:
-                phrase_check_words = words
+            step8c_found_repetition = False
             
-            if len(phrase_check_words) >= 6:
+            if len(phrase_words) >= 6:
                 final_words = []
                 removed_phrases = []
                 i = 0
-                while i < len(phrase_check_words) - 1:
-                    if i < len(phrase_check_words) - 3:
-                        phrase1 = ' '.join(phrase_check_words[i:i+2])
-                        phrase2 = ' '.join(phrase_check_words[i+2:i+4])
+                
+                # Scan through words looking for repeated 2-word phrases
+                while i < len(phrase_words) - 1:
+                    # Check if we have at least 4 words ahead (for 2+2 comparison)
+                    if i < len(phrase_words) - 3:
+                        # Build two consecutive 2-word phrases
+                        phrase1 = ' '.join(phrase_words[i:i+2])
+                        phrase2 = ' '.join(phrase_words[i+2:i+4])
                         
+                        # Check if they match and are meaningful (> 4 chars)
                         if phrase1 == phrase2 and len(phrase1.strip()) > 4:
-                            # Remove all occurrences of repeated phrase (both first and second)
                             removed_phrases.append(phrase1)
-                            retry_flag = True
-                            repetition_cleaned = True
-                            i += 4  # Skip both repeated phrases without adding to final_words
+                            step8c_found_repetition = True
+                            i += 4  # Skip both phrases (don't add to final_words)
                         else:
-                            final_words.append(phrase_check_words[i])
+                            final_words.append(phrase_words[i])
                             i += 1
                     else:
-                        final_words.append(phrase_check_words[i])
+                        # Near the end, just keep remaining words
+                        final_words.append(phrase_words[i])
                         i += 1
                 
-                # Add remaining words
-                if i < len(phrase_check_words):
-                    final_words.extend(phrase_check_words[i:])
+                # Add any remaining words
+                if i < len(phrase_words):
+                    final_words.extend(phrase_words[i:])
                 
-                # Log once with total count and specific phrases
-                if removed_phrases:
+                # Rebuild cleaned_text if we found repeated phrases
+                if step8c_found_repetition:
                     phrases_str = "', '".join(removed_phrases)
                     logger.warning(f" | Repeated phrase hallucination: removed {len(removed_phrases)} duplicate phrase(s): '{phrases_str}' | ")
+                    
+                    # Detect original separator style
+                    if '，' in cleaned_text:
+                        separator = '，'
+                    elif ', ' in cleaned_text:
+                        separator = ', '
+                    else:
+                        separator = ' '
+                    
+                    cleaned_text = separator.join(final_words)
+                    retry_flag = True
+                    logger.info(f" | Step 8c: Cleaned phrase repetitions, result length {len(final_words)} words | ")
                 
-                # Update the words list for text reconstruction
-                phrase_check_words = final_words
-            
-            # Reconstruct the text from cleaned words only if repetition was actually cleaned
-            if repetition_cleaned:
-                # Try to maintain original spacing by using the most common separator
-                if '，' in cleaned_text:
-                    separator = '，'
-                elif ', ' in cleaned_text:
-                    separator = ', '
-                else:
-                    separator = ' '
-                
-                cleaned_text = separator.join(phrase_check_words)
-                logger.info(f" | Cleaned repetition hallucinations: result length {len(phrase_check_words)} words | ")
         except Exception as e:
             logger.error(f" | Step 8c (phrase repetition check) error: {e} | ")
 
-        # Step 8d: Check for repeated Chinese words 
+        # Step 8d: Chinese word repetitions without separators (e.g., 我們我們我們)
         try:
-            # Detect patterns where the same 1-4 character Chinese word repeats multiple times consecutively
+            # Detect patterns where Chinese characters repeat consecutively (no punctuation between)
             chinese_word_repeat_patterns = [
-                (r'([\u4e00-\u9fff])\1{4,}', 1),     # 1-char word repeated 5+ times (e.g., 好好好好好)
-                (r'([\u4e00-\u9fff]{2})\1{3,}', 2),  # 2-char word repeated 4+ times (e.g., 我們我們我們我們)
-                (r'([\u4e00-\u9fff]{3})\1{3,}', 3),  # 3-char word repeated 4+ times (e.g., 怎麼樣怎麼樣怎麼樣怎麼樣)
-                (r'([\u4e00-\u9fff]{4})\1{2,}', 4),  # 4-char word repeated 3+ times (e.g., 不知道啊不知道啊不知道啊)
+                (r'([\u4e00-\u9fff])\1{4,}', 1),     # 1-char repeated 5+ times (e.g., 好好好好好)
+                (r'([\u4e00-\u9fff]{2})\1{2,}', 2),  # 2-char repeated 3+ times (e.g., 我們我們我們)
+                (r'([\u4e00-\u9fff]{3})\1{2,}', 3),  # 3-char repeated 3+ times (e.g., 怎麼樣怎麼樣怎麼樣)
+                (r'([\u4e00-\u9fff]{4})\1{2,}', 4),  # 4-char repeated 3+ times (e.g., 不知道啊不知道啊不知道啊)
             ]
             
             for pattern, word_len in chinese_word_repeat_patterns:
                 if re.search(pattern, cleaned_text):
                     matches = list(re.finditer(pattern, cleaned_text))
-                    # Process matches from end to start to avoid position shifts
+                    # Process from end to start to avoid position shifts when removing
                     for match in reversed(matches):
                         start, end = match.span()
                         repeated_word = match.group(1)
                         
-                        # Check if word is in allowed repetitions whitelist (case-insensitive)
+                        # Check whitelist (skip if it's an allowed repetition)
                         if repeated_word.lower() in ALLOWED_REPETITIONS:
-                            continue  # Skip this match, it's a normal repetition
+                            continue
                         
                         repeat_count = (end - start) // word_len
                         logger.warning(f" | Repeated Chinese word hallucination: '{repeated_word}' appears {repeat_count} times consecutively, removing all | ")
-                        # Remove only this specific position match
+                        
+                        # Remove the repeated pattern directly from cleaned_text
                         cleaned_text = cleaned_text[:start] + cleaned_text[end:]
                         retry_flag = True
-                        repetition_cleaned = True
+                        
         except Exception as e:
             logger.error(f" | Step 8d (Chinese word repetition check) error: {e} | ")
 

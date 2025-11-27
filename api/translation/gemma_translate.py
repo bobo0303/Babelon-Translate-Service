@@ -74,18 +74,32 @@ class Gemma4BTranslate:
             else:
                 json_str = cleaned_response
             
+            # Fix common GPT errors: {"json":[ -> {"json":{
+            json_str = re.sub(r'(\{"json"\s*:\s*)\[', r'\1{', json_str)
+            json_str = re.sub(r'\]\s*\}$', r'}}', json_str)
+            
             # Try to parse JSON
             result = json.loads(json_str)
             
             # Validate response format
             if not isinstance(result, dict):
-                logger.warning(" | Response is not a dictionary, ignoring | ")
+                logger.warning(" | Gemma() | Response is not a dictionary, ignoring | ")
+                logger.warning(f" | Gemma() | Response type: {type(result)}, Content: {result} | ")
+                logger.warning(f" | Gemma() | Raw response: {response_text} | ")
                 return None
+            
+            # Post-processing: Handle wrapped response in extra 'json' key
+            # Example: {"json": {"zh": "...", "en": "..."}} -> {"zh": "...", "en": "..."}
+            if len(result) == 1 and "json" in result and isinstance(result["json"], dict):
+                logger.warning(" | Gemma() | Detected wrapped response with 'json' key, unwrapping | ")
+                result = result["json"]
             
             # Check required language keys (only check expected languages)
             for lang in expected_languages:
                 if lang not in result:
                     logger.warning(f" | Gemma() | Missing language key: {lang}, ignoring response | ")
+                    logger.warning(f" | Gemma() | Expected keys: {expected_languages}, Got keys: {list(result.keys())} | ")
+                    logger.warning(f" | Gemma() | Raw response: {response_text} | ")
                     return None
             
             # Create response with only expected languages
@@ -97,8 +111,8 @@ class Gemma4BTranslate:
             return formatted_result
             
         except json.JSONDecodeError as e:
-            logger.warning(f" | Failed to parse JSON response, ignoring: {e} | ")
-            logger.debug(f" | Raw response: {response_text[:200]}... | ")
+            logger.warning(f" | Gemma() | Failed to parse JSON response: {e} | ")
+            logger.warning(f" | Gemma() | Raw response: {response_text} | ")
             return None
         except Exception as e:
             logger.error(f" | Error parsing response: {e} | ")

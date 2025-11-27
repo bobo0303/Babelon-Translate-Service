@@ -1,22 +1,18 @@
-import gc  
 import time  
 import torch
-import librosa
 import logging  
 import logging.handlers
-import numpy as np
 import threading
 import ctypes
 import uuid
 
-from transformers import pipeline, AutoProcessor
 from queue import Queue  
 
 # from api.translation.gemma_translate import Gemma4BTranslate  
 from api.translation.ollama_translate import OllamaChat
 from api.translation.gpt_translate import GptTranslate  
 
-from lib.config.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES, FALLBACK_METHOD, get_system_prompt_dynamic_language
+from lib.config.constant import OLLAMA_MODEL, DEFAULT_RESULT, TaskContext, SharedResources
   
   
 logger = logging.getLogger(__name__)  
@@ -52,30 +48,30 @@ class TranslateManager:
             logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
             self.ollama_gemma_translator = None
         
-
+        self.translation_method = "gpt-4o"
+        self.fallback_translate = 'ollama-gemma'
         # Initialize 10 GPT-4o translators
         self.gpt_4o_translators = []
         for i in range(10):
             try:
-                translator = GptTranslate(model_version='gpt-4o')
+                translator = GptTranslate(model_version=self.translation_method)
                 if translator.test_gpt_model():
                     self.gpt_4o_translators.append(translator)
-                    logger.debug(f" | GPT-4o translator #{i+1} initialized successfully | ")
+                    logger.debug(f" | {self.translation_method} translator #{i+1} initialized successfully | ")
                 else:
-                    logger.warning(f" | GPT-4o translator #{i+1} test failed | ")
+                    logger.warning(f" | {self.translation_method} translator #{i+1} test failed | ")
             except Exception as e:
-                logger.warning(f" | Failed to initialize GPT-4o translator #{i+1}: {e} | ")
+                logger.warning(f" | Failed to initialize {self.translation_method} translator #{i+1}: {e} | ")
 
-        # Create translation_method with 10 GPT-4o instances
+        # Create translation_method dict with 10 translator instances
+        translation_method_name = self.translation_method
         self.translation_method = {}
         for i, translator in enumerate(self.gpt_4o_translators):
-            self.translation_method[f"gpt-4o-{i+1}"] = {"translator": translator, "busy": False}
-        
-        # self.translation_priority = ["gpt-4o", "gpt-4.1", "gpt-4.1-mini", "ollama-gemma", "ollama-qwen"]  # ,"gemma4b"
-        self.translation_priority = [f"gpt-4o-{i+1}" for i in range(len(self.gpt_4o_translators))]
+            self.translation_method[f"{translation_method_name} #{i+1}"] = {"translator": translator, "busy": False}
         
         # Thread management
         self.lock = threading.Lock()  # Protect busy status and task_groups
+        self.translator_available = threading.Condition(self.lock)  # Condition variable for translator availability
         self.task_groups = {}  # {task_group_id: {"threads": [], "stop_events": [], "target_langs": []}}
             
         self.device = "cuda" if torch.cuda.is_available() else "cpu"  
@@ -95,93 +91,167 @@ class TranslateManager:
     
     def _get_available_translator(self):
         """
-        Find the first available (not busy) translator based on priority.
+        Find any available (not busy) translator. All translator instances have equal capability.
+        
+        IMPORTANT: Caller must already hold self.translator_available lock.
         
         Returns:
             tuple: (translator_name, translator_instance) or (None, None) if all busy
         """
-        with self.lock:
-            for method_name in self.translation_priority:
-                method_info = self.translation_method.get(method_name)
-                if method_info and method_info["translator"] is not None and not method_info["busy"]:
-                    method_info["busy"] = True
-                    return method_name, method_info["translator"]
+        for method_name, method_info in self.translation_method.items():
+            if method_info and method_info["translator"] is not None and not method_info["busy"]:
+                method_info["busy"] = True
+                return method_name, method_info["translator"]
         return None, None
     
     def _release_translator(self, translator_name):
         """
-        Release translator (set busy=False).
+        Release translator (set busy=False) and notify one waiting dispatcher.
         
         Args:
             translator_name: Name of the translator to release
         """
-        with self.lock:
+        with self.translator_available:
             if translator_name in self.translation_method:
                 self.translation_method[translator_name]["busy"] = False
+                # Notify one waiting dispatcher that a translator is available
+                self.translator_available.notify()
     
-    def _translate_single_task(self, text, source_lang, target_lang, prev_text, translator_name, translator, result_dict, result_lock, stop_event, timing_dict=None):
+    def _translate_single_task(self, task_ctx: TaskContext, shared: SharedResources):
         """
         Execute single translation task in a thread.
         
         Args:
-            text: Text to translate
-            source_lang: Source language code
-            target_lang: Target language code
-            prev_text: Previous context text
-            translator_name: Name of translator being used
-            translator: Translator instance
-            result_dict: Shared dict to store results {target_lang: translated_text}
-            result_lock: Lock to protect result_dict access
-            stop_event: Event to signal stop
-            timing_dict: Optional dict to store timing info {translator_name: time}
+            task_ctx: TaskContext with text, languages, translator info
+            shared: SharedResources with thread-safe result storage and synchronization
         """
+        logger.debug(f" | _translate_single_task started: {task_ctx.target_lang} by {task_ctx.translator_name} | ")
         start_time = time.time()
         try:
-            if stop_event.is_set():
+            if shared.stop_event.is_set():
+                logger.warning(f" | Task {task_ctx.target_lang} stopped early (stop_event set) | ")
                 return
             
             # Call translator based on type
-            if translator_name.startswith("gpt"):
-                translated_result = translator.translate(source_text=text, source_lang=source_lang, target_lang=target_lang, prev_text=prev_text)
+            if task_ctx.translator_name.startswith("gpt"):
+                logger.debug(f" | Calling GPT translator for {task_ctx.target_lang} | ")
+                translated_result = task_ctx.translator.translate(
+                    source_text=task_ctx.text, 
+                    source_lang=task_ctx.source_lang, 
+                    target_lang=task_ctx.target_lang, 
+                    prev_text=task_ctx.prev_text
+                )
+                logger.debug(f" | GPT translation result for {task_ctx.target_lang}: {type(translated_result)} | ")
                 
                 # Check for 403 Forbidden
                 if translated_result == "403_Forbidden":
-                    with result_lock:
-                        result_dict["_fallback_triggered"] = translator_name
-                        result_dict["_fallback_reason"] = "403_Forbidden"
+                    with shared.result_lock:
+                        # Only log and set fallback if not already triggered
+                        if "_fallback_triggered" not in shared.result_dict:
+                            shared.result_dict["_fallback_triggered"] = task_ctx.translator_name
+                            shared.result_dict["_fallback_reason"] = "403_Forbidden"
+                            logger.warning(f" | First 403 detected by {task_ctx.translator_name}, triggering fallback | ")
+                        else:
+                            logger.debug(f" | {task_ctx.translator_name} also got 403 (fallback already triggered) | ")
+                    if hasattr(shared, 'fallback_event') and shared.fallback_event:
+                        shared.fallback_event.set()  # Signal fallback immediately
                     return
                 
                 # Store result (thread-safe)
-                with result_lock:
-                    if translated_result and target_lang in translated_result:
-                        result_dict[target_lang] = translated_result[target_lang]
+                with shared.result_lock:
+                    if translated_result and task_ctx.target_lang in translated_result:
+                        shared.result_dict[task_ctx.target_lang] = translated_result[task_ctx.target_lang]
+                        logger.debug(f" | Stored result for {task_ctx.target_lang} | ")
                     else:
-                        result_dict[target_lang] = ""
+                        shared.result_dict[task_ctx.target_lang] = ""
+                        logger.warning(f" | Empty result for {task_ctx.target_lang} | ")
                     
-            elif translator_name.startswith("ollama"):
-                translated_result = translator.translate(source_text=text, source_lang=source_lang, target_lang=target_lang, prev_text=prev_text)
+            elif task_ctx.translator_name.startswith("ollama"):
+                translated_result = task_ctx.translator.translate(
+                    source_text=task_ctx.text, 
+                    source_lang=task_ctx.source_lang, 
+                    target_lang=task_ctx.target_lang, 
+                    prev_text=task_ctx.prev_text
+                )
                 
                 # Store result (thread-safe)
-                with result_lock:
-                    if translated_result and target_lang in translated_result:
-                        result_dict[target_lang] = translated_result[target_lang]
+                with shared.result_lock:
+                    if translated_result and task_ctx.target_lang in translated_result:
+                        shared.result_dict[task_ctx.target_lang] = translated_result[task_ctx.target_lang]
                     else:
-                        result_dict[target_lang] = ""
+                        shared.result_dict[task_ctx.target_lang] = ""
             
         except Exception as e:
-            logger.error(f" | _translate_single_task error for {target_lang}: {e} | ")
-            with result_lock:
-                result_dict["_fallback_triggered"] = translator_name
-                result_dict["_fallback_reason"] = str(e)
+            logger.error(f" | _translate_single_task error for {task_ctx.target_lang}: {e} | ")
+            with shared.result_lock:
+                shared.result_dict["_fallback_triggered"] = task_ctx.translator_name
+                shared.result_dict["_fallback_reason"] = str(e)
+            if hasattr(shared, 'fallback_event') and shared.fallback_event:
+                shared.fallback_event.set()  # Signal fallback immediately
         finally:
             elapsed_time = time.time() - start_time
-            # Record timing if timing_dict is provided
-            if timing_dict is not None:
-                with result_lock:
-                    if translator_name not in timing_dict:
-                        timing_dict[translator_name] = []
-                    timing_dict[translator_name].append(elapsed_time)
-            self._release_translator(translator_name)
+            # Record timing with language info if timing_dict is provided
+            if shared.timing_dict is not None:
+                with shared.result_lock:
+                    if task_ctx.translator_name not in shared.timing_dict:
+                        shared.timing_dict[task_ctx.translator_name] = []
+                    # Store tuple of (time, language) for detailed tracking
+                    shared.timing_dict[task_ctx.translator_name].append((elapsed_time, task_ctx.target_lang))
+            
+            # After completing task, actively check for more tasks in queue (event-driven)
+            # Keep translator busy and reuse it if more tasks available
+            if shared.task_queue is not None and shared.task_group_id is not None:
+                picked_next = self._try_pick_next_task(task_ctx, shared)
+                # Only release if no next task was picked up
+                if not picked_next:
+                    self._release_translator(task_ctx.translator_name)
+            else:
+                # No task queue context, release immediately
+                self._release_translator(task_ctx.translator_name)
+    
+    def _try_pick_next_task(self, task_ctx: TaskContext, shared: SharedResources) -> bool:
+        """
+        Event-driven: After completing a task, actively check queue for next task.
+        This replaces the passive polling approach.
+        Translator remains busy during this check and will be released by caller if no task found.
+        
+        Args:
+            task_ctx: Current task context (will be updated with next target_lang)
+            shared: Shared resources including task queue
+            
+        Returns:
+            bool: True if picked up next task, False if queue empty or fallback triggered
+        """
+        # Check if fallback was triggered
+        with shared.result_lock:
+            if "_fallback_triggered" in shared.result_dict:
+                return False
+        
+        # Try to get next task from queue (non-blocking)
+        try:
+            next_target_lang = shared.task_queue.get_nowait()
+        except:
+            # Queue is empty, no more tasks
+            return False
+        
+        # Translator is still marked as busy from previous task, continue using it
+        logger.debug(f" | {task_ctx.translator_name} immediately picked up next task: {next_target_lang} | ")
+        
+        # Update task context with new target language
+        next_task_ctx = TaskContext(
+            text=task_ctx.text,
+            source_lang=task_ctx.source_lang,
+            target_lang=next_target_lang,
+            prev_text=task_ctx.prev_text,
+            translator_name=task_ctx.translator_name,
+            translator=task_ctx.translator
+        )
+        
+        # Execute the new task (recursive call, will continue chain until queue empty)
+        # Note: translator remains busy, will be released when chain ends
+        self._translate_single_task(next_task_ctx, shared)
+        
+        return True  # Successfully picked up next task
     
     def _stop_all_threads_in_group(self, task_group_id):
         """
@@ -219,7 +289,7 @@ class TranslateManager:
                 return tid
         return None
     
-    def _single_llm_translate_all(self, text, source_lang, target_langs, prev_text, return_timing=False):
+    def _single_llm_translate_all(self, text, source_lang, target_langs, prev_text):
         """
         Use a single available LLM to translate all target languages at once.
         
@@ -228,11 +298,11 @@ class TranslateManager:
             source_lang: Source language code
             target_langs: List of target language codes
             prev_text: Previous context text
-            return_timing: Whether to return detailed timing info
             
         Returns:
-            tuple: (result_dict, translate_time, methods_used) or with timing_dict if return_timing=True
+            tuple: (result_dict, translate_time, methods_used, timing_dict)
         """
+        logger.debug(f" | _single_llm_translate_all called: source={source_lang}, targets={target_langs} | ")
         start_time = time.time()
         
         # Try to get an available translator
@@ -242,16 +312,13 @@ class TranslateManager:
             logger.warning(f" | No translator available, using fallback | ")
             result_dict = self._fallback_translate_all(text, source_lang, target_langs, prev_text)
             elapsed_time = time.time() - start_time
-            methods_used = ["ollama-gemma (fallback)"]
-            timing_dict = {"ollama-gemma": [elapsed_time]} if return_timing else None
+            methods_used = f"{self.fallback_translate} (fallback)"
+            timing_dict = {self.fallback_translate: [(elapsed_time, ", ".join(target_langs))]}
             
-            if return_timing:
-                return result_dict, elapsed_time, methods_used, timing_dict
-            else:
-                return result_dict, elapsed_time, methods_used
+            return result_dict, elapsed_time, methods_used, timing_dict
         
         try:
-            logger.info(f" | Using {translator_name} for batch translation of {len(target_langs)} languages | ")
+            logger.debug(f" | Using {translator_name} for batch translation of {len(target_langs)} languages | ")
             
             # Call translator to translate all languages at once
             result_dict = translator.translate(
@@ -261,46 +328,44 @@ class TranslateManager:
                 prev_text=prev_text
             )
             
+            logger.debug(f" | Translation result from {translator_name}: keys={list(result_dict.keys()) if isinstance(result_dict, dict) else result_dict} | ")
+            
             # Add source language to result
             if source_lang not in result_dict:
                 result_dict[source_lang] = text
             
             elapsed_time = time.time() - start_time
-            methods_used = [translator_name]
-            timing_dict = {translator_name: [elapsed_time]} if return_timing else None
+            methods_used = self.translation_method if isinstance(self.translation_method, str) else "GPT-4o"
+            # Store timing with all target languages as a single batch
+            timing_dict = {translator_name: [(elapsed_time, ", ".join(target_langs))]}
             
             # Check for 403 Forbidden or missing translations
-            if result_dict == "403_Forbidden" or not all(lang in result_dict for lang in target_langs):
-                logger.warning(f" | {translator_name} failed, using fallback | ")
+            missing_langs = [lang for lang in target_langs if lang not in result_dict]
+            if result_dict == "403_Forbidden" or missing_langs:
+                logger.warning(f" | {translator_name} failed (missing: {missing_langs}), using fallback | ")
                 self._release_translator(translator_name)
                 result_dict = self._fallback_translate_all(text, source_lang, target_langs, prev_text)
                 elapsed_time = time.time() - start_time
-                methods_used = ["ollama-gemma (fallback)"]
-                timing_dict = {"ollama-gemma": [elapsed_time]} if return_timing else None
+                methods_used = f"{self.fallback_translate} (fallback)"
+                timing_dict = {self.fallback_translate: [(elapsed_time, ", ".join(target_langs))]}
             else:
                 self._release_translator(translator_name)
             
-            if return_timing:
-                return result_dict, elapsed_time, methods_used, timing_dict
-            else:
-                return result_dict, elapsed_time, methods_used
+            return result_dict, elapsed_time, methods_used, timing_dict
                 
         except Exception as e:
             logger.error(f" | {translator_name} translation failed: {e}, using fallback | ")
             self._release_translator(translator_name)
             result_dict = self._fallback_translate_all(text, source_lang, target_langs, prev_text)
             elapsed_time = time.time() - start_time
-            methods_used = ["ollama-gemma (fallback)"]
-            timing_dict = {"ollama-gemma": [elapsed_time]} if return_timing else None
+            methods_used = f"{self.fallback_translate} (fallback)"
+            timing_dict = {self.fallback_translate: [(elapsed_time, ", ".join(target_langs))]}
             
-            if return_timing:
-                return result_dict, elapsed_time, methods_used, timing_dict
-            else:
-                return result_dict, elapsed_time, methods_used
+            return result_dict, elapsed_time, methods_used, timing_dict
     
     def _fallback_translate_all(self, text, source_lang, target_langs, prev_text):
         """
-        Fallback: Use ollama-gemma to translate all target languages at once.
+        Fallback: Use fallback translator to translate all target languages at once.
         
         Args:
             text: Text to translate
@@ -311,16 +376,16 @@ class TranslateManager:
         Returns:
             dict: Translation results {lang: translated_text}
         """
-        logger.warning(f" | Fallback to ollama-gemma for batch translation | ")
+        logger.warning(f" | Fallback to {self.fallback_translate} for batch translation | ")
         
         if self.ollama_gemma_translator is None:
-            logger.error(f" | ollama-gemma translator not available for fallback | ")
+            logger.error(f" | {self.fallback_translate} translator not available for fallback | ")
             # Return default result with source text
             default_result = self._create_default_result(text, source_lang)
             return default_result
         
         try:
-            # Use ollama-gemma to translate all target languages at once
+            # Use fallback translator to translate all target languages at once
             result = self.ollama_gemma_translator.translate(
                 source_text=text, 
                 source_lang=source_lang,
@@ -346,7 +411,7 @@ class TranslateManager:
             default_result = self._create_default_result(text, source_lang)
             return default_result
     
-    def assign_task(self, text, source_lang, target_langs, prev_text="", return_timing=False, multi_translate=True):
+    def assign_task(self, text, source_lang, target_langs, prev_text="", multi_translate=True):
         """
         Assign translation tasks for multiple target languages using task queue.
         
@@ -355,31 +420,29 @@ class TranslateManager:
             source_lang: Source language code
             target_langs: List of target language codes
             prev_text: Previous context text
-            return_timing: Whether to return detailed timing info for each translator
             multi_translate: If True, distribute tasks across multiple LLMs; 
                            If False, use single LLM to translate all languages at once
             
         Returns:
-            tuple: (result_dict, translate_time, methods_used) or 
-                   (result_dict, translate_time, methods_used, timing_dict) if return_timing=True
+            tuple: (result_dict, translate_time, methods_used, timing_dict)
                 - result_dict: {lang: translated_text}
                 - translate_time: Total time taken
-                - methods_used: List of translator names used
-                - timing_dict: {translator_name: [time1, time2, ...]} (if return_timing=True)
+                - methods_used: Translator name used (self.translation_method or f"{self.fallback_translate} (fallback)")
+                - timing_dict: {translator_name: [time1, time2, ...]} - detailed timing info for each translator
         """
+        logger.debug(f" | assign_task: source={source_lang}, targets={target_langs}, multi={multi_translate} | ")
         start_time = time.time()
         
         # If multi_translate=False, use single LLM for all languages at once
         if not multi_translate:
-            return self._single_llm_translate_all(text, source_lang, target_langs, prev_text, return_timing)
+            return self._single_llm_translate_all(text, source_lang, target_langs, prev_text)
         task_group_id = str(uuid.uuid4())
         
         # Thread-safe shared data structures
         result_dict = {source_lang: text}  # Start with source text
         result_lock = threading.Lock()  # Protect result_dict access
-        methods_used_list = []
-        methods_lock = threading.Lock()  # Protect methods_used_list access
-        timing_dict = {} if return_timing else None  # Store timing info if requested
+        timing_dict = {}  # Store detailed timing info for each translator
+        fallback_event = threading.Event()  # Event to signal fallback trigger (no polling needed)
         
         # Create task queue and put all target languages
         task_queue = Queue()
@@ -397,69 +460,109 @@ class TranslateManager:
                 "task_queue": task_queue
             }
         
-        # Task dispatcher: continuously checks queue and assigns tasks
+        # Task dispatcher: wait for translators using Condition Variable, then event-driven
         def task_dispatcher():
-            """Background thread that assigns tasks from queue to available translators"""
-            while True:
-                # Check if fallback triggered (stop dispatching) - thread-safe read
+            """Dispatcher waits for available translators using Condition Variable. Subsequent tasks are picked up event-driven."""
+            initial_assigned = 0
+            logger.debug(f" | Dispatcher started: queue_size={task_queue.qsize()} | ")
+            while not task_queue.empty():
+                # Check if fallback triggered at loop start
                 with result_lock:
                     if "_fallback_triggered" in result_dict:
-                        logger.info(f" | Dispatcher detected fallback, stopping | ")
-                        break
+                        logger.info(f" | Dispatcher detected fallback at loop start | ")
+                        return
                 
-                # Check if queue is empty and all threads finished
-                if task_queue.empty():
-                    with self.lock:
-                        active_threads = self.task_groups.get(task_group_id, {}).get("threads", [])
-                    if not active_threads or not any(t.is_alive() for t in active_threads):
-                        logger.info(f" | All tasks completed, dispatcher exiting | ")
-                        break
+                # Wait for available translator using Condition Variable
+                with self.translator_available:
+                    translator_name, translator = self._get_available_translator()
+                    
+                    # If no translator available, wait for notification
+                    while not translator_name:
+                        # Check fallback before waiting
+                        with result_lock:
+                            if "_fallback_triggered" in result_dict:
+                                logger.info(f" | Dispatcher detected fallback before wait | ")
+                                return
+                        
+                        # Wait for translator to be released (blocks until notified)
+                        self.translator_available.wait()
+                        
+                        # After wake-up, immediately check fallback
+                        with result_lock:
+                            if "_fallback_triggered" in result_dict:
+                                logger.info(f" | Dispatcher detected fallback after wake-up | ")
+                                return
+                        
+                        # Try to get translator again
+                        translator_name, translator = self._get_available_translator()
+                # Lock released here
                 
-                # Try to get a task from queue (blocking with timeout)
-                try:
-                    target_lang = task_queue.get(timeout=0.1)  # 100ms timeout, let Queue handle waiting
-                except:
-                    # Queue empty or timeout, continue to check conditions
+                if not translator_name:
+                    # Should not happen, but safety check
                     continue
                 
-                # Try to get available translator
-                translator_name, translator = self._get_available_translator()
+                # Final fallback check before dispatching
+                with result_lock:
+                    if "_fallback_triggered" in result_dict:
+                        logger.info(f" | Dispatcher detected fallback before dispatch | ")
+                        self._release_translator(translator_name)
+                        return
                 
-                if translator_name and translator:
-                    # Start translation thread
-                    stop_event = threading.Event()
-                    
-                    thread = threading.Thread(
-                        target=self._translate_single_task,
-                        args=(text, source_lang, target_lang, prev_text, translator_name, translator, result_dict, result_lock, stop_event, timing_dict)
-                    )
-                    thread.start()
-                    logger.debug(f" | Dispatched {target_lang} to {translator_name} | ")
-                    
-                    # Update task group and methods_used_list (thread-safe)
-                    with self.lock:
-                        if task_group_id in self.task_groups:
-                            self.task_groups[task_group_id]["threads"].append(thread)
-                            self.task_groups[task_group_id]["stop_events"].append(stop_event)
-                    
-                    with methods_lock:
-                        methods_used_list.append(translator_name)
-                else:
-                    # No translator available, put task back to queue
-                    task_queue.put(target_lang)
-                    time.sleep(0.02)  # 20ms - balanced retry interval
+                # Get a task from queue
+                try:
+                    target_lang = task_queue.get_nowait()
+                except:
+                    # Queue empty, all tasks assigned
+                    self._release_translator(translator_name)
+                    break
+                
+                # Start translation thread
+                stop_event = threading.Event()
+                
+                # Create task context and shared resources
+                task_ctx = TaskContext(
+                    text=text,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    prev_text=prev_text,
+                    translator_name=translator_name,
+                    translator=translator
+                )
+                
+                shared = SharedResources(
+                    result_dict=result_dict,
+                    result_lock=result_lock,
+                    stop_event=stop_event,
+                    timing_dict=timing_dict,
+                    task_queue=task_queue,
+                    task_group_id=task_group_id,
+                    fallback_event=fallback_event
+                )
+                
+                thread = threading.Thread(
+                    target=self._translate_single_task,
+                    args=(task_ctx, shared)
+                )
+                thread.start()
+                initial_assigned += 1
+                logger.debug(f" | Dispatched {target_lang} to {translator_name} (thread started) | ")
+                
+                # Update task group (thread-safe)
+                with self.lock:
+                    if task_group_id in self.task_groups:
+                        self.task_groups[task_group_id]["threads"].append(thread)
+                        self.task_groups[task_group_id]["stop_events"].append(stop_event)
+            
+            logger.debug(f" | Dispatcher completed: {initial_assigned} tasks initially assigned | ")
         
         # Start dispatcher thread
         dispatcher_thread = threading.Thread(target=task_dispatcher, daemon=True)
         dispatcher_thread.start()
         
-        # Monitor for fallback trigger
+        # Wait for either fallback trigger or dispatcher completion (event-driven, no polling)
         while dispatcher_thread.is_alive():
-            # Check if fallback was triggered (immediate response) - thread-safe read
-            with result_lock:
-                fallback_triggered = "_fallback_triggered" in result_dict
-            
-            if fallback_triggered:
+            # Wait for fallback event with timeout (to periodically check dispatcher status)
+            if fallback_event.wait(timeout=0.1):  # Event-driven: wake up immediately when fallback triggered
                 logger.warning(f" | Fallback triggered immediately, stopping all tasks | ")
                 
                 # Clear task queue
@@ -472,19 +575,18 @@ class TranslateManager:
                 # Stop all running threads
                 self._stop_all_threads_in_group(task_group_id)
                 break
-            
-            time.sleep(0.025)  # 25ms - balanced between responsiveness and CPU usage
         
-        # Wait for dispatcher to finish (shorter timeout for faster completion)
-        dispatcher_thread.join(timeout=0.5)
+        # Wait for dispatcher to fully complete 
+        dispatcher_thread.join()
         
         # Ensure all threads have finished
         with self.lock:
             active_threads = self.task_groups.get(task_group_id, {}).get("threads", [])
         
+        logger.debug(f" | Waiting for {len(active_threads)} translation threads to complete | ")
         for thread in active_threads:
             if thread.is_alive():
-                thread.join(timeout=0.2)  # Reduced timeout for faster completion
+                thread.join(timeout=5.0)  # Give enough time for translation to complete
         
         # Check if fallback was triggered (thread-safe)
         with result_lock:
@@ -505,10 +607,9 @@ class TranslateManager:
             with result_lock:
                 result_dict.update(fallback_results)
             
-            methods_used = ["ollama-gemma (fallback)"]
+            methods_used = f"{self.fallback_translate} (fallback)"
         else:
-            with methods_lock:
-                methods_used = list(set(methods_used_list))  # Remove duplicates
+            methods_used = self.translation_method if isinstance(self.translation_method, str) else "GPT-4o"
         
         # Clean up task group
         with self.lock:
@@ -518,10 +619,9 @@ class TranslateManager:
         end_time = time.time()
         translate_time = end_time - start_time
         
-        if return_timing:
-            return result_dict, translate_time, methods_used, timing_dict
-        else:
-            return result_dict, translate_time, methods_used
+        logger.debug(f" | assign_task complete: result_keys={list(result_dict.keys())}, time={translate_time:.2f}s, methods={methods_used}, timing_keys={list(timing_dict.keys())} | ")
+        
+        return result_dict, translate_time, methods_used, timing_dict
     
 
     def close(self):
@@ -540,500 +640,4 @@ class TranslateManager:
         #         logger.info(f" | Closed Ollama Qwen translator successfully. | ")
         #     except Exception as e:
         #         logger.warning(f" | Failed to close Ollama Qwen translator: {e} | ")
-
-
-if __name__ == "__main__":
-    """測試 TranslateManager 的多語言翻譯功能"""
-    print("\n" + "="*80)
-    print("開始測試 TranslateManager 多語言並行翻譯功能")
-    print("="*80 + "\n")
-    
-    # 初始化 TranslateManager
-    manager = TranslateManager()
-    
-    
-    # 測試案例 4: 三句文本同時翻譯 - 批次 vs 並行派發任務
-    print("\n" + "="*80)
-    print("測試案例 4: 三句文本同時翻譯 - 批次 vs 並行派發")
-    print("="*80 + "\n")
-    
-    source_lang = "zh"
-    test_texts = [
-        "這個是我們共同帶領團隊要去做的事。再來,這個, 拍劇昨天那個 Ben 跟我說的,做業務呢,每年的一月",
-        "下面叫做基本,我們建立所有的員工全球員工的永續素養,右邊要建立數位化的 ESG,為什麼要數位化 ESG,剛剛大家看到我們所有的平板",
-        "OS 的 pool 往上去層, 希望這樣來優化, 那我們有 define 幾個,就是說我們希望不要太多太,所以像 display 的,所以像 display 的,所以像 display 的,所以像 display plus 或 M"
-    ]
-    target_langs = ["en", "de", "ja", "ko"]
-    num_tests = 10
-    
-    print(f"📝 測試文本數量: {len(test_texts)} 句")
-    for idx, text in enumerate(test_texts, 1):
-        print(f"  句子 {idx}: {text[:50]}{'...' if len(text) > 50 else ''}")
-    print(f"🎯 目標語言: {target_langs}")
-    print(f"🔄 測試次數: {num_tests} 次")
-    print("\n" + "-"*80)
-    
-    # 儲存測試結果
-    batch_all_times = []  # 批次翻譯所有文本的時間
-    parallel_dispatch_times = []  # 並行派發所有任務的時間
-    all_dispatch_timing_data = []  # 儲存每次測試的各 LLM 耗時
-    
-    # 執行 10 次測試
-    for i in range(num_tests):
-        print(f"\n第 {i+1}/{num_tests} 次測試:")
-        
-        # 方法 1: 批次翻譯 - 對每句文本依序調用 GPT 批次翻譯所有語言
-        if manager.gpt_4o_translator is not None:
-            try:
-                start_batch = time.time()
-                for text in test_texts:
-                    gpt_result = manager.gpt_4o_translator.translate(
-                        source_text=text,
-                        source_lang=source_lang,
-                        target_lang=target_langs,
-                        prev_text=""
-                    )
-                batch_all_time = time.time() - start_batch
-                batch_all_times.append(batch_all_time)
-                print(f"  方法1 批次翻譯 (依序處理3句): {batch_all_time:.3f} 秒")
-            except Exception as e:
-                print(f"  ❌ 批次翻譯失敗: {e}")
-                batch_all_times.append(None)
-        else:
-            batch_all_times.append(None)
-        
-        # 方法 2: 並行派發 - 對每句文本同時派發翻譯任務 (3句 x 4語言 = 12個任務)
-        try:
-            start_dispatch = time.time()
-            dispatch_threads = []
-            all_results = []
-            all_timings = []
-            
-            def translate_one_text(text_content, text_idx):
-                """在線程中翻譯一句文本"""
-                result, trans_time, methods, timing = manager.assign_task(
-                    text=text_content,
-                    source_lang=source_lang,
-                    target_langs=target_langs,
-                    prev_text="",
-                    return_timing=True
-                )
-                all_results.append((text_idx, result, trans_time, methods, timing))
-            
-            # 為每句文本創建一個線程
-            for idx, text in enumerate(test_texts):
-                thread = threading.Thread(target=translate_one_text, args=(text, idx))
-                thread.start()
-                dispatch_threads.append(thread)
-            
-            # 等待所有線程完成
-            for thread in dispatch_threads:
-                thread.join()
-            
-            parallel_dispatch_time = time.time() - start_dispatch
-            parallel_dispatch_times.append(parallel_dispatch_time)
-            
-            # 合併所有 timing 數據
-            combined_timing = {}
-            for _, _, _, _, timing in all_results:
-                for llm, times in timing.items():
-                    if llm not in combined_timing:
-                        combined_timing[llm] = []
-                    combined_timing[llm].extend(times)
-            all_dispatch_timing_data.append(combined_timing)
-            
-            # 顯示各 LLM 耗時
-            llm_times_str = ", ".join([f"{llm}:{sum(times):.3f}s" for llm, times in combined_timing.items()])
-            print(f"  方法2 並行派發 (同時處理3句): {parallel_dispatch_time:.3f} 秒 ({llm_times_str})")
-        except Exception as e:
-            print(f"  ❌ 並行派發失敗: {e}")
-            parallel_dispatch_times.append(None)
-            all_dispatch_timing_data.append({})
-    
-    # 計算統計數據
-    print("\n" + "="*80)
-    print("📊 測試統計結果")
-    print("="*80 + "\n")
-    
-    # 方法1統計
-    valid_batch_times = [t for t in batch_all_times if t is not None]
-    if valid_batch_times:
-        batch_avg = sum(valid_batch_times) / len(valid_batch_times)
-        batch_min = min(valid_batch_times)
-        batch_max = max(valid_batch_times)
-        print(f"方法 1️⃣ 批次翻譯 (GPT-4o 依序處理 3句x4語言):")
-        print(f"  平均耗時: {batch_avg:.3f} 秒")
-        print(f"  最快: {batch_min:.3f} 秒")
-        print(f"  最慢: {batch_max:.3f} 秒")
-        print(f"  成功次數: {len(valid_batch_times)}/{num_tests}")
-    else:
-        print("方法 1️⃣ 批次翻譯: 全部失敗")
-        batch_avg = None
-    
-    print()
-    
-    # 方法2統計
-    valid_dispatch_times = [t for t in parallel_dispatch_times if t is not None]
-    if valid_dispatch_times:
-        dispatch_avg = sum(valid_dispatch_times) / len(valid_dispatch_times)
-        dispatch_min = min(valid_dispatch_times)
-        dispatch_max = max(valid_dispatch_times)
-        print(f"方法 2️⃣ 並行派發 (TranslateManager 同時處理 3句x4語言=12任務):")
-        print(f"  平均耗時: {dispatch_avg:.3f} 秒")
-        print(f"  最快: {dispatch_min:.3f} 秒")
-        print(f"  最慢: {dispatch_max:.3f} 秒")
-        print(f"  成功次數: {len(valid_dispatch_times)}/{num_tests}")
-    else:
-        print("方法 2️⃣ 並行派發: 全部失敗")
-        dispatch_avg = None
-    
-    # 計算調度開銷統計
-    dispatch_overheads = []
-    for i, timing_dict in enumerate(all_dispatch_timing_data):
-        if parallel_dispatch_times[i] is not None and timing_dict:
-            max_llm_time = max(sum(times) for times in timing_dict.values())
-            overhead = parallel_dispatch_times[i] - max_llm_time
-            dispatch_overheads.append(overhead)
-    
-    if dispatch_overheads:
-        overhead_avg = sum(dispatch_overheads) / len(dispatch_overheads)
-        overhead_min = min(dispatch_overheads)
-        overhead_max = max(dispatch_overheads)
-        print(f"\n方法 2️⃣ 調度開銷分析:")
-        print(f"  平均開銷: {overhead_avg:.3f} 秒 ({overhead_avg/dispatch_avg*100:.1f}% of 並行時間)")
-        print(f"  最小開銷: {overhead_min:.3f} 秒")
-        print(f"  最大開銷: {overhead_max:.3f} 秒")
-    
-    # 對比分析
-    if batch_avg is not None and dispatch_avg is not None:
-        print("\n" + "-"*80)
-        print("🏆 效能對比")
-        print("-"*80)
-        
-        if dispatch_avg < batch_avg:
-            speedup = batch_avg / dispatch_avg
-            time_saved = batch_avg - dispatch_avg
-            winner = "並行派發"
-            print(f"✅ {winner} 較快，提升 {speedup:.2f}x 倍")
-            print(f"✅ 平均每次節省 {time_saved:.3f} 秒")
-        else:
-            speedup = dispatch_avg / batch_avg
-            time_saved = dispatch_avg - batch_avg
-            winner = "批次翻譯"
-            print(f"✅ {winner} 較快，提升 {speedup:.2f}x 倍")
-            print(f"⚠️ 並行派發反而慢了 {time_saved:.3f} 秒")
-    
-    # 計算各 LLM 的統計數據
-    llm_stats = {}
-    for timing_dict in all_dispatch_timing_data:
-        for llm, times in timing_dict.items():
-            if llm not in llm_stats:
-                llm_stats[llm] = []
-            llm_stats[llm].extend(times)
-    
-    if llm_stats:
-        print("\n" + "="*80)
-        print("📋 各 LLM 耗時統計 (方法2並行派發)")
-        print("="*80 + "\n")
-        
-        for llm in sorted(llm_stats.keys()):
-            times = llm_stats[llm]
-            if times:
-                avg = sum(times) / len(times)
-                min_time = min(times)
-                max_time = max(times)
-                print(f"{llm:15s} | 平均: {avg:.3f}s | 最快: {min_time:.3f}s | 最慢: {max_time:.3f}s | 使用次數: {len(times)}")
-    
-    print("\n" + "="*80)
-    print("📋 表格數據（可直接複製到 Excel）")
-    print("="*80 + "\n")
-    
-    # 取得所有使用過的 LLM 列表
-    all_llms = sorted(set(llm for timing_dict in all_dispatch_timing_data for llm in timing_dict.keys()))
-    
-    # 生成表格標題
-    header = "次數\t批次翻譯(秒)\t並行派發(秒)\tmax(LLM時間)\t調度開銷(秒)"
-    for llm in all_llms:
-        header += f"\t{llm}(秒)"
-    print(header)
-    print("-" * 120)
-    
-    # 生成每次測試的數據
-    for i in range(num_tests):
-        batch_time = f"{batch_all_times[i]:.3f}" if batch_all_times[i] is not None else "失敗"
-        dispatch_time = f"{parallel_dispatch_times[i]:.3f}" if parallel_dispatch_times[i] is not None else "失敗"
-        
-        # 計算此次測試的最大 LLM 時間和調度開銷
-        timing_dict = all_dispatch_timing_data[i]
-        max_llm_time = max(sum(times) for times in timing_dict.values()) if timing_dict else 0
-        overhead = parallel_dispatch_times[i] - max_llm_time if parallel_dispatch_times[i] is not None else 0
-        
-        row = f"{i+1}\t{batch_time}\t{dispatch_time}\t{max_llm_time:.3f}\t{overhead:.3f}"
-        
-        # 加入各 LLM 的時間
-        for llm in all_llms:
-            if llm in timing_dict and timing_dict[llm]:
-                llm_time = sum(timing_dict[llm])
-                row += f"\t{llm_time:.3f}"
-            else:
-                row += "\t-"
-        print(row)
-    
-    print("-" * 100)
-    
-    # 生成平均、最快、最慢
-    if batch_avg is not None and dispatch_avg is not None:
-        # 計算 max(LLM時間) 和調度開銷的統計
-        avg_max_llm = sum(max(sum(times) for times in td.values()) for td in all_dispatch_timing_data if td) / len([td for td in all_dispatch_timing_data if td]) if all_dispatch_timing_data else 0
-        min_max_llm = min(max(sum(times) for times in td.values()) for td in all_dispatch_timing_data if td) if all_dispatch_timing_data else 0
-        max_max_llm = max(max(sum(times) for times in td.values()) for td in all_dispatch_timing_data if td) if all_dispatch_timing_data else 0
-        
-        avg_row = f"平均\t{batch_avg:.3f}\t{dispatch_avg:.3f}\t{avg_max_llm:.3f}\t{overhead_avg:.3f}"
-        min_row = f"最快\t{batch_min:.3f}\t{dispatch_min:.3f}\t{min_max_llm:.3f}\t{overhead_min:.3f}"
-        max_row = f"最慢\t{batch_max:.3f}\t{dispatch_max:.3f}\t{max_max_llm:.3f}\t{overhead_max:.3f}"
-        
-        for llm in all_llms:
-            if llm in llm_stats and llm_stats[llm]:
-                times = llm_stats[llm]
-                avg_row += f"\t{sum(times)/len(times):.3f}"
-                min_row += f"\t{min(times):.3f}"
-                max_row += f"\t{max(times):.3f}"
-            else:
-                avg_row += "\t-"
-                min_row += "\t-"
-                max_row += "\t-"
-        
-        print(avg_row)
-        print(min_row)
-        print(max_row)
-    
-    print("\n" + "="*80 + "\n")
-    
-    
-    # 測試案例 3: GPT 一次性多語言翻譯 vs 並行翻譯時間對比 (10次測試)
-    print("\n" + "="*80)
-    print("測試案例 3: GPT 一次性多語言翻譯 vs 並行翻譯 (10次重複測試)")
-    print("="*80 + "\n")
-    source_lang = "zh"
-    test_text_3 = "這個是我們共同帶領團隊要去做的事。再來,這個, 拍劇昨天那個 Ben 跟我說的,做業務呢,每年的一月"
-    target_langs_3 = ["en", "de", "ja", "ko"]  # 使用 LANGUAGE_LIST 允許的語言
-    num_tests = 10
-    
-    print(f"📝 測試文本: {test_text_3}")
-    print(f"🎯 目標語言: {target_langs_3}")
-    print(f"🔄 測試次數: {num_tests} 次")
-    print("\n" + "-"*80)
-    
-    # 儲存測試結果
-    gpt_batch_times = []
-    parallel_times = []
-    all_timing_data = []  # 儲存每次測試的各 LLM 耗時
-    
-    # 執行 10 次測試
-    for i in range(num_tests):
-        print(f"\n第 {i+1}/{num_tests} 次測試:")
-        
-        # 方法 1: GPT 一次性翻譯所有語言
-        if manager.gpt_4o_translator is not None:
-            try:
-                start_gpt_batch = time.time()
-                gpt_result = manager.gpt_4o_translator.translate(
-                    source_text=test_text_3,
-                    source_lang=source_lang,
-                    target_lang=target_langs_3,
-                    prev_text=""
-                )
-                gpt_batch_time = time.time() - start_gpt_batch
-                gpt_batch_times.append(gpt_batch_time)
-                print(f"  GPT 批次翻譯: {gpt_batch_time:.3f} 秒")
-            except Exception as e:
-                print(f"  ❌ GPT 批次翻譯失敗: {e}")
-                gpt_batch_times.append(None)
-        
-        # 方法 2: TranslateManager 並行翻譯 (取得詳細時間)
-        try:
-            result_dict_3, parallel_time, methods_used_3, timing_dict = manager.assign_task(
-                text=test_text_3,
-                source_lang=source_lang,
-                target_langs=target_langs_3,
-                prev_text="",
-                return_timing=True
-            )
-            parallel_times.append(parallel_time)
-            all_timing_data.append(timing_dict)
-            
-            # 顯示各 LLM 耗時
-            llm_times_str = ", ".join([f"{llm}:{sum(times):.3f}s" for llm, times in timing_dict.items()])
-            print(f"  並行翻譯:     {parallel_time:.3f} 秒 ({llm_times_str})")
-        except Exception as e:
-            print(f"  ❌ 並行翻譯失敗: {e}")
-            parallel_times.append(None)
-            all_timing_data.append({})
-    
-    # 計算統計數據
-    print("\n" + "="*80)
-    print("📊 10次測試統計結果")
-    print("="*80 + "\n")
-    
-    # GPT 批次翻譯統計
-    valid_gpt_times = [t for t in gpt_batch_times if t is not None]
-    if valid_gpt_times:
-        gpt_avg = sum(valid_gpt_times) / len(valid_gpt_times)
-        gpt_min = min(valid_gpt_times)
-        gpt_max = max(valid_gpt_times)
-        print(f"方法 1️⃣ GPT-4o 批次翻譯 (單執行緒, 1次API):")
-        print(f"  平均耗時: {gpt_avg:.2f} 秒")
-        print(f"  最快: {gpt_min:.2f} 秒")
-        print(f"  最慢: {gpt_max:.2f} 秒")
-        print(f"  成功次數: {len(valid_gpt_times)}/{num_tests}")
-    else:
-        print("方法 1️⃣ GPT-4o 批次翻譯: 全部失敗")
-        gpt_avg = None
-    
-    print()
-    
-    # 並行翻譯統計
-    valid_parallel_times = [t for t in parallel_times if t is not None]
-    if valid_parallel_times:
-        parallel_avg = sum(valid_parallel_times) / len(valid_parallel_times)
-        parallel_min = min(valid_parallel_times)
-        parallel_max = max(valid_parallel_times)
-        print(f"方法 2️⃣ TranslateManager 並行翻譯 (多執行緒):")
-        print(f"  平均耗時: {parallel_avg:.2f} 秒")
-        print(f"  最快: {parallel_min:.2f} 秒")
-        print(f"  最慢: {parallel_max:.2f} 秒")
-        print(f"  成功次數: {len(valid_parallel_times)}/{num_tests}")
-    else:
-        print("方法 2️⃣ TranslateManager 並行翻譯: 全部失敗")
-        parallel_avg = None
-    
-    # 計算調度開銷統計
-    overheads = []
-    for i, timing_dict in enumerate(all_timing_data):
-        if parallel_times[i] is not None and timing_dict:
-            max_llm_time = max(sum(times) for times in timing_dict.values())
-            overhead = parallel_times[i] - max_llm_time
-            overheads.append(overhead)
-    
-    if overheads:
-        overhead_avg = sum(overheads) / len(overheads)
-        overhead_min = min(overheads)
-        overhead_max = max(overheads)
-        print(f"\n方法 2️⃣ 調度開銷分析:")
-        print(f"  平均開銷: {overhead_avg:.3f} 秒 ({overhead_avg/parallel_avg*100:.1f}% of 並行時間)")
-        print(f"  最小開銷: {overhead_min:.3f} 秒")
-        print(f"  最大開銷: {overhead_max:.3f} 秒")
-        print(f"  說明: 調度開銷 = 並行總時間 - max(各LLM時間)")
-    
-    # 對比分析
-    if gpt_avg is not None and parallel_avg is not None:
-        print("\n" + "-"*80)
-        print("🏆 效能對比")
-        print("-"*80)
-        
-        if parallel_avg < gpt_avg:
-            speedup = gpt_avg / parallel_avg
-            time_saved = gpt_avg - parallel_avg
-            winner = "並行翻譯"
-        else:
-            speedup = parallel_avg / gpt_avg
-            time_saved = parallel_avg - gpt_avg
-            winner = "GPT 批次翻譯"
-        
-        print(f"✅ {winner} 較快，提升 {speedup:.2f}x 倍")
-        print(f"✅ 平均每次節省 {abs(time_saved):.3f} 秒")
-    
-    # 計算各 LLM 的統計數據
-    llm_stats = {}
-    for timing_dict in all_timing_data:
-        for llm, times in timing_dict.items():
-            if llm not in llm_stats:
-                llm_stats[llm] = []
-            llm_stats[llm].extend(times)
-    
-    print("\n" + "="*80)
-    print("📋 各 LLM 耗時統計")
-    print("="*80 + "\n")
-    
-    for llm in sorted(llm_stats.keys()):
-        times = llm_stats[llm]
-        if times:
-            avg = sum(times) / len(times)
-            min_time = min(times)
-            max_time = max(times)
-            print(f"{llm:15s} | 平均: {avg:.3f}s | 最快: {min_time:.3f}s | 最慢: {max_time:.3f}s | 使用次數: {len(times)}")
-    
-    print("\n" + "="*80)
-    print("📋 表格數據（可直接複製到 Excel）")
-    print("="*80 + "\n")
-    
-    # 取得所有使用過的 LLM 列表
-    all_llms = sorted(set(llm for timing_dict in all_timing_data for llm in timing_dict.keys()))
-    
-    # 生成表格標題
-    header = "次數\tGPT批次(秒)\t並行總時間(秒)\tmax(LLM時間)\t調度開銷(秒)"
-    for llm in all_llms:
-        header += f"\t{llm}(秒)"
-    print(header)
-    print("-" * 120)
-    
-    # 生成每次測試的數據
-    for i in range(num_tests):
-        gpt_time = f"{gpt_batch_times[i]:.3f}" if gpt_batch_times[i] is not None else "失敗"
-        para_time = f"{parallel_times[i]:.3f}" if parallel_times[i] is not None else "失敗"
-        
-        # 計算此次測試的最大 LLM 時間和調度開銷
-        timing_dict = all_timing_data[i]
-        max_llm_time = max(sum(times) for times in timing_dict.values()) if timing_dict else 0
-        overhead = parallel_times[i] - max_llm_time if parallel_times[i] is not None else 0
-        
-        row = f"{i+1}\t{gpt_time}\t{para_time}\t{max_llm_time:.3f}\t{overhead:.3f}"
-        
-        # 加入各 LLM 的時間
-        timing_dict = all_timing_data[i]
-        for llm in all_llms:
-            if llm in timing_dict and timing_dict[llm]:
-                llm_time = sum(timing_dict[llm])
-                row += f"\t{llm_time:.3f}"
-            else:
-                row += "\t-"
-        print(row)
-    
-    print("-" * 100)
-    
-    # 生成平均、最快、最慢
-    if gpt_avg is not None and parallel_avg is not None:
-        # 計算 max(LLM時間) 和調度開銷的統計
-        avg_max_llm = sum(max(sum(times) for times in td.values()) for td in all_timing_data) / len(all_timing_data) if all_timing_data else 0
-        min_max_llm = min(max(sum(times) for times in td.values()) for td in all_timing_data) if all_timing_data else 0
-        max_max_llm = max(max(sum(times) for times in td.values()) for td in all_timing_data) if all_timing_data else 0
-        
-        avg_row = f"平均\t{gpt_avg:.3f}\t{parallel_avg:.3f}\t{avg_max_llm:.3f}\t{overhead_avg:.3f}"
-        min_row = f"最快\t{gpt_min:.3f}\t{parallel_min:.3f}\t{min_max_llm:.3f}\t{overhead_min:.3f}"
-        max_row = f"最慢\t{gpt_max:.3f}\t{parallel_max:.3f}\t{max_max_llm:.3f}\t{overhead_max:.3f}"
-        
-        for llm in all_llms:
-            if llm in llm_stats and llm_stats[llm]:
-                times = llm_stats[llm]
-                avg_row += f"\t{sum(times)/len(times):.3f}"
-                min_row += f"\t{min(times):.3f}"
-                max_row += f"\t{max(times):.3f}"
-            else:
-                avg_row += "\t-"
-                min_row += "\t-"
-                max_row += "\t-"
-        
-        print(avg_row)
-        print(min_row)
-        print(max_row)
-    
-    print("\n" + "="*80 + "\n")
-    
-    # 清理資源
-    manager.close()
-    
-    print("\n" + "="*80)
-    print("✅ 測試完成！")
-    print("="*80 + "\n")
-
 

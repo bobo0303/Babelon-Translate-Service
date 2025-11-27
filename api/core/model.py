@@ -310,18 +310,20 @@ class Model:
             target_langs = [target_langs]
         
         try:
+            # Store current task group ID for cleanup if needed
+            self.current_translation_task_group = None
+            
             # Use TranslateManager's assign_task for parallel translation
             result_dict, translate_time, methods_used, timing_dict = self.translate_manager.assign_task(
                 text=text,
                 source_lang=source_lang,
                 target_langs=target_langs,
                 prev_text=prev_text,
-                return_timing=True,
                 multi_translate=multi_translate
             )
             
-            # Convert methods_used list to string for compatibility
-            translate_method = ", ".join(methods_used) if methods_used else "UNKNOWN"
+            # methods_used is already a string from translate_manager
+            translate_method = methods_used if methods_used else "UNKNOWN"
             
             return result_dict, translate_time, translate_method, timing_dict
             
@@ -330,6 +332,23 @@ class Model:
             # Return default result with source text
             default_result = DEFAULT_RESULT.copy()
             default_result[source_lang] = text
-            return default_result, 0.0, "FAILED"
+            return default_result, 0.0, "FAILED", {}
     
+    def cleanup_translation_threads(self):
+        """Clean up all active translation threads in TranslateManager."""
+        if self.translate_manager is None:
+            return
+        
+        try:
+            # Stop all active task groups
+            with self.translate_manager.lock:
+                task_group_ids = list(self.translate_manager.task_groups.keys())
+            
+            for task_group_id in task_group_ids:
+                logger.info(f" | Cleaning up translation task group: {task_group_id} | ")
+                self.translate_manager._stop_all_threads_in_group(task_group_id)
+            
+            logger.debug(" | All translation threads cleaned up | ")
+        except Exception as e:
+            logger.error(f" | Error cleaning up translation threads: {e} | ")
     

@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     end = time.time()  
     logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
     # set default prompt
-    model.set_prompt(DEFAULT_PROMPTS["eABC_2025_11_20_22"])
+    model.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
     logger.info(f" | Default prompt has been set. | ")  
     
     # 設置 websocket 的 model
@@ -261,11 +261,10 @@ async def translate(
     audio_uid: str = Form(123),  
     times: datetime.datetime = Form(...),  
     o_lang: str = Form("zh"),  
-    t_lang: List[str] = Form(...),
+    t_lang: str = Form("zh,en,ja,ko,de"),
     prev_text: str = Form(""),
-    multi_strategy_transcription: int = Form(1), # 1~MAX_NUM_STRATEGIES others 1
+    multi_strategy_transcription: int = Form(4), # 1~MAX_NUM_STRATEGIES others 1
     transcription_post_processing: bool = Form(True), # True/False
-    use_translate: bool = Form(True), # True/False
     multi_translate: bool = Form(True)
 ):  
     """  
@@ -286,11 +285,24 @@ async def translate(
         The start time of the audio.  
     :param o_lang: str  
         The original language of the audio.  
+    :param t_lang: Optional[str]
+        Target languages for translation. Can be single language 'en' or comma-separated 'en,ja,ko'. If None or empty, no translation.
     :param prev_text: str
         The previous text for context (will be overridden by global previous translation)
     :rtype: BaseResponse  
         A response containing the transcription results.  
     """  
+    
+    # Handle t_lang parameter
+    if t_lang:
+        # Convert comma-separated string to list
+        if ',' in t_lang:
+            t_lang = [lang.strip().lower() for lang in t_lang.split(',')]
+        else:
+            t_lang = [t_lang.strip().lower()]
+    else:
+        # Empty or None means no translation
+        t_lang = []
     
     # 20251118 we found if we use prev_text in 0.5 sec audio it will cause worse results
     if multi_strategy_transcription == 1:
@@ -301,17 +313,10 @@ async def translate(
         logger.info(f" | Previous text context usage is disabled. Overriding prev_text to empty. | ")
         prev_text = ""
     
-    # Handle case where t_lang might be a single comma-separated string
-    if isinstance(t_lang, list) and len(t_lang) == 1 and ',' in t_lang[0]:
-        # Split comma-separated string into list
-        t_lang = [lang.strip() for lang in t_lang[0].split(',')]
-        logger.info(f" | Converted t_lang from '{t_lang[0]}' to list: {t_lang} | ")
-    
     # Convert times to string format  
     times = str(times)  
-    # Convert original language and target language to lowercase  
-    o_lang = o_lang.lower()  
-    t_lang = [lang.lower() for lang in t_lang]  # Convert list of target languages to lowercase
+    # Convert original language to lowercase  
+    o_lang = o_lang.lower()
     multi_strategy_transcription = multi_strategy_transcription if 0 < multi_strategy_transcription <= MAX_NUM_STRATEGIES else 1
     
     # Create response data structure  
@@ -367,7 +372,7 @@ async def translate(
   
         # Create timing thread and inference thread  
         time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, t_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, use_translate, multi_translate))  
+        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, t_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, multi_translate))
   
         # Start the threads  
         time_thread.start()  
@@ -393,11 +398,25 @@ async def translate(
             de_result = response_data.text.get("de", "")
             ja_result = response_data.text.get("ja", "")
             ko_result = response_data.text.get("ko", "")
-            # print(timing_dict)
+            
+            # Format timing_dict: each task as separate entry
+            timing_parts = []
+            if timing_dict:
+                for translator, time_lang_pairs in timing_dict.items():
+                    if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
+                        for t, lang in time_lang_pairs:
+                            timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
+                    else:
+                        for t in time_lang_pairs:
+                            timing_parts.append(f"{translator}: {t:.2f}s")
+            timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
+            
             logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
-            logger.info(f" | Transcription: {ori_pred} | ")
-            if use_translate:
+            logger.info(f" | Transcription: {ori_pred} | ")                
+            if timing_str != "N/A": 
+                logger.info(f" | {timing_str} | ")
+            if t_lang:
                 logger.info(f" | {'#' * 75} | ")
                 logger.info(f" | ZH: {zh_result} | ")  
                 logger.info(f" | EN: {en_result} | ")  
@@ -422,28 +441,46 @@ async def translate(
 @app.post("/text_translate")  
 async def text_translate(  
     text: str = Form(...),
-    source_language: str = Form(...),
-    target_language: list[str] = Form(...),
+    source_language: str = Form("zh"),
+    target_language: str = Form("zh,en,ja,ko,de"),
+    multi_translate: bool = Form(True)
 ):  
     """  
     Translate a text.  
   
     This endpoint receives text and its associated metadata, and performs translation on the text.  
   
-    :param translate_request: TextData  
-        The request containing the text to be translated.  
+    :param text: str
+        The text to be translated.
+    :param source_language: str
+        The source language code.
+    :param target_language: str
+        Target languages for translation. Can be single language 'en' or comma-separated 'en,ja,ko'. If None or empty, no translation.
+    :param multi_translate: bool
+        If True, distribute tasks across multiple LLMs; If False, use single LLM to translate all languages at once
     :rtype: BaseResponse  
         A response containing the translation results.  
     """  
-    # Handle case where target_language might be a single comma-separated string
-    if isinstance(target_language, list) and len(target_language) == 1 and ',' in target_language[0]:
-        # Split comma-separated string into list
-        target_language = [lang.strip() for lang in target_language[0].split(',')]
-        logger.debug(f" | Converted target_language to list: {target_language} | ")
+    # Handle target_language parameter
+    if target_language:
+        # Convert comma-separated string to list
+        if ',' in target_language:
+            target_language = [lang.strip().lower() for lang in target_language.split(',')]
+        else:
+            target_language = [target_language.strip().lower()]
+    else:
+        # Empty or None means no translation
+        target_language = []
     
-    source_language = source_language.lower()  
-    target_language = [lang.lower() for lang in target_language]  # Convert list of target languages to lowercase
+    source_language = source_language.lower()
   
+    # Create response data structure first (for error handling)
+    response_data = TextTranslationResponse(  
+        ori_lang=source_language,
+        text=DEFAULT_RESULT.copy(),
+        translate_time=0.0
+    )
+    
     # Check if the languages are in the supported language list  
     if source_language not in LANGUAGE_LIST:  
         logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
@@ -455,13 +492,6 @@ async def text_translate(
             logger.info(f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
             return BaseResponse(status=Status.FAILED, message=f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
-    # Create response data structure  
-    response_data = TextTranslationResponse(  
-        ori_lang="",
-        text=DEFAULT_RESULT.copy(),
-        translate_time=0.0
-    )  
-  
     try:  
         # Create a queue to hold the return value  
         result_queue = Queue()  
@@ -470,7 +500,7 @@ async def text_translate(
   
         # Create timing thread and inference thread  
         time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=texts_translate, args=(model, text, result_queue, source_language, target_language, stop_event))  
+        inference_thread = threading.Thread(target=texts_translate, args=(model, text, result_queue, source_language, target_language, stop_event, multi_translate))  
   
         # Start the threads  
         time_thread.start()  
@@ -482,7 +512,7 @@ async def text_translate(
   
         # Get the result from the queue  
         if not result_queue.empty():  
-            result, translate_time, translate_method = result_queue.get()  
+            result, translate_time, translate_method, timing_dict = result_queue.get()  
             response_data.text = result  
             response_data.translate_time = translate_time
             zh_result = response_data.text.get("zh", "")
@@ -490,18 +520,36 @@ async def text_translate(
             de_result = response_data.text.get("de", "")
             ja_result = response_data.text.get("ja", "")
             ko_result = response_data.text.get("ko", "")
+            
+            # Format timing_dict: each task as separate entry
+            timing_parts = []
+            if timing_dict:
+                for translator, time_lang_pairs in timing_dict.items():
+                    if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
+                        for t, lang in time_lang_pairs:
+                            timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
+                    else:
+                        for t in time_lang_pairs:
+                            timing_parts.append(f"{translator}: {t:.2f}s")
+            timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
   
             logger.debug(f" | {response_data.model_dump_json()} | ")  
-            logger.info(f" | source language: {source_language} -> target language: {target_language} | translate_method: {translate_method} |")  
-            logger.info(f" | ZH: {zh_result} | ")  
-            logger.info(f" | EN: {en_result} | ")  
-            logger.info(f" | DE: {de_result} | ")  
-            logger.info(f" | JA: {ja_result} | ")  
-            logger.info(f" | KO: {ko_result} | ")  
+            logger.info(f" | source language: {source_language} -> target language: {target_language} | translate_method: {translate_method} |")
+            if timing_str != "N/A":
+                logger.info(f" | {timing_str} | ")
+            if target_language:
+                logger.info(f" | {'#' * 75} | ")
+                logger.info(f" | ZH: {zh_result} | ")  
+                logger.info(f" | EN: {en_result} | ")  
+                logger.info(f" | DE: {de_result} | ")  
+                logger.info(f" | JA: {ja_result} | ")  
+                logger.info(f" | KO: {ko_result} | ")
+                logger.info(f" | {'#' * 75} | ")
             logger.info(f" | translate has been completed in {translate_time:.2f} seconds. |")  
             state = Status.OK
         else:
             logger.info(f" | translation has exceeded the upper limit time and has been stopped |")
+            zh_result = en_result = de_result = ja_result = ko_result = ""
             state = Status.FAILED
 
         return BaseResponse(status=state, message=f" | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)
@@ -520,7 +568,8 @@ async def sse_audio_translate(
     prev_text: str = Form(""),
     multi_strategy_transcription: int = Form(1), # 1~MAX_NUM_STRATEGIES others 1
     transcription_post_processing: bool = Form(True), # True/False
-    use_translate: bool = Form(True) # True/False
+    use_translate: bool = Form(True), # True/False
+    multi_translate: bool = Form(True) # True/False
 ):  
     """  
     Transcribe and translate an audio file.  
@@ -574,7 +623,8 @@ async def sse_audio_translate(
         "prev_text": prev_text,
         "multi_strategy_transcription": multi_strategy_transcription,
         "transcription_post_processing": transcription_post_processing,
-        "use_translate": use_translate
+        "use_translate": use_translate,
+        "multi_translate": multi_translate
     }
 
     try:  
@@ -652,7 +702,7 @@ async def sse_audio_translate():
       
                         # Process all available results from the result queue
                         while not model.result_queue.empty():
-                            ori_pred, result, rtf, transcription_time, translate_time, translate_method = model.result_queue.get()
+                            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict = model.result_queue.get()
                             response_data.transcription_text = ori_pred
                             response_data.text = result  
                             response_data.transcribe_time = transcription_time  
@@ -663,9 +713,23 @@ async def sse_audio_translate():
                             ja_result = response_data.text.get("ja", "")
                             ko_result = response_data.text.get("ko", "")
                             
+                            # Format timing_dict: each task as separate entry
+                            timing_parts = []
+                            if timing_dict:
+                                for translator, time_lang_pairs in timing_dict.items():
+                                    if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
+                                        for t, lang in time_lang_pairs:
+                                            timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
+                                    else:
+                                        for t in time_lang_pairs:
+                                            timing_parts.append(f"{translator}: {t:.2f}s")
+                            timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
+                            
                             logger.debug(f" | {response_data.model_dump_json()} | ")  
                             logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} |")  
                             logger.info(f" | Transcription: {ori_pred} | ")
+                            if timing_str != "N/A":
+                                logger.info(f" | {timing_str} | ")
                             if other_information["use_translate"]:
                                 logger.info(f" | {'#' * 75} | ")
                                 logger.info(f" | ZH: {zh_result} | ")  

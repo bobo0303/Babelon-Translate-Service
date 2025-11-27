@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import Dict
 from enum import Enum
+from dataclasses import dataclass
+from typing import Optional, Dict, List
 
 #############################################################################
 
@@ -58,6 +60,32 @@ class TextTranslationResponse(BaseModel):
 
 #############################################################################
 
+@dataclass
+class TaskContext:
+    """Structured context for translation tasks"""
+    text: str
+    source_lang: str
+    target_lang: str
+    prev_text: str
+    translator_name: str
+    translator: object
+    
+#############################################################################
+    
+@dataclass
+class SharedResources:
+    """Thread-safe shared resources for parallel translation"""
+    result_dict: Dict
+    result_lock: object  # threading.Lock
+    stop_event: object  # threading.Event
+    timing_dict: Optional[Dict] = None
+    task_queue: Optional[object] = None  # Queue
+    task_group_id: Optional[str] = None
+    fallback_event: Optional[object] = None  # threading.Event for fallback notification (event-driven)
+    
+#############################################################################
+    
+
 # LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', "de", "es"]
 LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de']
 DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
@@ -66,7 +94,7 @@ DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
 # no used just for reference
 DEFAULT_PROMPTS = {
-    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul, AUO",
+    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul, AUO, 彭双浪, 柯富仁",
     "JAMES": "GRC, DSBG, ADP, OLED, SRBG, RBU, In-cel one chip, monitor, Sports Gaming, High Frame Rate Full HD 320Hz, Kiosk, Frank, Vertical, ARHUD, 手扶屏, 空調屏, 後視鏡的屏, 達擎, 產能, 忠達.",
     "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo.",
     "eABC_1118_19": "稻盛哲學, Monitor, 勇者不懼, 凌華, 君子之德風, paul, 阿米巴經營成功方程式, 如洪峰, 四大構面, 智仁勇, 將者, DaaS, 知者不惑, 草上之風必偃, Tartan Display, 上善若水, 達擎, 江海所以能為百谷王者, 孔子登東山而小魯, 水善利萬物而不爭, 兼聽則明, BS, 登泰山而小天下, 小人之德草, FindARTs, AmLED, 京都賞, Firmware, 處眾人之所惡, 謝明慧, 仁者不憂, 加法和減法經營, MS, 狼性, 如瀑布, Pillar, 偏信則暗, foreX, OLED, 嚴也, 以其善下之, 破除我執, 故能為百谷王者, ComQi, Polarizer, 爭與不爭, 業說會, DSBG, AecoPost, Vertical, 爭是擔當, 顏淵, 形塑, 不爭是爭, ADP team, NT dollars, AUO",
@@ -84,7 +112,7 @@ ALLOWED_REPETITIONS = {
     "no", "yes", "yeah", "yep", "nope", "yup",
     
     # Agreement/Confirmation
-    "ok", "okay", "good", "great", "right", "sure", "fine", "nice",
+    "okay", "good", "great", "right", "sure", "fine", "nice",
     "correct", "exactly", "absolutely",
     
     # Interjections/Filler words
@@ -95,7 +123,7 @@ ALLOWED_REPETITIONS = {
     "very", "so", "really", "super", "too", "much",
     
     # Greetings/Farewells
-    "bye", "hello", "hi", "hey",
+    "hello", "hi", "hey",
     
     # Politeness
     "thanks", "thank", "please", "sorry", "excuse",
@@ -104,8 +132,8 @@ ALLOWED_REPETITIONS = {
     "ha", "haha", "hehe", "hoho", "lol",
     
     # Chinese single characters (common interjections/emphasis)
-    "好", "對", "是", "嗯", "哦", "啊", "呀", "哈", "喔", "欸",
-    "不", "沒", "有", "要", "會", "能", "可", "就", "都", "也",
+    "好", "對", "是", "嗯", "哦", "呀", "哈", "喔", "欸",
+    "不", "沒", "有", "要", "能", "可", "就", "都", "也",
     "很", "真", "太", "更", "最", "非", "超",
     
     # Chinese two-character words (common expressions)
@@ -168,7 +196,9 @@ CONTAINS_UNUSUAL = [
 ONLY_UNUSUAL = [
     "Bye bye",
     "Let s continue",
+    "Let s see",
     "Music",
+    "GG",
     "See you next time",
     "Thank you",
     "Thank you for watching",
@@ -206,6 +236,9 @@ ONLY_UNUSUAL = [
     "字幕提供者 Milk",
     "字幕提供者 李宗盛",
     "字幕提供者 許祐寅",
+    "主持人王宥賓",
+    "主持人呂克宣",
+    "主持人吳教授",
     "字幕由 AI 產生感謝觀看",
     "字幕由 Amaraorg 社區提供",
     "恩",
@@ -220,6 +253,7 @@ ONLY_UNUSUAL = [
     "我們下次見",
     "我們繼續吧",
     "我愛你",
+    "好,謝謝",
     "拜拜",
     "接受的訓練數據截至 2023 年 10 月",
     "整理字幕由 Amaraorg 社區提供",
