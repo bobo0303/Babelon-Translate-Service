@@ -13,7 +13,8 @@ import datetime
 import threading 
 from queue import Queue  
 from threading import Thread, Event  
-from api.model import Model  
+from api.core.transcribe_manager import TranscribeManager
+from api.core.translate_manager import TranslateManager
 from api.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse
 from wjy3 import BaseResponse, Status
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
@@ -46,7 +47,8 @@ local_now = utc_now.astimezone(tz)
 use_pretext = True
   
 # Initialize global objects and variables
-model = Model()  
+transcribe_manager = TranscribeManager()
+translate_manager = TranslateManager()
 waiting_list = []  # Queue for waiting translation requests
 sse_stop_event = Event()  # Global event to control SSE connection
 service_stop_event = Event()  # Event to control service shutdown  
@@ -61,23 +63,23 @@ async def lifespan(app: FastAPI):
     logger.info(f" | Start to loading default model. | ")  
     # load model  
     default_model = "large_v2"  
-    model.load_model(default_model)  # Directly load the default model  
-    logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(model)} | ")  
+    transcribe_manager.load_model(default_model)  # Directly load the default model  
+    logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(transcribe_manager)} | ")  
     # preheat  
     logger.info(f" | Start to preheat model. | ")  
     default_audio = "audio/test.wav"  
     start = time.time()  
     for _ in range(5):  
-        model.transcribe(default_audio, "en", post_processing=False)  
+        transcribe_manager.transcribe(default_audio, "en", post_processing=False)  
     end = time.time()  
     logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
     # set default prompt
-    model.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
+    transcribe_manager.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
     logger.info(f" | Default prompt has been set. | ")  
     
     # 設置 websocket 的 model
-    set_global_model(model)
-    logger.info(f" | WebSocket model has been set. Model ID: {id(model)} | ")
+    set_global_model(transcribe_manager)
+    logger.info(f" | WebSocket model has been set. Model ID: {id(transcribe_manager)} | ")
     
     logger.info(f" | ##################################################### | ")  
     # delete_old_audio_files()
@@ -91,7 +93,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     service_stop_event.set()  
     # task_thread.join()  
-    model.translate_manager.close()
+    translate_manager.close()
     logger.info(" | Scheduled task has been stopped. | ")
 
 app = FastAPI(lifespan=lifespan)
@@ -141,11 +143,11 @@ async def get_items():
         BaseResponse: Current transcription and translation models
     """
     logger.info(f" | ############### Transcription model ########################### | ")  
-    logger.info(f" | current transcription model is {model.model_version} | ")  
+    logger.info(f" | current transcription model is {transcribe_manager.model_version} | ")  
     logger.info(f" | ################# Translate methods ########################### | ")  
-    logger.info(f" | current translation model is {model.translate_method} | ")  
+    logger.info(f" | current translation model is {translate_manager.translation_method} | ")  
     logger.info(f" | ############################################################### | ")  
-    return BaseResponse(message=f" | current transcription model is {model.model_version} | current translation model is {model.translate_method} | ", data=[model.model_version, model.translate_method])  
+    return BaseResponse(message=f" | current transcription model is {transcribe_manager.model_version} | current translation model is {translate_manager.translation_method} | ", data=[transcribe_manager.model_version, translate_manager.translation_method])  
 
 @app.get("/list_optional_items")  
 async def get_items():  
@@ -180,12 +182,12 @@ async def change_transcription_model(model_name: str = Form(...)):
     model_name = model_name.lower()  
       
     # Check if the model's name exists in the model's path  
-    if not hasattr(model.models_path, model_name):  
+    if not hasattr(transcribe_manager.models_path, model_name):  
         # Raise an HTTPException if the model is not found  
         return BaseResponse(status=Status.FAILED, message=f" | Model '{model_name}' not found. | ", data=None)  
       
     # Load the specified model  
-    message = model.load_model(model_name)  
+    message = transcribe_manager.load_model(model_name)  
       
     # Return a response indicating the success of the model loading process  
     if message is None:  
@@ -205,11 +207,11 @@ async def set_prompt(prompts = Form(None)):
         BaseResponse: Status of prompt setting operation
     """
     if prompts is None or prompts == "" or (isinstance(prompts, str) and prompts.strip() == ""):
-        model.set_prompt(None)
+        transcribe_manager.set_prompt(None)
         logger.info(f" | Prompt has been cleared. | ")
         return BaseResponse(message=" | Prompt has been cleared. | ", data=None)
     else:
-        error = model.set_prompt(prompts.strip()) 
+        error = transcribe_manager.set_prompt(prompts.strip()) 
         if error is None:
             return BaseResponse(message=f" | Prompt has been set | ", data=None)
         else:
@@ -350,7 +352,7 @@ async def translate(
         return BaseResponse(status=Status.FAILED, message=" | The audio file does not exist, please check the audio path. | ", data=response_data)  
   
     # Check if the model has been loaded  
-    if model.model_version is None:  
+    if transcribe_manager.model_version is None:  
         return BaseResponse(status=Status.FAILED, message=" | model haven't been load successfully. may out of memory please check again | ", data=response_data)  
   
     # Check if the languages are in the supported language list  
@@ -371,8 +373,8 @@ async def translate(
         stop_event = threading.Event()  
   
         # Create timing thread and inference thread  
-        time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, t_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, multi_translate))
+        time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
+        inference_thread = threading.Thread(target=audio_translate, args=(transcribe_manager, translate_manager, audio_buffer, result_queue, o_lang, t_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, multi_translate))
   
         # Start the threads  
         time_thread.start()  
@@ -499,8 +501,8 @@ async def text_translate(
         stop_event = threading.Event()  
   
         # Create timing thread and inference thread  
-        time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=texts_translate, args=(model, text, result_queue, source_language, target_language, stop_event, multi_translate))  
+        time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
+        inference_thread = threading.Thread(target=texts_translate, args=(translate_manager, text, result_queue, source_language, target_language, stop_event, multi_translate))  
   
         # Start the threads  
         time_thread.start()  
@@ -611,7 +613,7 @@ async def sse_audio_translate(
     )  
     
     # Check if the model has been loaded  
-    if model.model_version is None:  
+    if transcribe_manager.model_version is None:  
         return BaseResponse(status=Status.FAILED, message=" | model haven't been load successful. may out of memory please check again | ", data=response_data)  
         
     # Check if the languages are in the supported language list  
@@ -677,7 +679,7 @@ async def sse_audio_translate():
     async def event_stream():  
         try:
             while not sse_stop_event.is_set():  
-                if waiting_list and not model.processing:  
+                if waiting_list and not transcribe_manager.processing:  
                     response_data, other_information = waiting_list.pop(0)  
                     audio_buffer = f"audio/{response_data.meeting_id}/{response_data.times}.wav" 
                     o_lang = response_data.ori_lang  
@@ -686,8 +688,8 @@ async def sse_audio_translate():
                         # Create an event to signal stopping  
                         stop_event = threading.Event()  
                         # Create timing thread and inference thread  
-                        time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-                        inference_thread = threading.Thread(target=audio_translate_sse, args=(model, audio_buffer, o_lang, other_information, stop_event))  
+                        time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
+                        inference_thread = threading.Thread(target=audio_translate_sse, args=(transcribe_manager, translate_manager, audio_buffer, o_lang, other_information, stop_event))  
       
                         # Start the threads  
                         time_thread.start()  
@@ -701,8 +703,8 @@ async def sse_audio_translate():
                         #     os.remove(audio_buffer)  
       
                         # Process all available results from the result queue
-                        while not model.result_queue.empty():
-                            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict = model.result_queue.get()
+                        while not transcribe_manager.result_queue.empty():
+                            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict = transcribe_manager.result_queue.get()
                             response_data.transcription_text = ori_pred
                             response_data.text = result  
                             response_data.transcribe_time = transcription_time  

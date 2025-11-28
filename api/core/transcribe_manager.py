@@ -11,7 +11,6 @@ from queue import Queue
 
 from api.core.post_process import post_process
 from api.audio.audio_utils import get_audio_duration
-from api.core.translate_manager import TranslateManager
 
 from lib.config.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES, FALLBACK_METHOD, get_system_prompt_dynamic_language
   
@@ -40,9 +39,9 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)  
 logger.propagate = False  
 
-class Model:  
+class TranscribeManager:  
     def __init__(self):  
-        """Initialize the Model class with default attributes."""  
+        """Initialize the TranscribeManager class with default attributes."""
         self.models_path = ModelPath()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"  
         self.prompt = None
@@ -52,14 +51,6 @@ class Model:
         self.model_version = None  
         self.result_queue = Queue()  
         self.processing = False
-        
-        # Initialize TranslateManager for parallel translation
-        try:
-            self.translate_manager = TranslateManager()
-            logger.info(" | TranslateManager initialized successfully | ")
-        except Exception as e:
-            logger.error(f" | Failed to initialize TranslateManager: {e} | ")
-            self.translate_manager = None
   
     def load_model(self, models_name):  
         """Load the specified model based on the model's name."""  
@@ -281,74 +272,5 @@ class Model:
             inference_time = 0
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori_pred, inference_time  
-    
-    def translate(self, text, source_lang, target_langs, prev_text="", multi_translate=True):
-        """
-        Translate text to multiple target languages using TranslateManager.
-        
-        Args:
-            text: Text to translate
-            source_lang: Source language code (e.g., 'zh', 'en')
-            target_langs: Target language code(s), can be:
-                - str: single language (e.g., 'en')
-                - list: multiple languages (e.g., ['en', 'de', 'ja', 'ko'])
-            prev_text: Previous text context (optional)
-            
-        Returns:
-            tuple: (result_dict, translate_time, translate_method)
-                - result_dict: {lang: translated_text} including source language
-                - translate_time: Time taken for translation
-                - translate_method: List of translators used
-        """
-        if self.translate_manager is None:
-            logger.error(" | TranslateManager not available, returning empty results | ")
-            return DEFAULT_RESULT.copy(), 0.0, "FAILED"
-        
-        # Convert target_langs to list if it's a single string
-        if isinstance(target_langs, str):
-            target_langs = [target_langs]
-        
-        try:
-            # Store current task group ID for cleanup if needed
-            self.current_translation_task_group = None
-            
-            # Use TranslateManager's assign_task for parallel translation
-            result_dict, translate_time, methods_used, timing_dict = self.translate_manager.assign_task(
-                text=text,
-                source_lang=source_lang,
-                target_langs=target_langs,
-                prev_text=prev_text,
-                multi_translate=multi_translate
-            )
-            
-            # methods_used is already a string from translate_manager
-            translate_method = methods_used if methods_used else "UNKNOWN"
-            
-            return result_dict, translate_time, translate_method, timing_dict
-            
-        except Exception as e:
-            logger.error(f" | translate() error: {e} | ")
-            # Return default result with source text
-            default_result = DEFAULT_RESULT.copy()
-            default_result[source_lang] = text
-            return default_result, 0.0, "FAILED", {}
-    
-    def cleanup_translation_threads(self):
-        """Clean up all active translation threads in TranslateManager."""
-        if self.translate_manager is None:
-            return
-        
-        try:
-            # Stop all active task groups
-            with self.translate_manager.lock:
-                task_group_ids = list(self.translate_manager.task_groups.keys())
-            
-            for task_group_id in task_group_ids:
-                logger.info(f" | Cleaning up translation task group: {task_group_id} | ")
-                self.translate_manager._stop_all_threads_in_group(task_group_id)
-            
-            logger.debug(" | All translation threads cleaned up | ")
-        except Exception as e:
-            logger.error(f" | Error cleaning up translation threads: {e} | ")
+        return ori_pred, inference_time
     

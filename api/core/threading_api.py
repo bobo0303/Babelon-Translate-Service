@@ -8,11 +8,12 @@ from lib.config.constant import DEFAULT_RESULT
   
 logger = logging.getLogger(__name__)  
 
-def audio_translate(model, audio_file_path, result_queue, ori, tar, stop_event, strategy, post_processing, prev_text, multi_translate):  
+def audio_translate(transcribe_manager, translate_manager, audio_file_path, result_queue, ori, tar, stop_event, strategy, post_processing, prev_text, multi_translate):  
     """  
     Transcribe and translate an audio file, then store the results in a queue.  
   
-    :param model: The model used for transcription and translation.  
+    :param transcribe_manager: The TranscribeManager used for transcription.  
+    :param translate_manager: The TranslateManager used for translation.
     :param audio_file_path: str  
         The path to the audio file to be processed.  
     :param result_queue: Queue  
@@ -25,10 +26,10 @@ def audio_translate(model, audio_file_path, result_queue, ori, tar, stop_event, 
         The event used to signal stopping.  
     """  
     try:
-        ori_pred, inference_time = model.transcribe(audio_file_path, ori, strategy, post_processing, prev_text)
+        ori_pred, inference_time = transcribe_manager.transcribe(audio_file_path, ori, strategy, post_processing, prev_text)
         if tar:
             # tar is already a list from main.py
-            translated_pred, translate_time, translate_method, timing_dict = model.translate(ori_pred, ori, tar, prev_text, multi_translate)  
+            translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, ori, tar, prev_text, multi_translate)  
         else:
             translated_pred = DEFAULT_RESULT.copy()
             translate_time = 0
@@ -43,15 +44,15 @@ def audio_translate(model, audio_file_path, result_queue, ori, tar, stop_event, 
     finally:
         # Clean up any active translation threads when this thread is stopped
         try:
-            model.cleanup_translation_threads()
+            translate_manager.cleanup_translation_threads()
         except Exception as e:
             logger.error(f" | Error during cleanup: {e} | ")
 
-def texts_translate(model, text, result_queue, ori, tar, stop_event, multi_translate=True):  
+def texts_translate(translate_manager, text, result_queue, ori, tar, stop_event, multi_translate=True):  
     """  
-    Translate a given text using the specified model.  
+    Translate a given text using TranslateManager.  
   
-    :param model: The model used for translation.  
+    :param translate_manager: The TranslateManager used for translation.
     :param text: str  
         The text to be translated.  
     :param result_queue: Queue  
@@ -67,22 +68,23 @@ def texts_translate(model, text, result_queue, ori, tar, stop_event, multi_trans
     """  
     try:
         # tar is already a list from main.py
-        translated_pred, translate_time, translate_method, timing_dict = model.translate(text, ori, tar, prev_text="", multi_translate=multi_translate)  
+        translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(text, ori, tar, prev_text="", multi_translate=multi_translate)  
 
         result_queue.put((translated_pred, translate_time, translate_method, timing_dict))  
         stop_event.set()  # Signal to stop the waiting thread
     finally:
         # Clean up any active translation threads when this thread is stopped
         try:
-            model.cleanup_translation_threads()
+            translate_manager.cleanup_translation_threads()
         except Exception as e:
             logger.error(f" | Error during cleanup: {e} | ")  
   
-def audio_translate_sse(model, audio_file_path, ori, other_information, stop_event):  
+def audio_translate_sse(transcribe_manager, translate_manager, audio_file_path, ori, other_information, stop_event):  
     """  
-    Transcribe and translate an audio file for SSE, then store the results in the model's result queue.  
+    Transcribe and translate an audio file for SSE, then store the results in the transcribe_manager's result queue.  
   
-    :param model: The model used for transcription and translation.  
+    :param transcribe_manager: The TranscribeManager used for transcription.  
+    :param translate_manager: The TranslateManager used for translation.
     :param audio_file_path: str  
         The path to the audio file to be processed.  
     :param ori: str  
@@ -93,14 +95,14 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
         The event used to signal stopping.  
     """  
     try:
-        model.processing = True
+        transcribe_manager.processing = True
         
-        ori_pred, inference_time = model.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
+        ori_pred, inference_time = transcribe_manager.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
         if other_information["use_translate"]:
             # Get target_langs from other_information or default to all languages
             target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != ori])
             multi_translate = other_information.get("multi_translate", True)
-            translated_pred, translate_time, translate_method, timing_dict = model.translate(ori_pred, ori, target_langs, other_information["prev_text"], multi_translate)  
+            translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, ori, target_langs, other_information["prev_text"], multi_translate)  
         else:
             translated_pred = DEFAULT_RESULT.copy()
             translate_time = 0
@@ -110,13 +112,13 @@ def audio_translate_sse(model, audio_file_path, ori, other_information, stop_eve
         # Calculate RTF using audio_utils
         rtf = calculate_rtf(audio_file_path, inference_time, translate_time) 
         
-        model.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict))
-        model.processing = False
+        transcribe_manager.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict))
+        transcribe_manager.processing = False
         stop_event.set()  # Signal to stop the waiting thread
     finally:
         # Clean up any active translation threads when this thread is stopped
         try:
-            model.cleanup_translation_threads()
+            translate_manager.cleanup_translation_threads()
         except Exception as e:
             logger.error(f" | Error during cleanup: {e} | ")
 
@@ -155,17 +157,17 @@ def stop_thread(thread):
             logger.debug(" | PyThreadState_SetAsyncExc failed | ")  
             raise SystemError(" | PyThreadState_SetAsyncExc failed | ")  
   
-def waiting_times(stop_event, model, times):  
+def waiting_times(stop_event, transcribe_manager, times):  
     """  
     Wait for a specified amount of time or until an event is set.  
   
     :param stop_event: threading.Event  
         The event used to signal stopping.  
-    :param model: The model whose processing state is to be updated.  
+    :param transcribe_manager: The TranscribeManager whose processing state is to be updated.  
     :param times: float  
         The amount of time to wait.  
     """  
     stop_event.wait(times)  # Wait for the event or timeout  
-    model.processing = False  
+    transcribe_manager.processing = False  
     
     

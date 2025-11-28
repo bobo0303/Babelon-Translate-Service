@@ -414,6 +414,46 @@ class TranslateManager:
             default_result = self._create_default_result(text, source_lang)
             return default_result
     
+    def translate(self, text, source_lang, target_langs, prev_text="", multi_translate=True):
+        """
+        Public method to translate text to multiple target languages.
+        
+        Args:
+            text: Text to translate
+            source_lang: Source language code (e.g., 'zh', 'en')
+            target_langs: Target language code(s), can be:
+                - str: single language (e.g., 'en')
+                - list: multiple languages (e.g., ['en', 'de', 'ja', 'ko'])
+            prev_text: Previous text context (optional)
+            multi_translate: If True, distribute tasks across multiple LLMs; 
+                           If False, use single LLM to translate all languages at once
+            
+        Returns:
+            tuple: (result_dict, translate_time, methods_used, timing_dict)
+                - result_dict: {lang: translated_text} including source language
+                - translate_time: Time taken for translation
+                - methods_used: Translator name(s) used
+                - timing_dict: {translator_name: [(time, lang), ...]} - detailed timing info
+        """
+        # Convert target_langs to list if it's a single string
+        if isinstance(target_langs, str):
+            target_langs = [target_langs]
+        
+        try:
+            return self.assign_task(
+                text=text,
+                source_lang=source_lang,
+                target_langs=target_langs,
+                prev_text=prev_text,
+                multi_translate=multi_translate
+            )
+        except Exception as e:
+            logger.error(f" | translate() error: {e} | ")
+            # Return default result with source text
+            default_result = DEFAULT_RESULT.copy()
+            default_result[source_lang] = text
+            return default_result, 0.0, "FAILED", {}
+    
     def assign_task(self, text, source_lang, target_langs, prev_text="", multi_translate=True):
         """
         Assign translation tasks for multiple target languages using task queue.
@@ -626,6 +666,20 @@ class TranslateManager:
         
         return result_dict, translate_time, methods_used, timing_dict
     
+    def cleanup_translation_threads(self):
+        """Clean up all active translation threads."""
+        try:
+            # Stop all active task groups
+            with self.lock:
+                task_group_ids = list(self.task_groups.keys())
+            
+            for task_group_id in task_group_ids:
+                logger.info(f" | Cleaning up translation task group: {task_group_id} | ")
+                self._stop_all_threads_in_group(task_group_id)
+            
+            logger.debug(" | All translation threads cleaned up | ")
+        except Exception as e:
+            logger.error(f" | Error cleaning up translation threads: {e} | ")
 
     def close(self):
         """
