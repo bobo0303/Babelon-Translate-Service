@@ -5,6 +5,7 @@ import librosa
 import logging  
 import logging.handlers
 import numpy as np
+import threading
 
 from transformers import pipeline, AutoProcessor
 from queue import Queue  
@@ -51,6 +52,13 @@ class TranscribeManager:
         self.model_version = None  
         self.result_queue = Queue()  
         self.processing = False
+        
+        # Pipeline queue system (event-driven, no polling)
+        self.task_queue = Queue()  # Thread-safe queue for tasks
+        self.task_results = {}  # {task_id: {'result': ..., 'event': Event()}}
+        self.task_lock = threading.Lock()  # Lock for task_results dict
+        self.stop_worker = False
+        self.worker_thread = None
   
     def load_model(self, models_name):  
         """Load the specified model based on the model's name."""  
@@ -168,6 +176,113 @@ class TranscribeManager:
             logger.error(f" | _add_silence_padding failed in {execution_time:.8f}s | Error: {e} | File: {audio_file} | ")
             # Return original file path if padding fails
             return audio_file
+    
+    def start_worker(self):
+        """Start the background worker thread for pipeline processing."""
+        if self.worker_thread is None or not self.worker_thread.is_alive():
+            self.stop_worker = False
+            self.worker_thread = threading.Thread(target=self._queue_worker, daemon=True)
+            self.worker_thread.start()
+            logger.info(" | Pipeline worker thread started. | ")
+    
+    def stop_worker_thread(self):
+        """Stop the background worker thread."""
+        self.stop_worker = True
+        self.task_queue.put(None)  # Send stop signal
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=5)
+            logger.info(" | Pipeline worker thread stopped. | ")
+    
+    def add_task(self, task_id, audio_file, o_lang, multi_strategy_transcription, 
+                 transcription_post_processing, prev_text, audio_uid, times):
+        """Add a task to the queue and return an Event for blocking wait."""
+        # Check and cancel duplicate audio_uid in pending tasks
+        self._check_and_cancel_duplicate(audio_uid, task_id, times)
+        
+        # Create Event for this task
+        task_event = threading.Event()
+        with self.task_lock:
+            self.task_results[task_id] = {
+                'result': None,
+                'event': task_event,
+                'audio_uid': audio_uid,
+                'times': times,
+                'cancelled': False
+            }
+        
+        # Add task to queue (thread-safe, no lock needed)
+        task = (task_id, audio_file, o_lang, multi_strategy_transcription,
+                transcription_post_processing, prev_text)
+        self.task_queue.put(task)
+        logger.debug(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) added to queue. | ")
+        
+        return task_event
+    
+    def _check_and_cancel_duplicate(self, audio_uid, new_task_id, new_times):
+        """Check for duplicate audio_uid in task_results and cancel older ones, keep only the latest."""
+        with self.task_lock:
+            for task_id, task_info in self.task_results.items():
+                if (task_id != new_task_id and 
+                    task_info.get('audio_uid') == audio_uid and 
+                    task_info['result'] is None):  # Still pending
+                    
+                    existing_times = task_info.get('times', '')
+                    # Cancel the older task (keep only the one with later times)
+                    if existing_times < new_times:
+                        task_info['cancelled'] = True
+                        task_info['event'].set()  # Immediately wake up waiting endpoint
+                        logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {existing_times}) cancelled due to newer request (times: {new_times}). | ")
+                    # If existing task is newer, we should cancel the new one instead
+                    # But this is handled by adding new task to task_results and letting worker check
+    
+    def _queue_worker(self):
+        """Background worker thread - pure event-driven, zero polling."""
+        logger.info(" | Queue worker started and waiting for tasks... | ")
+        
+        while True:
+            try:
+                # Block indefinitely until task arrives (pure event-driven)
+                task = self.task_queue.get(block=True)
+                
+                if task is None:  # Stop signal
+                    break
+                
+                # Unpack task
+                task_id, audio_file, o_lang, multi_strategy_transcription, \
+                    transcription_post_processing, prev_text = task
+                
+                # Check if task was cancelled
+                with self.task_lock:
+                    if self.task_results[task_id].get('cancelled', False):
+                        logger.info(f" | Task {task_id} skipped (cancelled). | ")
+                        self.task_results[task_id]['event'].set()
+                        continue
+                
+                logger.debug(f" | Worker processing task {task_id}... | ")
+                
+                # Execute transcription (set processing = True)
+                self.processing = True
+                ori_pred, transcription_time = self.transcribe(
+                    audio_file, o_lang, multi_strategy_transcription, 
+                    transcription_post_processing, prev_text
+                )
+                
+                # Critical: Release transcribe_manager immediately after transcription
+                self.processing = False
+                logger.debug(f" | Task {task_id}: Transcription complete, transcribe_manager released. | ")
+                
+                # Store transcription result and notify
+                with self.task_lock:
+                    self.task_results[task_id]['result'] = (ori_pred, transcription_time)
+                    self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
+                
+                logger.debug(f" | Task {task_id} completed. | ")
+                
+            except Exception as e:
+                logger.error(f" | Worker error: {e} | ")
+                self.processing = False  # Ensure processing flag is reset on error
+        
+        logger.info(" | Queue worker stopped. | ")
 
     def transcribe(self, audio_file_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
         """  

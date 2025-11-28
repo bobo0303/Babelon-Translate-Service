@@ -1,12 +1,130 @@
 import logging  
 import threading  
 import ctypes
+import uuid
+import time
 
 from api.audio.audio_utils import calculate_rtf
 from lib.config.constant import DEFAULT_RESULT  
 
   
 logger = logging.getLogger(__name__)  
+
+def _cleanup_transcription_task(transcribe_manager, task_id):
+    """
+    Clean up a transcription task that was interrupted or cancelled.
+    
+    :param transcribe_manager: TranscribeManager instance
+    :param task_id: Task ID to clean up
+    """
+    try:
+        with transcribe_manager.task_lock:
+            if task_id in transcribe_manager.task_results:
+                # Mark task as cancelled
+                transcribe_manager.task_results[task_id]['cancelled'] = True
+                transcribe_manager.task_results[task_id]['event'].set()
+                logger.info(f" | Task {task_id} marked as cancelled for cleanup. | ")
+    except Exception as e:
+        logger.warning(f" | Error cleaning up task {task_id}: {e} | ")  
+
+def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file, o_lang, t_lang, 
+                               multi_strategy_transcription, transcription_post_processing, 
+                               prev_text, multi_translate, audio_uid, times):
+    """
+    Coordinate transcription and translation pipeline with proper decoupling.
+    
+    This function handles the complete pipeline:
+    1. Submit transcription task to TranscribeManager
+    2. Wait for transcription completion
+    3. Submit translation task to TranslateManager if needed
+    4. Return combined results
+    
+    :param transcribe_manager: TranscribeManager instance
+    :param translate_manager: TranslateManager instance  
+    :param audio_file: Path to audio file
+    :param o_lang: Original language
+    :param t_lang: Target language(s)
+    :param multi_strategy_transcription: Transcription strategy
+    :param transcription_post_processing: Post-processing flag
+    :param prev_text: Previous context text
+    :param multi_translate: Multi-translation flag
+    :param audio_uid: Audio unique identifier
+    :param times: Timestamp
+    :return: Tuple of (ori_pred, translated_pred, rtf, transcription_time, translate_time, translate_method, timing_dict)
+    """
+    # Initialize default output structure
+    result = {
+        'ori_pred': "",
+        'translated_pred': DEFAULT_RESULT.copy(),
+        'rtf': 0,
+        'transcription_time': 0,
+        'translate_time': 0,
+        'translate_method': "none",
+        'timing_dict': {}
+    }
+    
+    start_time = time.time()
+    task_id = str(uuid.uuid4())
+    transcription_event = None
+    
+    try:
+        # Step 1: Submit transcription task
+        transcription_event = transcribe_manager.add_task(
+            task_id, audio_file, o_lang, multi_strategy_transcription,
+            transcription_post_processing, prev_text, audio_uid, times
+        )
+        
+        # Step 2: Wait for transcription completion
+        transcription_event.wait()
+        
+        # Step 3: Get transcription result
+        with transcribe_manager.task_lock:
+            if transcribe_manager.task_results[task_id].get('cancelled', False):
+                logger.debug(f" | Pipeline task {task_id} cancelled during transcription. | ")
+                result['ori_pred'] = None
+                result['translate_method'] = "cancelled"
+                return tuple(result.values())
+            
+            transcription_result = transcribe_manager.task_results[task_id]['result']
+            # Clean up task result to free memory
+            del transcribe_manager.task_results[task_id]
+    
+    except Exception as e:
+        # Handle any interruption or cancellation
+        logger.warning(f" | Pipeline coordinator interrupted: {e} | ")
+        _cleanup_transcription_task(transcribe_manager, task_id)
+        result['translate_method'] = "interrupted"
+        return tuple(result.values())
+    
+    # Continue with the rest of the function...
+    if transcription_result is None:
+        logger.error(f" | Transcription failed for task {task_id}. | ")
+        result['translate_method'] = "transcription_failed"
+        return tuple(result.values())
+    
+    result['ori_pred'], result['transcription_time'] = transcription_result
+    
+    # Step 4: Handle translation if needed
+    if t_lang:
+        try:
+            result['translated_pred'], result['translate_time'], result['translate_method'], result['timing_dict'] = \
+                translate_manager.translate(result['ori_pred'], o_lang, t_lang, prev_text, multi_translate)
+        except Exception as e:
+            logger.error(f" | Translation failed for task {task_id}: {e} | ")
+            # Clean up any translation threads if needed
+            try:
+                translate_manager.cleanup_translation_threads()
+            except:
+                pass
+            result['translate_method'] = "translation_failed"
+    
+    # Step 5: Calculate RTF and return results
+    result['rtf'] = calculate_rtf(audio_file, result['transcription_time'], result['translate_time'])
+    
+    total_time = time.time() - start_time
+    logger.info(f" | Pipeline task {task_id} completed in {total_time:.2f}s (transcription: {result['transcription_time']:.2f}s, translation: {result['translate_time']:.2f}s). | ")
+    
+    return tuple(result.values())  
 
 def audio_translate(transcribe_manager, translate_manager, audio_file_path, result_queue, ori, tar, stop_event, strategy, post_processing, prev_text, multi_translate):  
     """  
