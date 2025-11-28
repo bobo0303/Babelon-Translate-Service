@@ -102,6 +102,9 @@ class TranslateManager:
             if method_info and method_info["translator"] is not None and not method_info["busy"]:
                 method_info["busy"] = True
                 return method_name, method_info["translator"]
+        
+        # All translators are busy
+        logger.warning(f" | ##### All translators are busy ##### | ")
         return None, None
     
     def _release_translator(self, translator_name):
