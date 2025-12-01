@@ -13,7 +13,7 @@ from queue import Queue
 from api.core.post_process import post_process
 from api.audio.audio_utils import get_audio_duration
 
-from lib.config.constant import ModelPath, LANGUAGE_LIST, OLLAMA_MODEL, SILENCE_PADDING, DEFAULT_RESULT, MAX_NUM_STRATEGIES, FALLBACK_METHOD, get_system_prompt_dynamic_language
+from lib.config.constant import ModelPath, SILENCE_PADDING, MAX_NUM_STRATEGIES
   
   
 logger = logging.getLogger(__name__)  
@@ -207,7 +207,8 @@ class TranscribeManager:
                 'event': task_event,
                 'audio_uid': audio_uid,
                 'times': times,
-                'cancelled': False
+                'cancelled': False,
+                'processing': False
             }
         
         # Add task to queue (thread-safe, no lock needed)
@@ -224,14 +225,15 @@ class TranscribeManager:
             for task_id, task_info in self.task_results.items():
                 if (task_id != new_task_id and 
                     task_info.get('audio_uid') == audio_uid and 
-                    task_info['result'] is None):  # Still pending
+                    task_info['result'] is None and
+                    not task_info.get('processing', False)):  # Only cancel queued tasks, not executing ones
                     
                     existing_times = task_info.get('times', '')
                     # Cancel the older task (keep only the one with later times)
                     if existing_times < new_times:
                         task_info['cancelled'] = True
                         task_info['event'].set()  # Immediately wake up waiting endpoint
-                        logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {existing_times}) cancelled due to newer request (times: {new_times}). | ")
+                        logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {existing_times}) cancelled due to newer request (times: {new_times}). [QUEUED] | ")
                     # If existing task is newer, we should cancel the new one instead
                     # But this is handled by adding new task to task_results and letting worker check
     
@@ -251,14 +253,24 @@ class TranscribeManager:
                 task_id, audio_file, o_lang, multi_strategy_transcription, \
                     transcription_post_processing, prev_text = task
                 
-                # Check if task was cancelled
+                # Check if task was cancelled or already cleaned up
                 with self.task_lock:
+                    if task_id not in self.task_results:
+                        logger.info(f" | Task {task_id} skipped (already cleaned up). | ")
+                        continue
                     if self.task_results[task_id].get('cancelled', False):
                         logger.info(f" | Task {task_id} skipped (cancelled). | ")
                         self.task_results[task_id]['event'].set()
                         continue
                 
                 logger.debug(f" | Worker processing task {task_id}... | ")
+                
+                # Mark task as processing to prevent cancellation
+                with self.task_lock:
+                    if task_id not in self.task_results:
+                        logger.info(f" | Task {task_id} disappeared before processing. | ")
+                        continue
+                    self.task_results[task_id]['processing'] = True
                 
                 # Execute transcription (set processing = True)
                 self.processing = True
@@ -273,10 +285,12 @@ class TranscribeManager:
                 
                 # Store transcription result and notify
                 with self.task_lock:
-                    self.task_results[task_id]['result'] = (ori_pred, transcription_time)
-                    self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
-                
-                logger.debug(f" | Task {task_id} completed. | ")
+                    if task_id in self.task_results:
+                        self.task_results[task_id]['result'] = (ori_pred, transcription_time)
+                        self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
+                        logger.debug(f" | Task {task_id} completed. | ")
+                    else:
+                        logger.info(f" | Task {task_id} was cleaned up before completion could be stored. | ")
                 
             except Exception as e:
                 logger.error(f" | Worker error: {e} | ")

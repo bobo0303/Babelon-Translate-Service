@@ -81,6 +81,8 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         with transcribe_manager.task_lock:
             if transcribe_manager.task_results[task_id].get('cancelled', False):
                 logger.debug(f" | Pipeline task {task_id} cancelled during transcription. | ")
+                # Clean up cancelled task before returning
+                del transcribe_manager.task_results[task_id]
                 result['ori_pred'] = None
                 result['translate_method'] = "cancelled"
                 return tuple(result.values())
