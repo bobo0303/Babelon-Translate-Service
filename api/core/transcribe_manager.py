@@ -96,7 +96,7 @@ class TranscribeManager:
             logger.info(" | Previous model resources have been released. | ")  
   
         
-    def set_prompt(self, prompt_name):  
+    def set_prompt(self, prompt_name, language="zh"):  
         """  
         Set the prompt for the transcription model.  
   
@@ -114,10 +114,15 @@ class TranscribeManager:
         self.prompt_name = prompt_name
         
         start = time.time()
-        if not prompt_name.endswith(('.', '。', '!', '！', '?', '？')):
-            prompt_name += '.'
-        # prompt_text = f"Our prompts are {prompt_name}"
-        prompt_text = f"These are our prompts {prompt_name} Let's continue."
+
+        if language == "zh":
+            if not prompt_name.endswith(('.', '。', '!', '！', '?', '？')):
+                prompt_name += '。'
+            prompt_text = f"這是提示詞 {prompt_name} 痾。"
+        else:
+            if not prompt_name.endswith(('.', '。', '!', '！', '?', '？')):
+                prompt_name += '.'
+            prompt_text = f"These are our prompts {prompt_name} Let's continue."
         
         try:
             # 如果 processor 未初始化，先初始化它
@@ -139,7 +144,7 @@ class TranscribeManager:
             logger.error(f" | Prompt setting failed. | ")
             return e    
         
-    def _add_silence_padding(self, audio_file, padding_duration=0.3):  # Reduce to 0.3 seconds
+    def _add_silence_padding(self, audio_file, padding_duration=0.05):  # Reduce to 0.05 seconds (0.3 original)
         """
         Add silence padding to the beginning and end of audio file.
         
@@ -339,7 +344,14 @@ class TranscribeManager:
                     "task": "transcribe",  
                     "temperature": 0.0 if strategy < MAX_NUM_STRATEGIES - 1 else [0.2, 0.4, 0.6, 0.8, 1.0],
                     "do_sample": False if strategy < MAX_NUM_STRATEGIES - 1 else True,
+                    "forced_decoder_ids": None,
                 }
+                
+                # forced_ids = self.processor.get_decoder_prompt_ids(
+                #     language=ori,
+                #     task="transcribe"
+                # )
+                # generate_kwargs["forced_decoder_ids"] = forced_ids
                 
                 if strategy < MAX_NUM_STRATEGIES - 2:
                     # if available strategy > 3 and not prompt and not prev_text -> skip to strategy 3 
