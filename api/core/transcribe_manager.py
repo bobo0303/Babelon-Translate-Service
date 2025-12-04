@@ -104,6 +104,7 @@ class TranscribeManager:
             The name of the prompt to be used.  
         :rtype: None  
         """  
+        language = language.lower()
         
         if prompt_name is None:
             self.prompt = None
@@ -118,7 +119,7 @@ class TranscribeManager:
         if language == "zh":
             if not prompt_name.endswith(('.', '。', '!', '！', '?', '？')):
                 prompt_name += '。'
-            prompt_text = f"這是提示詞 {prompt_name} 痾。"
+            prompt_text = f"這是我們的提示詞 {prompt_name} 讓我們繼續吧。"
         else:
             if not prompt_name.endswith(('.', '。', '!', '！', '?', '？')):
                 prompt_name += '.'
@@ -201,46 +202,62 @@ class TranscribeManager:
     def add_task(self, task_id, audio_file, o_lang, multi_strategy_transcription, 
                  transcription_post_processing, prev_text, audio_uid, times):
         """Add a task to the queue and return an Event for blocking wait."""
-        # Check and cancel duplicate audio_uid in pending tasks
-        self._check_and_cancel_duplicate(audio_uid, task_id, times)
-        
-        # Create Event for this task
         task_event = threading.Event()
-        with self.task_lock:
-            self.task_results[task_id] = {
-                'result': None,
-                'event': task_event,
-                'audio_uid': audio_uid,
-                'times': times,
-                'cancelled': False,
-                'processing': False
-            }
+        should_add = True
         
-        # Add task to queue (thread-safe, no lock needed)
-        task = (task_id, audio_file, o_lang, multi_strategy_transcription,
-                transcription_post_processing, prev_text)
-        self.task_queue.put(task)
-        logger.debug(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) added to queue. | ")
+        # Check and cancel duplicate audio_uid in pending tasks
+        with self.task_lock:
+            should_add = self._check_and_cancel_duplicate(audio_uid, task_id, times)
+            
+            if should_add:
+                self.task_results[task_id] = {
+                    'result': None,
+                    'event': task_event,
+                    'audio_uid': audio_uid,
+                    'times': times,
+                    'cancelled': False,
+                    'processing': False
+                }
+        
+        # 🚀 Queue optimization: Only add to queue if not cancelled
+        if should_add:
+            task = (task_id, audio_file, o_lang, multi_strategy_transcription,
+                    transcription_post_processing, prev_text)
+            self.task_queue.put(task)
+            logger.debug(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) added to queue. | ")
+        else:
+            # Task cancelled before queuing, immediately wake up API thread
+            task_event.set()
+            logger.debug(f" | Task {task_id} event set without queuing (cancelled before queue). | ")
         
         return task_event
     
     def _check_and_cancel_duplicate(self, audio_uid, new_task_id, new_times):
-        """Check for duplicate audio_uid in task_results and cancel older ones, keep only the latest."""
-        with self.task_lock:
-            for task_id, task_info in self.task_results.items():
-                if (task_id != new_task_id and 
-                    task_info.get('audio_uid') == audio_uid and 
-                    task_info['result'] is None and
-                    not task_info.get('processing', False)):  # Only cancel queued tasks, not executing ones
-                    
-                    existing_times = task_info.get('times', '')
-                    # Cancel the older task (keep only the one with later times)
-                    if existing_times < new_times:
-                        task_info['cancelled'] = True
-                        task_info['event'].set()  # Immediately wake up waiting endpoint
-                        logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {existing_times}) cancelled due to newer request (times: {new_times}). [QUEUED] | ")
-                    # If existing task is newer, we should cancel the new one instead
-                    # But this is handled by adding new task to task_results and letting worker check
+        """Check for duplicate audio_uid in task_results and cancel older ones, keep only the latest.
+        
+        Returns:
+            bool: True if new task should be added, False if new task should be cancelled
+        """
+        for task_id, task_info in self.task_results.items():
+            if (task_id != new_task_id and 
+                task_info.get('audio_uid') == audio_uid and 
+                task_info['result'] is None and
+                not task_info.get('processing', False)):  # Only cancel queued tasks, not executing ones
+                
+                existing_times = task_info.get('times', '')
+                
+                # Case 1: Existing task is older → cancel it, allow new task
+                if existing_times < new_times:
+                    task_info['cancelled'] = True
+                    task_info['event'].set()  # Immediately wake up waiting endpoint
+                    logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {existing_times}) cancelled due to newer request (times: {new_times}). [QUEUED] | ")
+                
+                # Case 2: Existing task is newer or equal → cancel new task
+                elif existing_times >= new_times:
+                    logger.info(f" | New task {new_task_id} (audio_uid: {audio_uid}, times: {new_times}) cancelled (older/equal than existing task {task_id}: {existing_times}). [NOT_QUEUED] | ")
+                    return False
+        
+        return True
     
     def _queue_worker(self):
         """Background worker thread - pure event-driven, zero polling."""
@@ -300,6 +317,13 @@ class TranscribeManager:
             except Exception as e:
                 logger.error(f" | Worker error: {e} | ")
                 self.processing = False  # Ensure processing flag is reset on error
+                
+                # Notify API thread and clean up to prevent permanent blocking
+                with self.task_lock:
+                    if task_id in self.task_results:
+                        self.task_results[task_id]['result'] = None  # Error result
+                        self.task_results[task_id]['event'].set()  # Wake up waiting API thread
+                        logger.info(f" | Task {task_id} event set after error. | ")
         
         logger.info(" | Queue worker stopped. | ")
 

@@ -15,6 +15,7 @@ old
 azure_speech
 test*.py
 *.wav
+quantification
 
 # Audio test files
 test_*.py

@@ -79,6 +79,13 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         
         # Step 3: Get transcription result
         with transcribe_manager.task_lock:
+            # Handle case where task was cancelled before queuing (optimized out)
+            if task_id not in transcribe_manager.task_results:
+                logger.debug(f" | Pipeline task {task_id} cancelled before queuing (not in task_results). | ")
+                result['ori_pred'] = None
+                result['translate_method'] = "cancelled_before_queue"
+                return tuple(result.values())
+            
             if transcribe_manager.task_results[task_id].get('cancelled', False):
                 logger.debug(f" | Pipeline task {task_id} cancelled during transcription. | ")
                 # Clean up cancelled task before returning
@@ -124,7 +131,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     result['rtf'] = calculate_rtf(audio_file, result['transcription_time'], result['translate_time'])
     
     total_time = time.time() - start_time
-    logger.info(f" | Pipeline task {task_id} completed in {total_time:.2f}s (transcription: {result['transcription_time']:.2f}s, translation: {result['translate_time']:.2f}s). | ")
+    logger.debug(f" | Pipeline task {task_id} completed in {total_time:.2f}s (transcription: {result['transcription_time']:.2f}s, translation: {result['translate_time']:.2f}s). | ")
     
     return tuple(result.values())  
 

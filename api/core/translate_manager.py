@@ -50,9 +50,9 @@ class TranslateManager:
         
         self.translation_method = "gpt-4o"
         self.fallback_translate = 'ollama-gemma'
-        # Initialize 10 GPT-4o translators
+        # Initialize 20 GPT-4o translators
         self.gpt_4o_translators = []
-        for i in range(10):
+        for i in range(20):
             try:
                 translator = GptTranslate(model_version=self.translation_method)
                 if translator.test_gpt_model():

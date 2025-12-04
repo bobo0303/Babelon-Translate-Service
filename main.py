@@ -86,7 +86,6 @@ async def lifespan(app: FastAPI):
         # Start pipeline worker thread
         transcribe_manager.start_worker()
         logger.info(f" | Pipeline worker thread has been started. | ")
-        
         logger.info(f" | ##################################################### | ")  
         # delete_old_audio_files()
         
