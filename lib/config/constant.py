@@ -8,11 +8,10 @@ from typing import Optional, Dict, List
 
 class ModelPath(BaseModel):
     # Default Transcription (auto download model if network is available)
-    large_v2: str = "openai/whisper-large-v2"  
-    large_v3: str = "openai/whisper-large-v3"
-    turbo: str = "openai/whisper-large-v3-turbo"
-    # custom model path
-    custom_model: str =  ""
+    whisper_transformer_large_v2: str = "openai/whisper-large-v2"  
+    # CPP implementation of whisper
+    whisper_cpp_large_v2: str = "/mnt/lib/config/whisper_cpp_model.yaml"
+
 
 # gpt-4o
 AZURE_CONFIG = '/mnt/lib/config/azure_config.yaml'
@@ -221,6 +220,7 @@ ONLY_UNUSUAL = [
     "你接受過訓練的數據截至 2023 年 10 月",
     "全程字幕由 Amaraorg 社區提供",
     "再次感謝大家收看",
+    "大宇宙org",
     "各位車友們謝謝收看我是劉胖胖",
     "嗯",
     "多謝您收看時局新聞再會",

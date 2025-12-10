@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
         logger.info(f" | ##################################################### | ")  
         logger.info(f" | Start to loading default model. | ")  
         # load model  
-        default_model = "large_v2"  
+        default_model = "whisper_transformer_large_v2"  
         transcribe_manager.load_model(default_model)  # Directly load the default model  
         logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(transcribe_manager)} | ")  
         # preheat  
@@ -80,12 +80,12 @@ async def lifespan(app: FastAPI):
         logger.info(f" | Default prompt has been set. | ")  
         
         # 設置 websocket 的 model
-        set_global_model(transcribe_manager)
-        logger.info(f" | WebSocket model has been set. Model ID: {id(transcribe_manager)} | ")
+        # set_global_model(transcribe_manager)
+        # logger.info(f" | WebSocket model has been set. Model ID: {id(transcribe_manager)} | ")
         
         # Start pipeline worker thread
-        transcribe_manager.start_worker()
-        logger.info(f" | Pipeline worker thread has been started. | ")
+        # transcribe_manager.start_worker()
+        # logger.info(f" | Pipeline worker thread has been started. | ")
         logger.info(f" | ##################################################### | ")  
         # delete_old_audio_files()
         
@@ -163,11 +163,11 @@ async def get_items():
         BaseResponse: Current transcription and translation models
     """
     logger.info(f" | ############### Transcription model ########################### | ")  
-    logger.info(f" | current transcription model is {transcribe_manager.model_version} | ")  
+    logger.info(f" | current transcription model is {transcribe_manager.transcription_method} | ")  
     logger.info(f" | ################# Translate methods ########################### | ")  
     logger.info(f" | current translation model is {translate_manager.translation_method} | ")  
     logger.info(f" | ############################################################### | ")  
-    return BaseResponse(message=f" | current transcription model is {transcribe_manager.model_version} | current translation model is {translate_manager.translation_method} | ", data=[transcribe_manager.model_version, translate_manager.translation_method])  
+    return BaseResponse(message=f" | current transcription model is {transcribe_manager.transcription_method} | current translation model is {translate_manager.translation_method} | ", data=[transcribe_manager.transcription_method, translate_manager.translation_method])  
 
 @app.get("/list_optional_items")  
 async def get_items():  
@@ -226,17 +226,17 @@ async def set_prompt(prompts = Form(None)):
     Returns:
         BaseResponse: Status of prompt setting operation
     """
+    
     if prompts is None or prompts == "" or (isinstance(prompts, str) and prompts.strip() == ""):
-        transcribe_manager.set_prompt(None)
-        logger.info(f" | Prompt has been cleared. | ")
-        return BaseResponse(message=" | Prompt has been cleared. | ", data=None)
+        prompt_message = transcribe_manager.set_prompt(None)
     else:
-        error = transcribe_manager.set_prompt(prompts.strip()) 
-        if error is None:
-            return BaseResponse(message=f" | Prompt has been set | ", data=None)
-        else:
-            return BaseResponse(message=f" | Prompt setting failed. Error: {error} | ", data=None)
-
+        prompt_message = transcribe_manager.set_prompt(" ".join(prompts.strip().split()))
+    
+    if prompt_message:
+        return BaseResponse(status=Status.FAILED, message=prompt_message, data=None)
+    else:
+        return BaseResponse(status=Status.OK, message=" | Prompt has been set successfully. | ", data=None)
+    
 @app.post("/enable_pretext")
 async def enable_pretext():
     """
@@ -372,7 +372,7 @@ async def translate(
         return BaseResponse(status=Status.FAILED, message=" | The audio file does not exist, please check the audio path. | ", data=response_data)  
   
     # Check if the model has been loaded  
-    if transcribe_manager.model_version is None:  
+    if transcribe_manager.transcription_method is None:  
         return BaseResponse(status=Status.FAILED, message=" | model haven't been load successfully. may out of memory please check again | ", data=response_data)  
   
     # Check if the languages are in the supported language list  
@@ -530,7 +530,7 @@ async def translate_pipeline(
     if not os.path.exists(audio_buffer):  
         return BaseResponse(status=Status.FAILED, message=" | The audio file does not exist, please check the audio path. | ", data=response_data)  
   
-    if transcribe_manager.model_version is None:  
+    if transcribe_manager.transcription_method is None:  
         return BaseResponse(status=Status.FAILED, message=" | model haven't been load successfully. may out of memory please check again | ", data=response_data)  
   
     if o_lang not in LANGUAGE_LIST:  
@@ -800,7 +800,7 @@ async def sse_audio_translate(
     )  
     
     # Check if the model has been loaded  
-    if transcribe_manager.model_version is None:  
+    if transcribe_manager.transcription_method is None:  
         return BaseResponse(status=Status.FAILED, message=" | model haven't been load successful. may out of memory please check again | ", data=response_data)  
         
     # Check if the languages are in the supported language list  
