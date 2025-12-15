@@ -235,7 +235,7 @@ class WebSocketSttManager:
                 "use_prev_text": use_prev_text,
                 "prev_text": prev_text,
                 "prev_text_timestamp": frame_timestamp if use_prev_text else None,
-                "use_post_processing": use_post_processing,
+                "post_processing": use_post_processing,
                 "audio_tags": audio_tags,
                 "strategy": multi_strategy_transcription,
                 "connection": self.connection,

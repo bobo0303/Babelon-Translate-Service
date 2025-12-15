@@ -7,7 +7,7 @@ import re
 from ollama import Client
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2
+from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language
 
 logger = logging.getLogger(__name__)
  
@@ -60,8 +60,13 @@ class OllamaChat:
         logger.debug(f" | Cleaned think tags from response | ")
         return cleaned_text
     
-    def _parse_response(self, response_text):
-        """Parse and validate response"""
+    def _parse_response(self, response_text, expected_languages):
+        """Parse and validate response
+        
+        Args:
+            response_text: The response text from Ollama
+            expected_languages: List of expected language codes in the response
+        """
         try:
             # Clean response text
             cleaned_response = response_text.strip()
@@ -74,33 +79,45 @@ class OllamaChat:
             else:
                 json_str = cleaned_response
             
+            # Fix common GPT errors: {"json":[ -> {"json":{
+            json_str = re.sub(r'(\{"json"\s*:\s*)\[', r'\1{', json_str)
+            json_str = re.sub(r'\]\s*\}$', r'}}', json_str)
+            
             # Try to parse JSON
             result = json.loads(json_str)
             
             # Validate response format
             if not isinstance(result, dict):
-                logger.warning(" | Response is not a dictionary, ignoring | ")
+                logger.warning(" | Ollama() | Response is not a dictionary, ignoring | ")
+                logger.warning(f" | Ollama() | Response type: {type(result)}, Content: {result} | ")
+                logger.warning(f" | Ollama() | Raw response: {response_text} | ")
                 return None
             
-            # Check required language keys
-            for lang in LANGUAGE_LIST:
+            # Post-processing: Handle wrapped response in extra 'json' key
+            # Example: {"json": {"zh": "...", "en": "..."}} -> {"zh": "...", "en": "..."}
+            if len(result) == 1 and "json" in result and isinstance(result["json"], dict):
+                logger.warning(" | Ollama() | Detected wrapped response with 'json' key, unwrapping | ")
+                result = result["json"]
+            
+            # Check required language keys (only check expected languages)
+            for lang in expected_languages:
                 if lang not in result:
-                    logger.warning(f" | Missing language key: {lang}, ignoring response | ")
+                    logger.warning(f" | Ollama() | Missing language key: {lang}, ignoring response | ")
+                    logger.warning(f" | Ollama() | Expected keys: {expected_languages}, Got keys: {list(result.keys())} | ")
+                    logger.warning(f" | Ollama() | Raw response: {response_text} | ")
                     return None
             
-            # Create standard format response
-            formatted_result = DEFAULT_RESULT.copy()
-            
-            # Set translation results for all languages (let GPT decide source language)
-            for lang in LANGUAGE_LIST:
+            # Create response with only expected languages
+            formatted_result = {}
+            for lang in expected_languages:
                 translated_text = result.get(lang, "").strip()
                 formatted_result[lang] = translated_text
             
             return formatted_result
             
         except json.JSONDecodeError as e:
-            logger.warning(f" | Failed to parse JSON response, ignoring: {e} | ")
-            logger.debug(f" | Raw response: {response_text[:200]}... | ")
+            logger.warning(f" | Ollama() | Failed to parse JSON response: {e} | ")
+            logger.warning(f" | Ollama() | Raw response: {response_text} | ")
             return None
         except Exception as e:
             logger.error(f" | Error parsing response: {e} | ")
@@ -108,30 +125,41 @@ class OllamaChat:
 
     def translate(
         self,
-        temperature = 0.0,
-        stream = False,
-        format = "",
-        source_text = "",
-        prev_text = ""
+        source_text="",
+        source_lang='zh', 
+        target_lang='en',
+        prev_text="",
+        temperature=0.0,
+        stream=False,
+        format=""
     ):
         """Send chat request and get response
  
         Args:
-            prompt: User question content
-            system_prompt: System prompt
             temperature: Temperature parameter to control randomness
             stream: Whether to use streaming output
             format: Output format
+            source_text: Text to translate
+            source_lang: Source language code
+            target_lang: Target language code or list of codes (supports both str and list)
+            prev_text: Previous context text
  
         Returns:
-            If stream=True, returns streaming response generator
-            If stream=False, returns complete response
+            Dict with translation results: {lang_code: translated_text}
         """
         
-        if not prev_text:
-            system_prompt = SYSTEM_PROMPT_EAPC_V3
+        # Handle both single string and list for target_lang
+        if isinstance(target_lang, list):
+            # Multi-language mode
+            target_languages = target_lang
         else:
-            system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
+            # Single language mode
+            target_languages = [target_lang]
+        
+        all_languages = [source_lang] + target_languages
+        
+        # Generate dynamic prompt for all target languages
+        system_prompt = get_system_prompt_dynamic_language(all_languages, prev_text)
 
         messages = [
             {"role": "system", "content": self.think + system_prompt},
@@ -158,8 +186,19 @@ class OllamaChat:
             decoded = None
         logger.debug(f" | OllamaChat Translation result: {decoded} | ")
         
-        # Clean and parse the JSON response
-        cleaned_result = self._parse_response(decoded)
+        # Clean and parse the JSON response with expected languages
+        if decoded:
+            cleaned_result = self._parse_response(decoded, all_languages)
+        else:
+            cleaned_result = None
+        
+        # Handle failure: return default result
+        if cleaned_result is None:
+            logger.warning(f" | Ollama translation failed, returning default result | ")
+            cleaned_result = {source_lang: source_text}
+            for lang in target_languages:
+                cleaned_result[lang] = ""
+        
         return cleaned_result
         
     def close(self):

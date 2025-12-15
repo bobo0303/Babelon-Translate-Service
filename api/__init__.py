@@ -10,7 +10,8 @@ from . import core, translation, audio, websocket
 from .websocket.websocket import router as websocket_router
 
 # 為了向後兼容，將子模組的內容暴露在頂級命名空間
-from .core.model import *
+from .core.transcribe_manager import *
+from .core.translate_manager import *
 from .core.threading_api import *
 from .core.utils import *
 from .core.post_process import *
@@ -26,7 +27,8 @@ from .websocket.websocket_stt_manager import *
 
 # 將子模組也作為頂級屬性暴露以支持 from api.xxx import
 import sys
-sys.modules[__name__ + '.model'] = core.model
+sys.modules[__name__ + '.transcribe_manager'] = core.transcribe_manager
+sys.modules[__name__ + '.translate_manager'] = core.translate_manager
 sys.modules[__name__ + '.threading_api'] = core.threading_api
 sys.modules[__name__ + '.utils'] = core.utils
 sys.modules[__name__ + '.post_process'] = core.post_process

@@ -9,9 +9,7 @@ class MeetingRecord(AbstractTable):
 
     meeting_id = Column(String(32), nullable=False)
     device_id = Column(String(100), nullable=True)
-    recording_id = Column(String(100), nullable=True)
-    speaker_id = Column(String(32), nullable=False)
-    speaker_name = Column(String(100), nullable=True)
+    task_id = Column(String(100), nullable=True)
     audio_id = Column(String(32), nullable=False)
     audio_frame_timestamp = Column(DateTime, nullable=False)
     audio_file_name = Column(String(300), nullable=False)
@@ -24,18 +22,16 @@ class MeetingRecord(AbstractTable):
     rtf = Column(Float, nullable=True)
     audio_tags = Column(String(100), nullable=False)
     strategy = Column(String(50), nullable=True)
+    prev_text = Column(UnicodeText, nullable=True)
     
     # 保留原始 JSON 欄位作為備用 (存放不獨立的欄位)
     stt_data = Column(UnicodeText, nullable=False)
-    audio_info = Column(UnicodeText, nullable=False)
 
     def __init__(
         self,
         meeting_id: str,
         device_id: str = None,
-        recording_id: str = None,
-        speaker_id: str = None,
-        speaker_name: str = None,
+        task_id: str = None,
         audio_id: str = None,
         audio_frame_timestamp: datetime = None,
         audio_file_name: str = None,
@@ -48,15 +44,13 @@ class MeetingRecord(AbstractTable):
         rtf: float = None,
         audio_tags: str = None,
         strategy: str = None,
+        prev_text: str = None,
         stt_data: str = None,
-        audio_info: str = None,
     ):
         super().__init__()
         self.meeting_id = meeting_id
         self.device_id = device_id
-        self.recording_id = recording_id
-        self.speaker_id = speaker_id
-        self.speaker_name = speaker_name
+        self.task_id = task_id
         self.audio_id = audio_id
         self.audio_frame_timestamp = audio_frame_timestamp
         self.audio_file_name = audio_file_name
@@ -69,8 +63,8 @@ class MeetingRecord(AbstractTable):
         self.rtf = rtf
         self.audio_tags = audio_tags
         self.strategy = strategy
+        self.prev_text = prev_text
         self.stt_data = stt_data
-        self.audio_info = audio_info
 
 
 class MeetingRecordSql(CrudSql):

@@ -2,11 +2,30 @@
 
 import json
 import asyncio
+import threading
 
 from lib.config.constant import AudioTranslationResponse
 from wjy3 import BaseResponse, Status
 from lib.storage.meeting_record import MeetingRecord, MeetingRecordSql
 from lib.storage.azure_blob_service import get_azure_blob_service
+
+def storage_upload(logger, response_data: AudioTranslationResponse, other_info: dict):
+    """
+    處理儲存和上傳相關的任務
+    """
+    # save transcription history to db
+    try:
+        _save_trans_history_to_db(logger, response_data, other_info)
+    except Exception as e:
+        logger.error(f"| 儲存轉錄歷史到資料庫錯誤: {e} | ")
+    
+    # upload audio to azure blob in background thread
+    upload_thread = threading.Thread(
+        target=_upload_audio_to_azure_blob,
+        args=(logger, response_data.meeting_id, other_info.get("audio_file_name", "")),
+        daemon=True
+    )
+    upload_thread.start()
 
 def process_stt_response(logger, response_data: AudioTranslationResponse, other_info: dict):
     connections = other_info.get("connection")  # 這是 Dict[str, WebSocket]
@@ -23,17 +42,8 @@ def process_stt_response(logger, response_data: AudioTranslationResponse, other_
         else:
             logger.warning(f" | WebSocket connection not found for {connection_id} | ")
     
-    # save transcription history to db
-    try:
-        _save_trans_history_to_db(logger, response_data, other_info)
-    except Exception as e:
-        logger.error(f"| 儲存轉錄歷史到資料庫錯誤: {e} | ")
-    
-    # upload audio to azure blob 
-    try:
-        _upload_audio_to_azure_blob(logger, response_data.meeting_id, other_info.get("audio_file_name", "")) 
-    except Exception as e:
-        logger.error(f"| 上傳音訊到 Azure Blob 錯誤: {e} | ")
+    # save to db and upload to blob using unified function
+    storage_upload(logger, response_data, other_info)
 
 def _response_websocket(logger, response_data: AudioTranslationResponse, websocket):
     """回應 WebSocket 的函數"""
@@ -78,29 +88,20 @@ def _save_trans_history_to_db(
     stt_data_dict = {
         "use_translate": other_info.get("use_translate", False),
         "use_prev_text": other_info.get("use_prev_text", False),
-        "post_processing": other_info.get("post_processing", False)
-    }
-    
-    # 建構音檔專用資訊
-    audio_info_dict = {
-        "connection_id": other_info.get("connection_id", ""),
-        "prev_text": other_info.get("prev_text", ""),
-        "prev_text_timestamp": other_info.get("prev_text_timestamp", "")
+        "post_processing": other_info.get("post_processing", False),
+        "process_method": other_info.get("process_method", "unknown")
     }
     
     stt_data = json.dumps(stt_data_dict, ensure_ascii=False)
-    audio_info = json.dumps(audio_info_dict, ensure_ascii=False)
 
     MeetingRecordSql().create(
         MeetingRecord(
             meeting_id=response_data.meeting_id,
             device_id=response_data.device_id,
-            recording_id=other_info.get("recording_id", ""),
-            speaker_id=other_info.get("speaker_id", "unknown"),
-            speaker_name=other_info.get("speaker_name", ""),
+            task_id=other_info.get("task_id", ""),
             audio_id=response_data.audio_uid,
             audio_frame_timestamp=audio_frame_timestamp,
-            audio_file_name=other_info.get("audio_file_name", "unknown.wav"),
+            audio_file_name=other_info.get("audio_file_name") or "unknown.wav",
             source_lang=response_data.ori_lang,
             transcription_text=response_data.transcription_text,
             translation=json.dumps(response_data.text, ensure_ascii=False),
@@ -110,8 +111,8 @@ def _save_trans_history_to_db(
             rtf=other_info.get("rtf", 1.0),
             audio_tags=other_info.get("audio_tags", ""),
             strategy=other_info.get("strategy", "unknown"),
+            prev_text=other_info.get("prev_text", ""),
             stt_data=stt_data,
-            audio_info=audio_info,
         )
     )
 

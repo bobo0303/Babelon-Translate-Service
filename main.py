@@ -9,11 +9,13 @@ import asyncio
 import logging  
 import uvicorn  
 import datetime  
-import threading 
+import threading
 from queue import Queue  
 from threading import Thread, Event  
-from api.model import Model  
-from api.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse
+from api.core.transcribe_manager import TranscribeManager
+from api.core.translate_manager import TranslateManager
+from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
+from lib.core.response_manager import storage_upload
 from wjy3 import BaseResponse, Status
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
 from api.utils import write_txt
@@ -45,7 +47,8 @@ local_now = utc_now.astimezone(tz)
 use_pretext = True
   
 # Initialize global objects and variables
-model = Model()  
+transcribe_manager = TranscribeManager()
+translate_manager = TranslateManager()
 waiting_list = []  # Queue for waiting translation requests
 sse_stop_event = Event()  # Global event to control SSE connection
 service_stop_event = Event()  # Event to control service shutdown  
@@ -55,43 +58,62 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan handler for startup and shutdown events.
     """
-    # Startup
-    logger.info(f" | ##################################################### | ")  
-    logger.info(f" | Start to loading default model. | ")  
-    # load model  
-    default_model = "large_v2"  
-    model.load_model(default_model)  # Directly load the default model  
-    logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(model)} | ")  
-    # preheat  
-    logger.info(f" | Start to preheat model. | ")  
-    default_audio = "audio/test.wav"  
-    start = time.time()  
-    for _ in range(5):  
-        model.transcribe(default_audio, "en", post_processing=False)  
-    end = time.time()  
-    logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
-    # set default prompt
-    model.set_prompt(DEFAULT_PROMPTS["eABC_2025_11_20_22"])
-    logger.info(f" | Default prompt has been set. | ")  
-    
-    # 設置 websocket 的 model
-    set_global_model(model)
-    logger.info(f" | WebSocket model has been set. Model ID: {id(model)} | ")
-    
-    logger.info(f" | ##################################################### | ")  
-    # delete_old_audio_files()
-    
-    # Start daily task scheduling  
-    # task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
-    # task_thread.start()
-    
-    yield  # Application starts receiving requests
-    
-    # Shutdown
-    service_stop_event.set()  
-    # task_thread.join()  
-    model.close()
-    logger.info(" | Scheduled task has been stopped. | ")
+    try:
+        # Startup
+        logger.info(f" | ##################################################### | ")  
+        logger.info(f" | Start to loading default model. | ")  
+        # load model  
+        default_model = "large_v2"  
+        transcribe_manager.load_model(default_model)  # Directly load the default model  
+        logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(transcribe_manager)} | ")  
+        # preheat  
+        logger.info(f" | Start to preheat model. | ")  
+        default_audio = "audio/test.wav"  
+        start = time.time()  
+        for _ in range(5):  
+            transcribe_manager.transcribe(default_audio, "en", post_processing=False)  
+        end = time.time()  
+        logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
+        # set default prompt
+        transcribe_manager.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
+        logger.info(f" | Default prompt has been set. | ")  
+        
+        # 設置 websocket 的 model
+        # set_global_model(transcribe_manager)
+        # logger.info(f" | WebSocket model has been set. Model ID: {id(transcribe_manager)} | ")
+        
+        # Start pipeline worker thread
+        transcribe_manager.start_worker()
+        logger.info(f" | Pipeline worker thread has been started. | ")
+        logger.info(f" | ##################################################### | ")  
+        # delete_old_audio_files()
+        
+        # Start daily task scheduling  
+        # task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
+        # task_thread.start()
+        
+        yield  # Application starts receiving requests
+        
+    except asyncio.CancelledError:
+        # Handle graceful shutdown when Ctrl+C is pressed
+        logger.info(" | Application shutdown initiated (Ctrl+C pressed) | ")
+    except Exception as e:
+        logger.error(f" | Error during application lifespan: {e} | ")
+    finally:
+        # Shutdown - always executed regardless of how we got here
+        try:
+            logger.info(" | Starting shutdown... | ")
+            service_stop_event.set()  
+            # task_thread.join()
+            
+            # Stop pipeline worker
+            transcribe_manager.stop_worker_thread()
+            
+            # Close translation manager
+            translate_manager.close()
+            logger.info(" | shutdown completed successfully | ")
+        except Exception as shutdown_error:
+            logger.error(f" | Error during shutdown: {shutdown_error} | ")
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(websocket_router)
@@ -140,11 +162,11 @@ async def get_items():
         BaseResponse: Current transcription and translation models
     """
     logger.info(f" | ############### Transcription model ########################### | ")  
-    logger.info(f" | current transcription model is {model.model_version} | ")  
+    logger.info(f" | current transcription model is {transcribe_manager.transcription_method} | ")  
     logger.info(f" | ################# Translate methods ########################### | ")  
-    logger.info(f" | current translation model is {model.translate_method} | ")  
+    logger.info(f" | current translation model is {translate_manager.translation_method} | ")  
     logger.info(f" | ############################################################### | ")  
-    return BaseResponse(message=f" | current transcription model is {model.model_version} | current translation model is {model.translate_method} | ", data=[model.model_version, model.translate_method])  
+    return BaseResponse(message=f" | current transcription model is {transcribe_manager.transcription_method} | current translation model is {translate_manager.translation_method} | ", data=[transcribe_manager.transcription_method, translate_manager.translation_method])  
 
 @app.get("/list_optional_items")  
 async def get_items():  
@@ -174,17 +196,20 @@ async def change_transcription_model(model_name: str = Form(...)):
         The request object containing the model's name to be loaded.  
     :rtype: BaseResponse  
         A response indicating the success or failure of the model loading process.  
-    """  
+    """
     # Convert the model's name to lowercase  
     model_name = model_name.lower()  
+    
+    # Normalize model name: replace dashes with underscores for attribute lookup
+    model_name = model_name.replace('-', '_')
       
     # Check if the model's name exists in the model's path  
-    if not hasattr(model.models_path, model_name):  
+    if not hasattr(transcribe_manager.models_path, model_name):  
         # Raise an HTTPException if the model is not found  
         return BaseResponse(status=Status.FAILED, message=f" | Model '{model_name}' not found. | ", data=None)  
       
-    # Load the specified model  
-    message = model.load_model(model_name)  
+    # Load the specified model
+    message = transcribe_manager.load_model(model_name)  
       
     # Return a response indicating the success of the model loading process  
     if message is None:  
@@ -192,41 +217,6 @@ async def change_transcription_model(model_name: str = Form(...)):
     else:  
         return BaseResponse(status=Status.FAILED, message=f" | Model {model_name} loading failed: {message} | ", data=None)  
     
-@app.post("/change_translation_method")  
-async def change_translation_method(method_name: str = Form(...)):  
-    """  
-    Change the translation method.  
-      
-    This endpoint allows the user to change the translation method used  
-    by the model.  
-      
-    :param request: LoadMethodRequest  
-        The request object containing the new translation method's name.  
-    :rtype: BaseResponse  
-        A response indicating the success or failure of changing the translation method.  
-    """  
-    # Convert the method name to lowercase  
-    method_name = method_name.lower()  
-      
-    # Check if the method name is in the list of supported translation methods  
-    if method_name not in TRANSLATE_METHODS:  
-        logger.info(f" | Translate method '{method_name}' is not supported. Supported methods: {TRANSLATE_METHODS}. | ")  
-        return BaseResponse(status=Status.FAILED, message=f" | Translate method '{method_name}' is not supported. Supported methods: {TRANSLATE_METHODS}. | ", data=None)
-    
-    # Change the translation method  
-    model.change_translate_method(method_name)  
-    active_method = getattr(model, "translate_method", None)
-
-    if active_method == method_name:
-        logger.info(f" | Translate method '{method_name}' has been changed successfully. | ")  
-        return BaseResponse(message=f" | Translate method '{method_name}' has been changed successfully. | ", data=active_method)
-    elif active_method is None:
-        logger.info(f" | Translate method change failed. and all fallback methods are failed. Can't translate now. | ")
-        return BaseResponse(status=Status.FAILED, message=f" | Translate method change failed. and all fallback methods are failed. Can't translate now. | ", data=active_method)
-    else:
-        logger.info(f" | Translate method change failed. Fallback to '{active_method}'. | ")
-        return BaseResponse(message=f" | Translate method change failed. Fallback to '{active_method}'. | ", data=active_method)
-        
 @app.post("/set_prompt")
 async def set_prompt(prompts = Form(None)):
     """
@@ -238,17 +228,17 @@ async def set_prompt(prompts = Form(None)):
     Returns:
         BaseResponse: Status of prompt setting operation
     """
+    
     if prompts is None or prompts == "" or (isinstance(prompts, str) and prompts.strip() == ""):
-        model.set_prompt(None)
-        logger.info(f" | Prompt has been cleared. | ")
-        return BaseResponse(message=" | Prompt has been cleared. | ", data=None)
+        prompt_message = transcribe_manager.set_prompt(None)
     else:
-        error = model.set_prompt(prompts.strip()) 
-        if error is None:
-            return BaseResponse(message=f" | Prompt has been set | ", data=None)
-        else:
-            return BaseResponse(message=f" | Prompt setting failed. Error: {error} | ", data=None)
-
+        prompt_message = transcribe_manager.set_prompt(" ".join(prompts.strip().split()))
+    
+    if prompt_message:
+        return BaseResponse(status=Status.FAILED, message=prompt_message, data=None)
+    else:
+        return BaseResponse(status=Status.OK, message=" | Prompt has been set successfully. | ", data=None)
+    
 @app.post("/enable_pretext")
 async def enable_pretext():
     """
@@ -295,10 +285,11 @@ async def translate(
     audio_uid: str = Form(123),  
     times: datetime.datetime = Form(...),  
     o_lang: str = Form("zh"),  
+    t_lang: str = Form("zh,en,ja,ko,de"),
     prev_text: str = Form(""),
-    multi_strategy_transcription: int = Form(1), # 1~MAX_NUM_STRATEGIES others 1
+    multi_strategy_transcription: int = Form(4), # 1~MAX_NUM_STRATEGIES others 1
     transcription_post_processing: bool = Form(True), # True/False
-    use_translate: bool = Form(True) # True/False
+    multi_translate: bool = Form(True)
 ):  
     """  
     Transcribe and translate an audio file.  
@@ -318,11 +309,24 @@ async def translate(
         The start time of the audio.  
     :param o_lang: str  
         The original language of the audio.  
+    :param t_lang: Optional[str]
+        Target languages for translation. Can be single language 'en' or comma-separated 'en,ja,ko'. If None or empty, no translation.
     :param prev_text: str
         The previous text for context (will be overridden by global previous translation)
     :rtype: BaseResponse  
         A response containing the transcription results.  
     """  
+    
+    # Handle t_lang parameter
+    if t_lang:
+        # Convert comma-separated string to list
+        if ',' in t_lang:
+            t_lang = [lang.strip().lower() for lang in t_lang.split(',')]
+        else:
+            t_lang = [t_lang.strip().lower()]
+    else:
+        # Empty or None means no translation
+        t_lang = []
     
     # 20251118 we found if we use prev_text in 0.5 sec audio it will cause worse results
     if multi_strategy_transcription == 1:
@@ -335,8 +339,8 @@ async def translate(
     
     # Convert times to string format  
     times = str(times)  
-    # Convert original language and target language to lowercase  
-    o_lang = o_lang.lower()  
+    # Convert original language to lowercase  
+    o_lang = o_lang.lower()
     multi_strategy_transcription = multi_strategy_transcription if 0 < multi_strategy_transcription <= MAX_NUM_STRATEGIES else 1
     
     # Create response data structure  
@@ -370,13 +374,19 @@ async def translate(
         return BaseResponse(status=Status.FAILED, message=" | The audio file does not exist, please check the audio path. | ", data=response_data)  
   
     # Check if the model has been loaded  
-    if model.model_version is None:  
+    if transcribe_manager.transcription_method is None:  
         return BaseResponse(status=Status.FAILED, message=" | model haven't been load successfully. may out of memory please check again | ", data=response_data)  
   
     # Check if the languages are in the supported language list  
     if o_lang not in LANGUAGE_LIST:  
         logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
         return BaseResponse(status=Status.FAILED, message=f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
+  
+    # Check if all target languages are in the supported language list
+    for lang in t_lang:
+        if lang not in LANGUAGE_LIST:  
+            logger.info(f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
+            return BaseResponse(status=Status.FAILED, message=f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
     try:  
         # Create a queue to hold the return value  
@@ -385,8 +395,8 @@ async def translate(
         stop_event = threading.Event()  
   
         # Create timing thread and inference thread  
-        time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=audio_translate, args=(model, audio_buffer, result_queue, o_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, use_translate))  
+        time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
+        inference_thread = threading.Thread(target=audio_translate, args=(transcribe_manager, translate_manager, audio_buffer, result_queue, o_lang, t_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, multi_translate))
   
         # Start the threads  
         time_thread.start()  
@@ -402,7 +412,7 @@ async def translate(
   
         # Get the result from the queue  
         if not result_queue.empty():  
-            ori_pred, result, rtf, transcription_time, translate_time, translate_method = result_queue.get()  
+            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict, other_info = result_queue.get()  
             response_data.transcription_text = ori_pred
             response_data.text = result  
             response_data.transcribe_time = transcription_time  
@@ -413,10 +423,24 @@ async def translate(
             ja_result = response_data.text.get("ja", "")
             ko_result = response_data.text.get("ko", "")
             
+            # Format timing_dict: each task as separate entry
+            timing_parts = []
+            if timing_dict:
+                for translator, time_lang_pairs in timing_dict.items():
+                    if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
+                        for t, lang in time_lang_pairs:
+                            timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
+                    else:
+                        for t in time_lang_pairs:
+                            timing_parts.append(f"{translator}: {t:.2f}s")
+            timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
+            
             logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
-            logger.info(f" | Transcription: {ori_pred} | ")
-            if use_translate:
+            logger.info(f" | Transcription: {ori_pred} | ")                
+            if timing_str != "N/A": 
+                logger.info(f" | {timing_str} | ")
+            if t_lang:
                 logger.info(f" | {'#' * 75} | ")
                 logger.info(f" | ZH: {zh_result} | ")  
                 logger.info(f" | EN: {en_result} | ")  
@@ -430,36 +454,243 @@ async def translate(
             logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
             ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
             state = Status.FAILED
+            
         # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)
+        if other_info:
+            other_info['audio_uid'] = audio_uid
+            other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
+            storage_upload(logger, response_data, other_info) 
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
     except Exception as e:  
         logger.error(f" | Translation() error: {e} | ")  
         return BaseResponse(status=Status.FAILED, message=f" | Translation() error: {e} | ", data=response_data)  
 
+
+@app.post("/translate_pipeline")
+async def translate_pipeline(
+    file: UploadFile = File(...),  
+    meeting_id: str = Form(123),  
+    device_id: str = Form(123),  
+    audio_uid: str = Form(123),  
+    times: datetime.datetime = Form(...),  
+    o_lang: str = Form("zh"),  
+    t_lang: str = Form("zh,en,ja,ko,de"),
+    prev_text: str = Form(""),
+    multi_strategy_transcription: int = Form(4), # 1~MAX_NUM_STRATEGIES others 1
+    transcription_post_processing: bool = Form(True), # True/False
+    multi_translate: bool = Form(True)
+):  
+    """
+    Pipeline endpoint for transcription and translation.
+    
+    This endpoint uses a queue-based worker system to enable parallel resource utilization.
+    Transcription tasks are queued and processed sequentially, but translation happens
+    in parallel, allowing the next transcription to start while the previous translation
+    is still running.
+    """
+    
+    # Handle t_lang parameter
+    if t_lang:
+        if ',' in t_lang:
+            t_lang = [lang.strip().lower() for lang in t_lang.split(',')]
+        else:
+            t_lang = [t_lang.strip().lower()]
+    else:
+        t_lang = []
+    
+    # Handle prev_text
+    if multi_strategy_transcription == 1:
+        prev_text = ""
+    
+    if not use_pretext:
+        logger.info(f" | Previous text context usage is disabled. Overriding prev_text to empty. | ")
+        prev_text = ""
+    
+    times = str(times)  
+    o_lang = o_lang.lower()
+    multi_strategy_transcription = multi_strategy_transcription if 0 < multi_strategy_transcription <= MAX_NUM_STRATEGIES else 1
+    
+    # Create response data structure  
+    response_data = AudioTranslationResponse(  
+        meeting_id=meeting_id,  
+        device_id=device_id,  
+        ori_lang=o_lang,  
+        transcription_text="",
+        text=DEFAULT_RESULT.copy(),  
+        times=str(times),  
+        audio_uid=audio_uid,  
+        transcribe_time=0.0,  
+        translate_time=0.0,  
+    )  
+  
+    # Save the uploaded audio file  
+    filename = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
+    os.makedirs(f"audio/{meeting_id}", exist_ok=True)
+    audio_buffer = f"audio/{meeting_id}/{filename}"  
+    
+    file_content = file.file.read()
+    with open(audio_buffer, 'wb') as f:  
+        f.write(file_content)
+  
+    # Validation checks
+    if not os.path.exists(audio_buffer):  
+        return BaseResponse(status=Status.FAILED, message=" | The audio file does not exist, please check the audio path. | ", data=response_data)  
+  
+    if transcribe_manager.transcription_method is None:  
+        return BaseResponse(status=Status.FAILED, message=" | model haven't been load successfully. may out of memory please check again | ", data=response_data)  
+  
+    if o_lang not in LANGUAGE_LIST:  
+        logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
+        return BaseResponse(status=Status.FAILED, message=f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
+  
+    for lang in t_lang:
+        if lang not in LANGUAGE_LIST:  
+            logger.info(f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
+            return BaseResponse(status=Status.FAILED, message=f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
+  
+    # Use the new pipeline coordinator for better decoupling with timeout
+    try:
+        result, other_info = await asyncio.wait_for(
+            asyncio.to_thread(
+                audio_pipeline_coordinator,
+                transcribe_manager=transcribe_manager,
+                translate_manager=translate_manager,
+                audio_file=audio_buffer,
+                o_lang=o_lang,
+                t_lang=t_lang,
+                multi_strategy_transcription=multi_strategy_transcription,
+                transcription_post_processing=transcription_post_processing,
+                prev_text=prev_text,
+                multi_translate=multi_translate,
+                audio_uid=audio_uid,
+                times=times
+            ),
+            timeout=WAITING_TIME  # Use the same timeout as the original design
+        )
+    except asyncio.TimeoutError:
+        # Try to clean up translation threads if they exist
+        try:
+            translate_manager.cleanup_translation_threads()
+        except Exception as cleanup_error:
+            logger.warning(f" | Error during timeout cleanup: {cleanup_error} | ")
+        
+        result = None  # Set result to None when timeout occurs  
+
+    if result and result[0] is not None:  # Check if cancelled or failed
+        ori_pred, translated_result, rtf, transcription_time, translate_time, translate_method, timing_dict = result
+        response_data.transcription_text = ori_pred
+        response_data.text = translated_result  
+        response_data.transcribe_time = transcription_time  
+        response_data.translate_time = translate_time  
+        zh_result = response_data.text.get("zh", "")
+        en_result = response_data.text.get("en", "")
+        de_result = response_data.text.get("de", "")
+        ja_result = response_data.text.get("ja", "")
+        ko_result = response_data.text.get("ko", "")
+        
+        # Format timing_dict
+        timing_parts = []
+        if timing_dict:
+            for translator, time_lang_pairs in timing_dict.items():
+                if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
+                    for t, lang in time_lang_pairs:
+                        timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
+                else:
+                    for t in time_lang_pairs:
+                        timing_parts.append(f"{translator}: {t:.2f}s")
+        timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
+        
+        logger.debug(f" | {response_data.model_dump_json()} | ")  
+        logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
+        logger.info(f" | Transcription: {ori_pred} | ")                
+        if timing_str != "N/A": 
+            logger.info(f" | {timing_str} | ")
+        if t_lang:
+            logger.info(f" | {'#' * 75} | ")
+            logger.info(f" | ZH: {zh_result} | ")  
+            logger.info(f" | EN: {en_result} | ")  
+            logger.info(f" | DE: {de_result} | ")  
+            logger.info(f" | JA: {ja_result} | ")  
+            logger.info(f" | KO: {ko_result} | ")  
+            logger.info(f" | {'#' * 75} | ")
+        logger.info(f" | RTF: {rtf} | total time: {transcription_time + translate_time:.2f} seconds. | transcribe {transcription_time:.2f} seconds. | translate {translate_time:.2f} seconds. | strategy: {multi_strategy_transcription} | ")  
+        state = Status.OK
+        message = f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | "
+    else:  
+        state = Status.FAILED
+        # Determine failure reason and set appropriate message
+        if result is None:
+            # Timeout occurred
+            message = " | Translation has exceeded the upper limit time and has been stopped | "
+        elif result and result[0] is None:
+            # Task was cancelled (e.g., duplicate request)
+            message = " | Translation task was cancelled due to newer request | "
+        else:
+            # Other failure reasons (interrupted, transcription failed, etc.)
+            message = " | Pipeline processing failed | "
+        logger.warning(message)
+    
+    if other_info:
+        other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
+        storage_upload(logger, response_data, other_info)
+
+    return BaseResponse(status=state, message=message, data=response_data)
+    
+
 @app.post("/text_translate")  
 async def text_translate(  
     text: str = Form(...),
-    language: str = Form(...)
+    source_language: str = Form("zh"),
+    target_language: str = Form("zh,en,ja,ko,de"),
+    multi_translate: bool = Form(True)
 ):  
     """  
     Translate a text.  
   
     This endpoint receives text and its associated metadata, and performs translation on the text.  
   
-    :param translate_request: TextData  
-        The request containing the text to be translated.  
+    :param text: str
+        The text to be translated.
+    :param source_language: str
+        The source language code.
+    :param target_language: str
+        Target languages for translation. Can be single language 'en' or comma-separated 'en,ja,ko'. If None or empty, no translation.
+    :param multi_translate: bool
+        If True, distribute tasks across multiple LLMs; If False, use single LLM to translate all languages at once
     :rtype: BaseResponse  
         A response containing the translation results.  
     """  
-    language = language.lower()  
+    # Handle target_language parameter
+    if target_language:
+        # Convert comma-separated string to list
+        if ',' in target_language:
+            target_language = [lang.strip().lower() for lang in target_language.split(',')]
+        else:
+            target_language = [target_language.strip().lower()]
+    else:
+        # Empty or None means no translation
+        target_language = []
+    
+    source_language = source_language.lower()
   
-    # Create response data structure  
+    # Create response data structure first (for error handling)
     response_data = TextTranslationResponse(  
-        ori_lang="",
+        ori_lang=source_language,
         text=DEFAULT_RESULT.copy(),
         translate_time=0.0
-    )  
+    )
+    
+    # Check if the languages are in the supported language list  
+    if source_language not in LANGUAGE_LIST:  
+        logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
+        return BaseResponse(status=Status.FAILED, message=f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
+  
+    # Check if all target languages are in the supported language list
+    for lang in target_language:
+        if lang not in LANGUAGE_LIST:  
+            logger.info(f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
+            return BaseResponse(status=Status.FAILED, message=f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
     try:  
         # Create a queue to hold the return value  
@@ -468,8 +699,8 @@ async def text_translate(
         stop_event = threading.Event()  
   
         # Create timing thread and inference thread  
-        time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-        inference_thread = threading.Thread(target=texts_translate, args=(model, text, result_queue, language, stop_event))  
+        time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
+        inference_thread = threading.Thread(target=texts_translate, args=(translate_manager, text, result_queue, source_language, target_language, stop_event, multi_translate))  
   
         # Start the threads  
         time_thread.start()  
@@ -481,7 +712,7 @@ async def text_translate(
   
         # Get the result from the queue  
         if not result_queue.empty():  
-            result, translate_time, translate_method = result_queue.get()  
+            result, translate_time, translate_method, timing_dict = result_queue.get()  
             response_data.text = result  
             response_data.translate_time = translate_time
             zh_result = response_data.text.get("zh", "")
@@ -489,18 +720,36 @@ async def text_translate(
             de_result = response_data.text.get("de", "")
             ja_result = response_data.text.get("ja", "")
             ko_result = response_data.text.get("ko", "")
+            
+            # Format timing_dict: each task as separate entry
+            timing_parts = []
+            if timing_dict:
+                for translator, time_lang_pairs in timing_dict.items():
+                    if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
+                        for t, lang in time_lang_pairs:
+                            timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
+                    else:
+                        for t in time_lang_pairs:
+                            timing_parts.append(f"{translator}: {t:.2f}s")
+            timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
   
             logger.debug(f" | {response_data.model_dump_json()} | ")  
-            logger.info(f" | original language: {language} | translate_method: {translate_method} |")  
-            logger.info(f" | ZH: {zh_result} | ")  
-            logger.info(f" | EN: {en_result} | ")  
-            logger.info(f" | DE: {de_result} | ")  
-            logger.info(f" | JA: {ja_result} | ")  
-            logger.info(f" | KO: {ko_result} | ")  
+            logger.info(f" | source language: {source_language} -> target language: {target_language} | translate_method: {translate_method} |")
+            if timing_str != "N/A":
+                logger.info(f" | {timing_str} | ")
+            if target_language:
+                logger.info(f" | {'#' * 75} | ")
+                logger.info(f" | ZH: {zh_result} | ")  
+                logger.info(f" | EN: {en_result} | ")  
+                logger.info(f" | DE: {de_result} | ")  
+                logger.info(f" | JA: {ja_result} | ")  
+                logger.info(f" | KO: {ko_result} | ")
+                logger.info(f" | {'#' * 75} | ")
             logger.info(f" | translate has been completed in {translate_time:.2f} seconds. |")  
             state = Status.OK
         else:
             logger.info(f" | translation has exceeded the upper limit time and has been stopped |")
+            zh_result = en_result = de_result = ja_result = ko_result = ""
             state = Status.FAILED
 
         return BaseResponse(status=state, message=f" | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)
@@ -519,7 +768,8 @@ async def sse_audio_translate(
     prev_text: str = Form(""),
     multi_strategy_transcription: int = Form(1), # 1~MAX_NUM_STRATEGIES others 1
     transcription_post_processing: bool = Form(True), # True/False
-    use_translate: bool = Form(True) # True/False
+    use_translate: bool = Form(True), # True/False
+    multi_translate: bool = Form(True) # True/False
 ):  
     """  
     Transcribe and translate an audio file.  
@@ -561,7 +811,7 @@ async def sse_audio_translate(
     )  
     
     # Check if the model has been loaded  
-    if model.model_version is None:  
+    if transcribe_manager.transcription_method is None:  
         return BaseResponse(status=Status.FAILED, message=" | model haven't been load successful. may out of memory please check again | ", data=response_data)  
         
     # Check if the languages are in the supported language list  
@@ -573,7 +823,8 @@ async def sse_audio_translate(
         "prev_text": prev_text,
         "multi_strategy_transcription": multi_strategy_transcription,
         "transcription_post_processing": transcription_post_processing,
-        "use_translate": use_translate
+        "use_translate": use_translate,
+        "multi_translate": multi_translate
     }
 
     try:  
@@ -611,7 +862,8 @@ async def sse_audio_translate(
         return BaseResponse(status=Status.OK, message=" | Request added to the waiting list. | ", data=None)  
     except Exception as e:  
         logger.error(f' | save info error: {e} | ')  
-        return BaseResponse(status=Status.FAILED, message=f" | save info error: {e} | ", data=response_data)  
+        return BaseResponse(status=Status.FAILED, message=f" | save info error: {e} | ", data=response_data)    
+    
     
 @app.get("/sse_audio_translate")  
 async def sse_audio_translate():  
@@ -625,7 +877,7 @@ async def sse_audio_translate():
     async def event_stream():  
         try:
             while not sse_stop_event.is_set():  
-                if waiting_list and not model.processing:  
+                if waiting_list and not transcribe_manager.processing:  
                     response_data, other_information = waiting_list.pop(0)  
                     audio_buffer = f"audio/{response_data.meeting_id}/{response_data.times}.wav" 
                     o_lang = response_data.ori_lang  
@@ -634,8 +886,8 @@ async def sse_audio_translate():
                         # Create an event to signal stopping  
                         stop_event = threading.Event()  
                         # Create timing thread and inference thread  
-                        time_thread = threading.Thread(target=waiting_times, args=(stop_event, model, WAITING_TIME))  
-                        inference_thread = threading.Thread(target=audio_translate_sse, args=(model, audio_buffer, o_lang, other_information, stop_event))  
+                        time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
+                        inference_thread = threading.Thread(target=audio_translate_sse, args=(transcribe_manager, translate_manager, audio_buffer, o_lang, other_information, stop_event))  
       
                         # Start the threads  
                         time_thread.start()  
@@ -649,8 +901,8 @@ async def sse_audio_translate():
                         #     os.remove(audio_buffer)  
       
                         # Process all available results from the result queue
-                        while not model.result_queue.empty():
-                            ori_pred, result, rtf, transcription_time, translate_time, translate_method = model.result_queue.get()
+                        while not transcribe_manager.result_queue.empty():
+                            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict = transcribe_manager.result_queue.get()
                             response_data.transcription_text = ori_pred
                             response_data.text = result  
                             response_data.transcribe_time = transcription_time  
@@ -661,9 +913,23 @@ async def sse_audio_translate():
                             ja_result = response_data.text.get("ja", "")
                             ko_result = response_data.text.get("ko", "")
                             
+                            # Format timing_dict: each task as separate entry
+                            timing_parts = []
+                            if timing_dict:
+                                for translator, time_lang_pairs in timing_dict.items():
+                                    if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
+                                        for t, lang in time_lang_pairs:
+                                            timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
+                                    else:
+                                        for t in time_lang_pairs:
+                                            timing_parts.append(f"{translator}: {t:.2f}s")
+                            timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
+                            
                             logger.debug(f" | {response_data.model_dump_json()} | ")  
                             logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} |")  
                             logger.info(f" | Transcription: {ori_pred} | ")
+                            if timing_str != "N/A":
+                                logger.info(f" | {timing_str} | ")
                             if other_information["use_translate"]:
                                 logger.info(f" | {'#' * 75} | ")
                                 logger.info(f" | ZH: {zh_result} | ")  

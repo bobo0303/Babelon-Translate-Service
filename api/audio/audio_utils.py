@@ -1,5 +1,11 @@
+import time
+import librosa
 import soundfile as sf
 import logging
+import numpy as np
+
+from lib.config.constant import SILENCE_PADDING
+
 
 logger = logging.getLogger(__name__)
 
@@ -57,3 +63,64 @@ def calculate_rtf(audio_file_path, transcription_time, translation_time=0):
     except Exception as e:
         logger.error(f" | RTF calculation error: {e} | ")
         return 0.0
+    
+    
+def add_silence_padding(audio, sr, padding_duration=0.05):  # Reduce to 0.05 seconds (0.3 original)
+        """
+        Add silence padding to the beginning and end of audio file.
+        
+        Args:
+            audio: numpy.ndarray of audio data
+            padding_duration: Duration of silence to add in seconds
+            
+        Returns:
+            numpy.ndarray: Audio with silence padding added
+        """
+        start_time = time.time()
+        # Add silence at beginning and end
+        padding_samples = int(padding_duration * sr)
+        silence = np.zeros(padding_samples, dtype=audio.dtype)
+        
+        # Add silence before and after the audio
+        padded_audio = np.concatenate([silence, audio, silence])
+        
+        end_time = time.time()
+        execution_time = end_time - start_time
+        original_duration = len(audio) / sr
+        padded_duration = len(padded_audio) / sr
+        
+        logger.debug(f" | _add_silence_padding execution time: {execution_time:.8f}s | Original: {original_duration:.2f}s | Padded: {padded_duration:.2f}s | ")
+        
+        return padded_audio
+
+        
+def audio_preprocess(audio_path, padding_duration=0.05):
+    # fast load
+    try:
+        audio, sr = sf.read(audio_path)
+        audio_length = len(audio) / sr
+        
+        # Resample to 16kHz if needed
+        if sr != 16000:
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+            sr = 16000 
+        
+        # Convert to mono if stereo
+        if len(audio.shape) > 1:
+            audio = audio.mean(axis=1)
+            
+        # silence padding
+        if SILENCE_PADDING:
+            try:
+                audio = add_silence_padding(audio, sr, padding_duration)
+            except Exception as e:
+                logger.warning(f" | audio_preprocess silence padding error: {e} | File: {audio_path} | use original audio | ")    
+        
+        # Convert to float32 for whisper.cpp compatibility
+        audio = audio.astype(np.float32)
+    except Exception as e:  
+        logger.error(f" | audio_preprocess error: {e} | File: {audio_path} | ")
+        audio = None
+        audio_length = 0.0
+    
+    return audio, audio_length

@@ -11,7 +11,7 @@ from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 from huggingface_hub import login
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, GEMMA_4B_IT, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2
+from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, GEMMA_4B_IT, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,13 @@ class Gemma4BTranslate:
             logger.error(f" | Failed to authenticate with HuggingFace: {e} | ")
             raise RuntimeError(f"HuggingFace authentication failed: {e}") from e
     
-    def _parse_response(self, response_text):
-        """Parse and validate response"""
+    def _parse_response(self, response_text, expected_languages):
+        """Parse and validate response
+        
+        Args:
+            response_text: The response text from Gemma
+            expected_languages: List of expected language codes in the response
+        """
         try:
             # Clean response text
             cleaned_response = response_text.strip()
@@ -69,53 +74,76 @@ class Gemma4BTranslate:
             else:
                 json_str = cleaned_response
             
+            # Fix common GPT errors: {"json":[ -> {"json":{
+            json_str = re.sub(r'(\{"json"\s*:\s*)\[', r'\1{', json_str)
+            json_str = re.sub(r'\]\s*\}$', r'}}', json_str)
+            
             # Try to parse JSON
             result = json.loads(json_str)
             
             # Validate response format
             if not isinstance(result, dict):
-                logger.warning(" | Response is not a dictionary, ignoring | ")
+                logger.warning(" | Gemma() | Response is not a dictionary, ignoring | ")
+                logger.warning(f" | Gemma() | Response type: {type(result)}, Content: {result} | ")
+                logger.warning(f" | Gemma() | Raw response: {response_text} | ")
                 return None
             
-            # Check required language keys
-            for lang in LANGUAGE_LIST:
+            # Post-processing: Handle wrapped response in extra 'json' key
+            # Example: {"json": {"zh": "...", "en": "..."}} -> {"zh": "...", "en": "..."}
+            if len(result) == 1 and "json" in result and isinstance(result["json"], dict):
+                logger.warning(" | Gemma() | Detected wrapped response with 'json' key, unwrapping | ")
+                result = result["json"]
+            
+            # Check required language keys (only check expected languages)
+            for lang in expected_languages:
                 if lang not in result:
-                    logger.warning(f" | Missing language key: {lang}, ignoring response | ")
+                    logger.warning(f" | Gemma() | Missing language key: {lang}, ignoring response | ")
+                    logger.warning(f" | Gemma() | Expected keys: {expected_languages}, Got keys: {list(result.keys())} | ")
+                    logger.warning(f" | Gemma() | Raw response: {response_text} | ")
                     return None
             
-            # Create standard format response
-            formatted_result = DEFAULT_RESULT.copy()
-            
-            # Set translation results for all languages (let GPT decide source language)
-            for lang in LANGUAGE_LIST:
+            # Create response with only expected languages
+            formatted_result = {}
+            for lang in expected_languages:
                 translated_text = result.get(lang, "").strip()
                 formatted_result[lang] = translated_text
             
             return formatted_result
             
         except json.JSONDecodeError as e:
-            logger.warning(f" | Failed to parse JSON response, ignoring: {e} | ")
-            logger.debug(f" | Raw response: {response_text[:200]}... | ")
+            logger.warning(f" | Gemma() | Failed to parse JSON response: {e} | ")
+            logger.warning(f" | Gemma() | Raw response: {response_text} | ")
             return None
         except Exception as e:
             logger.error(f" | Error parsing response: {e} | ")
             return "403_Forbidden"
     
-    def translate(self, source_text, prev_text=""):
+    def translate(self, source_text, source_lang='zh', target_lang='en', prev_text=""):
         """
         Translate text from source language to supported target languages.
         
         Args:
-            source_text (str): Text to translate
+            source_text: Text to translate
+            source_lang: Source language code
+            target_lang: Target language code or list of codes (supports both str and list)
+            prev_text: Previous context text
             
         Returns:
             dict or str: Translation result
         """
         
-        if not prev_text:
-                system_prompt = SYSTEM_PROMPT_EAPC_V3
+        # Handle both single string and list for target_lang
+        if isinstance(target_lang, list):
+            # Multi-language mode
+            target_languages = target_lang
         else:
-            system_prompt = SYSTEM_PROMPT_EAPC_V4_1 + """Previous Context = """ + prev_text + SYSTEM_PROMPT_EAPC_V4_2
+            # Single language mode
+            target_languages = [target_lang]
+        
+        all_languages = [source_lang] + target_languages
+        
+        # Generate dynamic prompt for all target languages
+        system_prompt = get_system_prompt_dynamic_language(all_languages, prev_text)
             
         try:
             messages = [
@@ -143,12 +171,22 @@ class Gemma4BTranslate:
             decoded = self.processor.decode(generation, skip_special_tokens=True)
             logger.debug(f" | GEMMA 4B Translation result: {decoded} | ")
             
-            # Clean and parse the JSON response
-            cleaned_result = self._parse_response(decoded)
+            # Clean and parse the JSON response with expected languages
+            cleaned_result = self._parse_response(decoded, all_languages)
+            if cleaned_result is None:
+                # When parsing fails, return fallback result
+                logger.warning(" | Gemma() | Failed to parse response, using fallback | ")
+                result = {source_lang: source_text}
+                for lang in target_languages:
+                    result[lang] = ""
+                return result
             return cleaned_result
             
         except Exception as e:
             logger.error(f" | Translation failed: {str(e)} | ")
-            return None
+            result = {source_lang: source_text}
+            for lang in target_languages:
+                result[lang] = ""
+            return result
         
         

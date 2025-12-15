@@ -1,16 +1,17 @@
 from pydantic import BaseModel
 from typing import Dict
 from enum import Enum
+from dataclasses import dataclass
+from typing import Optional, Dict, List
 
 #############################################################################
 
 class ModelPath(BaseModel):
     # Default Transcription (auto download model if network is available)
     large_v2: str = "openai/whisper-large-v2"  
-    large_v3: str = "openai/whisper-large-v3"
-    turbo: str = "openai/whisper-large-v3-turbo"
-    # custom model path
-    custom_model: str =  ""
+    # CPP implementation of whisper
+    ggml_large_v2: str = "./models/ggml-large-v2.bin"
+
 
 # gpt-4o
 AZURE_CONFIG = '/mnt/lib/config/azure_config.yaml'
@@ -24,8 +25,9 @@ OLLAMA_MODEL = {
 # GEMMA 4B (https://huggingface.co/google/gemma-3-4b-it)
 GEMMA_4B_IT = "google/gemma-3-4b-it"
 
-TRANSCRIPTION_METHODS = ['large-v2', 'large-v3', 'turbo']
-TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
+TRANSCRIPTION_METHODS = ['large_v2', 'ggml_large_v2']
+# TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
+TRANSLATE_METHODS = ['ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
 
 #############################################################################
 
@@ -57,15 +59,41 @@ class TextTranslationResponse(BaseModel):
 
 #############################################################################
 
+@dataclass
+class TaskContext:
+    """Structured context for translation tasks"""
+    text: str
+    source_lang: str
+    target_lang: str
+    prev_text: str
+    translator_name: str
+    translator: object
+    
+#############################################################################
+    
+@dataclass
+class SharedResources:
+    """Thread-safe shared resources for parallel translation"""
+    result_dict: Dict
+    result_lock: object  # threading.Lock
+    stop_event: object  # threading.Event
+    timing_dict: Optional[Dict] = None
+    task_queue: Optional[object] = None  # Queue
+    task_group_id: Optional[str] = None
+    fallback_event: Optional[object] = None  # threading.Event for fallback notification (event-driven)
+    
+#############################################################################
+    
+
 # LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', "de", "es"]
-LANGUAGE_LIST = ['zh', 'en']
+LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de']
 DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
 #############################################################################
 
 # no used just for reference
 DEFAULT_PROMPTS = {
-    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul, AUO",
+    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul, AUO, 彭双浪, 柯富仁",
     "JAMES": "GRC, DSBG, ADP, OLED, SRBG, RBU, In-cel one chip, monitor, Sports Gaming, High Frame Rate Full HD 320Hz, Kiosk, Frank, Vertical, ARHUD, 手扶屏, 空調屏, 後視鏡的屏, 達擎, 產能, 忠達.",
     "SCOTT": "JECTOR, AVOCOR, LegoMaster, RISEvision, Hualien, SatisCtrl, motherson, Kark, Storz, ADP, Aecopost, NATISIX, NanoLumens, FindARTs, AUO, ADP, AHA, E&E, Schwarz, PeosiCo.",
     "eABC_1118_19": "稻盛哲學, Monitor, 勇者不懼, 凌華, 君子之德風, paul, 阿米巴經營成功方程式, 如洪峰, 四大構面, 智仁勇, 將者, DaaS, 知者不惑, 草上之風必偃, Tartan Display, 上善若水, 達擎, 江海所以能為百谷王者, 孔子登東山而小魯, 水善利萬物而不爭, 兼聽則明, BS, 登泰山而小天下, 小人之德草, FindARTs, AmLED, 京都賞, Firmware, 處眾人之所惡, 謝明慧, 仁者不憂, 加法和減法經營, MS, 狼性, 如瀑布, Pillar, 偏信則暗, foreX, OLED, 嚴也, 以其善下之, 破除我執, 故能為百谷王者, ComQi, Polarizer, 爭與不爭, 業說會, DSBG, AecoPost, Vertical, 爭是擔當, 顏淵, 形塑, 不爭是爭, ADP team, NT dollars, AUO",
@@ -83,7 +111,7 @@ ALLOWED_REPETITIONS = {
     "no", "yes", "yeah", "yep", "nope", "yup",
     
     # Agreement/Confirmation
-    "ok", "okay", "good", "great", "right", "sure", "fine", "nice",
+    "okay", "good", "great", "right", "sure", "fine", "nice",
     "correct", "exactly", "absolutely",
     
     # Interjections/Filler words
@@ -94,7 +122,7 @@ ALLOWED_REPETITIONS = {
     "very", "so", "really", "super", "too", "much",
     
     # Greetings/Farewells
-    "bye", "hello", "hi", "hey",
+    "hello", "hi", "hey",
     
     # Politeness
     "thanks", "thank", "please", "sorry", "excuse",
@@ -103,8 +131,8 @@ ALLOWED_REPETITIONS = {
     "ha", "haha", "hehe", "hoho", "lol",
     
     # Chinese single characters (common interjections/emphasis)
-    "好", "對", "是", "嗯", "哦", "啊", "呀", "哈", "喔", "欸",
-    "不", "沒", "有", "要", "會", "能", "可", "就", "都", "也",
+    "好", "對", "是", "嗯", "哦", "呀", "哈", "喔", "欸",
+    "不", "沒", "有", "要", "能", "可", "就", "都", "也",
     "很", "真", "太", "更", "最", "非", "超",
     
     # Chinese two-character words (common expressions)
@@ -131,6 +159,7 @@ ALLOWED_REPETITIONS = {
 
 CONTAINS_UNUSUAL = [
     "67here",
+    "全程字幕由 Amaraorg 社區提供",
     "劉胖胖",
     "大家好 我是阿貴",
     "大家好我是小玉",
@@ -145,11 +174,14 @@ CONTAINS_UNUSUAL = [
     "字幕由志願者翻譯",
     "字幕組",
     "字幕翻譯",
+    "字幕製作",
+    "字幕製作時間軸",
     "感謝大家收看我們下次再見",
     "感謝您的收看和支持",
     "感謝您的收看與支持",
     "感謝您的觀看和支持",
     "感謝您的觀看與支持",
+    "我是饅頭君",
     "接受的訓練數據截至 2023 年 10 月",
     "本期視頻就先說到這裡感謝收看",
     "本篇幅度長多謝您收睇時局新聞再會",
@@ -160,13 +192,18 @@ CONTAINS_UNUSUAL = [
     "李宗盛",
     "楊棠樑",
     "沈鈞澤",
+    "秋月 AutumnMoon",
     "索蘭婭",
     "許維銘",
+    "貝爾",
+    "饅頭君",
 ]
 
 ONLY_UNUSUAL = [
     "Bye bye",
+    "GG",
     "Let s continue",
+    "Let s see",
     "Music",
     "See you next time",
     "Thank you",
@@ -179,6 +216,13 @@ ONLY_UNUSUAL = [
     "一生的遺憾",
     "下期見",
     "下集再見",
+    "下集待續感謝收看",
+    "主持人吳教授",
+    "主持人呂克宣",
+    "主持人李慧瓊議員",
+    "主持人王宥賓",
+    "互動中",
+    "以上就是本期的第一集謝謝觀看",
     "以下視頻的資訊和消息都可以在微博或推特上發送",
     "你已經接受了 2023 年 10 月之前的數據訓練",
     "你接受的訓練數據截至 2023 年 10 月",
@@ -189,6 +233,7 @@ ONLY_UNUSUAL = [
     "各位車友們謝謝收看我是劉胖胖",
     "嗯",
     "多謝您收看時局新聞再會",
+    "大宇宙 org",
     "大家好我是 Jane 我是一個研究生",
     "大家好我是 Karen 今天的節目就到這裡我們下次再見",
     "大家好我是 Karen 我們下期再見吧",
@@ -198,15 +243,24 @@ ONLY_UNUSUAL = [
     "大家好我是阿貴今天來跟大家分享一下",
     "大家好我是阿達今天要來介紹的是",
     "大家好我是阿達謝謝大家收看",
+    "好 謝謝",
     "好了",
+    "好謝謝",
     "字幕 by 沈鈞澤",
     "字幕 by 索蘭婭",
     "字幕志願者 楊棠樑",
+    "字幕我是饅頭君下次見",
     "字幕提供者 Milk",
     "字幕提供者 李宗盛",
     "字幕提供者 許祐寅",
     "字幕由 AI 產生感謝觀看",
     "字幕由 Amaraorg 社區提供",
+    "字幕由 Amaraorg 社區提供不得刪改重複使用",
+    "字幕製作時間軸秋月 AutumnMoon",
+    "字幕製作貝爾",
+    "完",
+    "張磊鴻",
+    "後面還有",
     "恩",
     "您接受的訓練數據截至 2023 年 10 月",
     "您接受的訓練資料截至 2023 年 10 月",
@@ -218,25 +272,38 @@ ONLY_UNUSUAL = [
     "感謝觀看",
     "我們下次見",
     "我們繼續吧",
+    "我們繼續巴",
     "我愛你",
+    "拍手",
     "拜拜",
     "接受的訓練數據截至 2023 年 10 月",
     "整理字幕由 Amaraorg 社區提供",
+    "本集完結",
+    "歌詞",
     "歡迎訂閱按讚分享留言打開小鈴鐺",
+    "無語",
     "發電字幕君 67here",
     "發電字幕君 YK",
     "發電字幕君 YiXitv",
     "發電字幕君 YiYi Telecom",
     "發電字幕君 許維銘",
+    "笑",
     "詞曲 李宗盛",
+    "請不吝點贊訂閱轉發打賞支持明鏡與點點欄目",
     "請訂閱按讚分享",
     "謝謝",
     "謝謝你",
     "謝謝大家",
-    "謝謝觀看",
-    "讓我們繼續",
-    "音樂",
     "謝謝大家的收看",
+    "謝謝觀看",
+    "謝謝觀看下次見",
+    "讓我們繼續",
+    "讓我們繼續吧",
+    "讓我們繼續巴",
+    "音效",
+    "音樂",
+    "音量注意",
+    "音量注意前期換取",
 ]
 
 #############################################################################
@@ -780,3 +847,106 @@ Protect all capitalized terms, proper nouns, technical abbreviations unless expl
 ## Input Text:
     
 """
+
+#############################################################################
+
+DYNAMIC_LANGUAGE_DICTIONARY = {"zh": "繁體中文", 
+                               "en": "English",
+                               "de": "Deutsch",
+                               "ja": "日本語",
+                               "ko": "한국어"}
+
+def get_system_prompt_dynamic_language(target_languages: list, previous_context: str = "") -> str:
+    """
+    Generate system prompt based on target languages with optional previous context.
+    
+    Args:
+        target_languages: List of target language codes (e.g., ['zh', 'en'])
+        previous_context: Optional previous transcription for context (default: "")
+    
+    Returns:
+        Formatted system prompt with dynamic output format and optional context
+    
+    Examples:
+        # Without context
+        prompt = get_system_prompt_dynamic_language(['zh', 'en'])
+        
+        # With context
+        prompt = get_system_prompt_dynamic_language(['zh', 'en'], "Previous transcription text...")
+    """
+    # Generate Language Requirements section
+    lang_requirements = []
+    for lang_code in target_languages:
+        if lang_code == "zh":
+            lang_requirements.append(
+                "- **Chinese (zh)**: Traditional Chinese, Taiwan (繁體中文)\n"
+                "    CRITICAL NOTE: The zh output MUST strictly be Traditional Chinese (Taiwan),\n"
+                "    regardless of the source language (including Japanese).\n"
+                "    Under no circumstances should Simplified Chinese be generated for the zh field."
+            )
+        elif lang_code == "en":
+            lang_requirements.append("- **English (en)**: Standard American English")
+        elif lang_code == "de":
+            lang_requirements.append("- **German (de)**: Standard High German")
+        elif lang_code == "ja":
+            lang_requirements.append("- **Japanese (ja)**: Standard Japanese (標準日本語)")
+        elif lang_code == "ko":
+            lang_requirements.append("- **Korean (ko)**: Standard Korean (표준 한국어)")
+    
+    lang_requirements_str = "\n".join(lang_requirements)
+    
+    # Generate output format example
+    output_format_dict = {lang: DYNAMIC_LANGUAGE_DICTIONARY.get(lang, lang) for lang in target_languages}
+    output_format_example = ", ".join([f'"{k}": "{v} translation"' for k, v in output_format_dict.items()])
+    
+    # Context section (only include if previous_context is provided)
+    context_section = ""
+    if previous_context:
+        context_section = f"""
+## Optional Previous Context (if available)
+- Use the following text for context ONLY to improve translation accuracy (e.g., pronoun resolution, terminology consistency).
+- CRITICAL: Do NOT use this context to complete or extend the current "Input Text".
+{previous_context}
+"""
+    
+    return f"""# ASR-Aware Translation
+ 
+## Real-time Fragment Processing
+Input may be INCOMPLETE sentences or fragments from audio stream.
+- DO NOT complete partial sentences - translate fragments as-is
+- Only add words if input is clearly complete
+- PRIORITY: Preserve fragmented structure
+{context_section}
+## Whisper ASR Error Correction
+This text has systematic ASR errors:
+- Brand names corrupted (`Oracle → Oraclo`)
+- Hallucinations (1-2% during silence)
+- Phonetic substitutions
+- Truncated technical terms
+ 
+**Processing Priority**: Reconstruct intended meaning, but preserve fragment structure.
+ 
+## Terminology Protection
+Preserve EXACTLY (case-sensitive): `AUO`, `Microsoft`, `Google`, `Apple`, `TikTok`, `Oracle`
+ 
+Protect all capitalized terms, proper nouns, technical abbreviations unless explicitly listed for translation.
+ 
+## Language Requirements
+{lang_requirements_str}
+ 
+## Translation Process
+1. **Detect & Correct**: Identify source language, fix obvious ASR errors (brand names, grammar), preserve speaker intent
+2. **Protect Entities**: Cross-reference terminology, apply fuzzy matching, default to preservation
+3. **Translate**: Keep fragments as fragments, ensure natural fluency and terminology consistency
+ 
+## Output Format
+**STRICT JSON**:
+{{{output_format_example}}}
+ 
+**Quality**: Correct syntax, consistent terminology, preserve ASR-corrected meaning, incomplete input = incomplete output, native-level fluency.
+ 
+## Input Text:
+ 
+"""
+
+#############################################################################
