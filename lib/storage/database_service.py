@@ -16,7 +16,7 @@ active = active if active else "dev"
 class DatabaseService:
 
     def __init__(self):
-        root_dir = Path(__file__).parent.parent
+        root_dir = Path(__file__).parent.parent.parent
         self.logger = get_logger("dbLogger")
         self.script_location = root_dir / "alembic"
         self.alembic_cfg_path = root_dir / "alembic.ini"

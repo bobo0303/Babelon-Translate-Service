@@ -5,7 +5,8 @@ import threading
 from queue import Queue  
 
 from api.transcraption.whisper_transformer import WhisperTransformer
-from api.transcraption.whisper_cpp import WhisperCpp  
+from api.transcraption.whisper_cpp import WhisperCpp 
+from api.audio.audio_utils import audio_preprocess
 
 from lib.config.constant import ModelPath
   
@@ -54,22 +55,22 @@ class TranscribeManager:
         self.processing = False
   
   
-    def load_model(self, models_name):  
+    def load_model(self, model_name):  
         """Load the specified model based on the model's name."""  
         try:  
             # Release old model resources
             if self.transcriber:
                 self.transcriber.release_model()
+                
             # Load new model based on the model name
-            if models_name.startswith("whisper_transformer"):
-                self.transcriber = self.transcribers["whisper_transformer"]
-            elif models_name.startswith("whisper_cpp"):
+            if model_name.startswith("ggml"):
                 self.transcriber = self.transcribers["whisper_cpp"]
             else:
-                raise ValueError(f" | Unsupported transcription method: {models_name} | ")
-            model_path = getattr(self.models_path, models_name)  
-            msg = self.transcriber.load_model(models_name, model_path)
-            self.transcription_method = models_name
+                self.transcriber = self.transcribers["whisper_transformer"]
+
+            model_path = getattr(self.models_path, model_name)  
+            msg = self.transcriber.load_model(model_name, model_path)
+            self.transcription_method = model_name
             logger.debug(f" | TranscribeManager: {msg} | ")
         except Exception as e:  
             # On error, release any partially loaded model
@@ -77,7 +78,7 @@ class TranscribeManager:
                 self.transcriber.release_model()
             self.transcription_method = None
             self.transcriber = None
-            logger.error(f" | TranscribeManager: load_model() models_name: '{models_name}' error: {e} | ")
+            logger.error(f" | TranscribeManager: load_model() model_name: '{model_name}' error: {e} | ")
             logger.error(f" | model has been released. Please use correct model name to reload the model before using | ")
             return e
         return None
@@ -94,14 +95,10 @@ class TranscribeManager:
         
         # Build prompt text based on language
         if prompt:
-            if language == "zh":
-                if not prompt.endswith((',', '.', '。', '!', '！', '?', '？')):
-                    prompt += '。'
-                prompt = f"這是我們的提示詞 {prompt} 讓我們繼續吧。"
-            else:
-                if not prompt.endswith((',', '.', '。', '!', '！', '?', '？')):
-                    prompt += '.'
-                prompt = f"These are our prompts {prompt} Let's continue."
+
+            if not prompt.endswith((',', '.', '。', '!', '！', '?', '？')):
+                prompt += '.'
+            prompt = f"These are our prompts {prompt} Let's continue."
         
         try:
             self.transcriber.set_prompt(prompt=prompt)
@@ -143,10 +140,11 @@ class TranscribeManager:
                     'audio_uid': audio_uid,
                     'times': times,
                     'cancelled': False,
-                    'processing': False
+                    'processing': False,
+                    'task_id': task_id,
                 }
         
-        # 🚀 Queue optimization: Only add to queue if not cancelled
+        # Queue optimization: Only add to queue if not cancelled
         if should_add:
             task = (task_id, audio_file, o_lang, multi_strategy_transcription,
                     transcription_post_processing, prev_text)
@@ -223,7 +221,7 @@ class TranscribeManager:
                 
                 # Execute transcription (set processing = True)
                 self.processing = True
-                ori_pred, transcription_time = self.transcribe(
+                ori_pred, transcription_time, audio_length = self.transcribe(
                     audio_file, o_lang, multi_strategy_transcription, 
                     transcription_post_processing, prev_text
                 )
@@ -235,7 +233,7 @@ class TranscribeManager:
                 # Store transcription result and notify
                 with self.task_lock:
                     if task_id in self.task_results:
-                        self.task_results[task_id]['result'] = (ori_pred, transcription_time)
+                        self.task_results[task_id]['result'] = (ori_pred, transcription_time, audio_length)
                         self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
                         logger.debug(f" | Task {task_id} completed. | ")
                     else:
@@ -254,7 +252,7 @@ class TranscribeManager:
         
         logger.info(" | Queue worker stopped. | ")
 
-    def transcribe(self, audio_file_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
+    def transcribe(self, audio_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
         """
         Docstring for transcribe
         
@@ -265,7 +263,19 @@ class TranscribeManager:
         :param post_processing: Description
         :param prev_text: Description
         """
-        return self.transcriber.transcribe(audio_file_path, 
+        
+        audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
+                
+        # Process previous text context
+        if prev_text.strip() != "" and len(prev_text.replace('.', '').replace('。', '').replace(',', '').replace('，', '').strip()) >= 1:
+            if not prev_text.endswith(('.', '。', '!', '！', '?', '？')):
+                prev_text += '。' 
+        else:
+            prev_text = ""
+                
+        return self.transcriber.transcribe(audio_path,
+                                           audio, 
+                                           audio_length,
                                            ori, 
                                            multi_strategy_transcription, 
                                            post_processing, 

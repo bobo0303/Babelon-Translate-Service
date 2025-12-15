@@ -663,3 +663,14 @@ def post_process(text, audio_duration=None, prompt_name=None):
         logger.error(f" | Global post_process error: {e} | ")
         return True, text  # Return original text with retry flag
 
+if __name__ == "__main__":
+    
+    # Example test
+    sample_text = "（字幕製作/時間軸：秋月 AutumnMoon）"
+    audio_dur = None
+    
+    retry, processed_text = post_process(sample_text, audio_dur)
+    print(f"Retry: {retry}")
+    print(f"Processed Text: {processed_text}")
+    
+    

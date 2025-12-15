@@ -8,9 +8,9 @@ from typing import Optional, Dict, List
 
 class ModelPath(BaseModel):
     # Default Transcription (auto download model if network is available)
-    whisper_transformer_large_v2: str = "openai/whisper-large-v2"  
+    large_v2: str = "openai/whisper-large-v2"  
     # CPP implementation of whisper
-    whisper_cpp_large_v2: str = "/mnt/lib/config/whisper_cpp_model.yaml"
+    ggml_large_v2: str = "./models/ggml-large-v2.bin"
 
 
 # gpt-4o
@@ -25,7 +25,7 @@ OLLAMA_MODEL = {
 # GEMMA 4B (https://huggingface.co/google/gemma-3-4b-it)
 GEMMA_4B_IT = "google/gemma-3-4b-it"
 
-TRANSCRIPTION_METHODS = ['large-v2', 'large-v3', 'turbo']
+TRANSCRIPTION_METHODS = ['large_v2', 'ggml_large_v2']
 # TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
 TRANSLATE_METHODS = ['ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
 
@@ -159,6 +159,7 @@ ALLOWED_REPETITIONS = {
 
 CONTAINS_UNUSUAL = [
     "67here",
+    "全程字幕由 Amaraorg 社區提供",
     "劉胖胖",
     "大家好 我是阿貴",
     "大家好我是小玉",
@@ -173,11 +174,14 @@ CONTAINS_UNUSUAL = [
     "字幕由志願者翻譯",
     "字幕組",
     "字幕翻譯",
+    "字幕製作",
+    "字幕製作時間軸",
     "感謝大家收看我們下次再見",
     "感謝您的收看和支持",
     "感謝您的收看與支持",
     "感謝您的觀看和支持",
     "感謝您的觀看與支持",
+    "我是饅頭君",
     "接受的訓練數據截至 2023 年 10 月",
     "本期視頻就先說到這裡感謝收看",
     "本篇幅度長多謝您收睇時局新聞再會",
@@ -188,8 +192,11 @@ CONTAINS_UNUSUAL = [
     "李宗盛",
     "楊棠樑",
     "沈鈞澤",
+    "秋月 AutumnMoon",
     "索蘭婭",
     "許維銘",
+    "貝爾",
+    "饅頭君",
 ]
 
 ONLY_UNUSUAL = [
@@ -209,10 +216,13 @@ ONLY_UNUSUAL = [
     "一生的遺憾",
     "下期見",
     "下集再見",
+    "下集待續感謝收看",
     "主持人吳教授",
     "主持人呂克宣",
     "主持人李慧瓊議員",
     "主持人王宥賓",
+    "互動中",
+    "以上就是本期的第一集謝謝觀看",
     "以下視頻的資訊和消息都可以在微博或推特上發送",
     "你已經接受了 2023 年 10 月之前的數據訓練",
     "你接受的訓練數據截至 2023 年 10 月",
@@ -220,10 +230,10 @@ ONLY_UNUSUAL = [
     "你接受過訓練的數據截至 2023 年 10 月",
     "全程字幕由 Amaraorg 社區提供",
     "再次感謝大家收看",
-    "大宇宙org",
     "各位車友們謝謝收看我是劉胖胖",
     "嗯",
     "多謝您收看時局新聞再會",
+    "大宇宙 org",
     "大家好我是 Jane 我是一個研究生",
     "大家好我是 Karen 今天的節目就到這裡我們下次再見",
     "大家好我是 Karen 我們下期再見吧",
@@ -239,12 +249,18 @@ ONLY_UNUSUAL = [
     "字幕 by 沈鈞澤",
     "字幕 by 索蘭婭",
     "字幕志願者 楊棠樑",
+    "字幕我是饅頭君下次見",
     "字幕提供者 Milk",
     "字幕提供者 李宗盛",
     "字幕提供者 許祐寅",
     "字幕由 AI 產生感謝觀看",
     "字幕由 Amaraorg 社區提供",
+    "字幕由 Amaraorg 社區提供不得刪改重複使用",
+    "字幕製作時間軸秋月 AutumnMoon",
+    "字幕製作貝爾",
+    "完",
     "張磊鴻",
+    "後面還有",
     "恩",
     "您接受的訓練數據截至 2023 年 10 月",
     "您接受的訓練資料截至 2023 年 10 月",
@@ -258,26 +274,36 @@ ONLY_UNUSUAL = [
     "我們繼續吧",
     "我們繼續巴",
     "我愛你",
+    "拍手",
     "拜拜",
     "接受的訓練數據截至 2023 年 10 月",
     "整理字幕由 Amaraorg 社區提供",
+    "本集完結",
+    "歌詞",
     "歡迎訂閱按讚分享留言打開小鈴鐺",
+    "無語",
     "發電字幕君 67here",
     "發電字幕君 YK",
     "發電字幕君 YiXitv",
     "發電字幕君 YiYi Telecom",
     "發電字幕君 許維銘",
+    "笑",
     "詞曲 李宗盛",
+    "請不吝點贊訂閱轉發打賞支持明鏡與點點欄目",
     "請訂閱按讚分享",
     "謝謝",
     "謝謝你",
     "謝謝大家",
     "謝謝大家的收看",
     "謝謝觀看",
+    "謝謝觀看下次見",
     "讓我們繼續",
     "讓我們繼續吧",
     "讓我們繼續巴",
+    "音效",
     "音樂",
+    "音量注意",
+    "音量注意前期換取",
 ]
 
 #############################################################################

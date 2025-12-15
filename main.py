@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from typing import List
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,12 +10,12 @@ import logging
 import uvicorn  
 import datetime  
 import threading
-import uuid 
 from queue import Queue  
 from threading import Thread, Event  
 from api.core.transcribe_manager import TranscribeManager
 from api.core.translate_manager import TranslateManager
 from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
+from lib.core.response_manager import storage_upload
 from wjy3 import BaseResponse, Status
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
 from api.utils import write_txt
@@ -64,7 +63,7 @@ async def lifespan(app: FastAPI):
         logger.info(f" | ##################################################### | ")  
         logger.info(f" | Start to loading default model. | ")  
         # load model  
-        default_model = "whisper_transformer_large_v2"  
+        default_model = "large_v2"  
         transcribe_manager.load_model(default_model)  # Directly load the default model  
         logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(transcribe_manager)} | ")  
         # preheat  
@@ -84,8 +83,8 @@ async def lifespan(app: FastAPI):
         # logger.info(f" | WebSocket model has been set. Model ID: {id(transcribe_manager)} | ")
         
         # Start pipeline worker thread
-        # transcribe_manager.start_worker()
-        # logger.info(f" | Pipeline worker thread has been started. | ")
+        transcribe_manager.start_worker()
+        logger.info(f" | Pipeline worker thread has been started. | ")
         logger.info(f" | ##################################################### | ")  
         # delete_old_audio_files()
         
@@ -197,16 +196,19 @@ async def change_transcription_model(model_name: str = Form(...)):
         The request object containing the model's name to be loaded.  
     :rtype: BaseResponse  
         A response indicating the success or failure of the model loading process.  
-    """  
+    """
     # Convert the model's name to lowercase  
     model_name = model_name.lower()  
+    
+    # Normalize model name: replace dashes with underscores for attribute lookup
+    model_name = model_name.replace('-', '_')
       
     # Check if the model's name exists in the model's path  
     if not hasattr(transcribe_manager.models_path, model_name):  
         # Raise an HTTPException if the model is not found  
         return BaseResponse(status=Status.FAILED, message=f" | Model '{model_name}' not found. | ", data=None)  
       
-    # Load the specified model  
+    # Load the specified model
     message = transcribe_manager.load_model(model_name)  
       
     # Return a response indicating the success of the model loading process  
@@ -410,7 +412,7 @@ async def translate(
   
         # Get the result from the queue  
         if not result_queue.empty():  
-            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict = result_queue.get()  
+            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict, other_info = result_queue.get()  
             response_data.transcription_text = ori_pred
             response_data.text = result  
             response_data.transcribe_time = transcription_time  
@@ -452,7 +454,12 @@ async def translate(
             logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
             ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
             state = Status.FAILED
+            
         # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)
+        if other_info:
+            other_info['audio_uid'] = audio_uid
+            other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
+            storage_upload(logger, response_data, other_info) 
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
     except Exception as e:  
@@ -544,7 +551,7 @@ async def translate_pipeline(
   
     # Use the new pipeline coordinator for better decoupling with timeout
     try:
-        result = await asyncio.wait_for(
+        result, other_info = await asyncio.wait_for(
             asyncio.to_thread(
                 audio_pipeline_coordinator,
                 transcribe_manager=transcribe_manager,
@@ -623,6 +630,10 @@ async def translate_pipeline(
             # Other failure reasons (interrupted, transcription failed, etc.)
             message = " | Pipeline processing failed | "
         logger.warning(message)
+    
+    if other_info:
+        other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
+        storage_upload(logger, response_data, other_info)
 
     return BaseResponse(status=state, message=message, data=response_data)
     

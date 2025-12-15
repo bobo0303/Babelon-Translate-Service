@@ -67,6 +67,12 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     task_id = str(uuid.uuid4())
     transcription_event = None
     
+    audio_tags = ""
+    if multi_strategy_transcription == 1:
+        audio_tags = "audio_start"
+    elif multi_strategy_transcription == 4:
+        audio_tags = "audio_end"
+    
     try:
         # Step 1: Submit transcription task
         transcription_event = transcribe_manager.add_task(
@@ -84,7 +90,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
                 logger.debug(f" | Pipeline task {task_id} cancelled before queuing (not in task_results). | ")
                 result['ori_pred'] = None
                 result['translate_method'] = "cancelled_before_queue"
-                return tuple(result.values())
+                return tuple(result.values()), None
             
             if transcribe_manager.task_results[task_id].get('cancelled', False):
                 logger.debug(f" | Pipeline task {task_id} cancelled during transcription. | ")
@@ -92,7 +98,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
                 del transcribe_manager.task_results[task_id]
                 result['ori_pred'] = None
                 result['translate_method'] = "cancelled"
-                return tuple(result.values())
+                return tuple(result.values()), None
             
             transcription_result = transcribe_manager.task_results[task_id]['result']
             # Clean up task result to free memory
@@ -103,15 +109,16 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         logger.warning(f" | Pipeline coordinator interrupted: {e} | ")
         _cleanup_transcription_task(transcribe_manager, task_id)
         result['translate_method'] = "interrupted"
-        return tuple(result.values())
+        return tuple(result.values()), None
     
     # Continue with the rest of the function...
     if transcription_result is None:
         logger.error(f" | Transcription failed for task {task_id}. | ")
         result['translate_method'] = "transcription_failed"
-        return tuple(result.values())
+        return tuple(result.values()), None
     
-    result['ori_pred'], result['transcription_time'] = transcription_result
+    result['ori_pred'], result['transcription_time'], audio_length = transcription_result
+    
     
     # Step 4: Handle translation if needed
     if t_lang:
@@ -130,12 +137,28 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     # Step 5: Calculate RTF and return results
     result['rtf'] = calculate_rtf(audio_file, result['transcription_time'], result['translate_time'])
     
+    other_info = {
+            "audio_length": audio_length,
+            "task_id": task_id,
+            "audio_uid": audio_uid,
+            "audio_file_name": None,
+            "use_translate": True if t_lang else False,
+            "use_prev_text": True if prev_text else False,
+            "prev_text": prev_text,
+            "post_processing": transcription_post_processing,
+            "audio_tags": audio_tags,
+            "strategy": multi_strategy_transcription,
+            "rtf": result['rtf'],
+            "process_method": "pipeline_coordinator"
+        }
+     
     total_time = time.time() - start_time
     logger.debug(f" | Pipeline task {task_id} completed in {total_time:.2f}s (transcription: {result['transcription_time']:.2f}s, translation: {result['translate_time']:.2f}s). | ")
     
-    return tuple(result.values())  
+    return tuple(result.values()), other_info
 
-def audio_translate(transcribe_manager, translate_manager, audio_file_path, result_queue, ori, tar, stop_event, strategy, post_processing, prev_text, multi_translate):  
+def audio_translate(transcribe_manager, translate_manager, audio_file_path, result_queue, o_lang, t_lang, 
+                    stop_event, strategy, post_processing, prev_text, multi_translate):  
     """  
     Transcribe and translate an audio file, then store the results in a queue.  
   
@@ -153,10 +176,10 @@ def audio_translate(transcribe_manager, translate_manager, audio_file_path, resu
         The event used to signal stopping.  
     """  
     try:
-        ori_pred, inference_time = transcribe_manager.transcribe(audio_file_path, ori, strategy, post_processing, prev_text)
-        if tar:
-            # tar is already a list from main.py
-            translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, ori, tar, prev_text, multi_translate)  
+        ori_pred, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, o_lang, strategy, post_processing, prev_text)
+        if t_lang:
+            # t_lang is already a list from main.py
+            translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, o_lang, t_lang, prev_text, multi_translate)  
         else:
             translated_pred = DEFAULT_RESULT.copy()
             translate_time = 0
@@ -165,8 +188,29 @@ def audio_translate(transcribe_manager, translate_manager, audio_file_path, resu
         
         # Calculate RTF using audio_utils
         rtf = calculate_rtf(audio_file_path, inference_time, translate_time)
+        
+        audio_tags = ""
+        if strategy == 1:
+            audio_tags = "audio_start"
+        elif strategy == 4:
+            audio_tags = "audio_end"
+        
+        other_info = {
+            "audio_length": audio_length,
+            "task_id": "no_need",
+            "audio_uid": None,
+            "audio_file_name": None,
+            "use_translate": True if t_lang else False,
+            "use_prev_text": True if prev_text else False,
+            "prev_text": prev_text,
+            "post_processing": post_processing,
+            "audio_tags": audio_tags,
+            "strategy": strategy,
+            "rtf": rtf,
+            "process_method": "threading_sequential"
+        }
 
-        result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict))  
+        result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict, other_info))  
         stop_event.set()  # Signal to stop the waiting thread
     finally:
         # Clean up any active translation threads when this thread is stopped

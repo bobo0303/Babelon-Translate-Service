@@ -46,11 +46,11 @@ class WhisperTransformer:
         self.processor = None
         self.pipe = None  
         
-    def load_model(self, models_name, models_path):  
+    def load_model(self, model_name, model_path):  
         """Load the specified model based on the model's name."""  
         start = time.time()  
         try:  
-            self.model_path = models_path  # Use getattr to access ModelPath attributes
+            self.model_path = model_path  # Use getattr to access ModelPath attributes
             self.processor = AutoProcessor.from_pretrained(self.model_path)
             self.pipe = pipeline(
                 task="automatic-speech-recognition",
@@ -60,10 +60,9 @@ class WhisperTransformer:
                 device=self.device
             )            
             end = time.time()  
-            logger.info(f" | Loading '{models_name}' in {end - start:.2f} seconds and successful | ")
+            logger.info(f" | Loading '{model_name}' in {end - start:.2f} seconds and successful | ")
         except Exception as e:  
-            self.model_version = None
-            logger.error(f" | load_model() models_name: '{models_name}' error: {e} | ")
+            logger.error(f" | load_model() models_name: '{model_name}' error: {e} | ")
             logger.error(f" | model has been released. Please use correct model name to reload the model before using | ")
             return e
         return None
@@ -87,7 +86,7 @@ class WhisperTransformer:
         :rtype: None  
         """  
         
-        if prompt is None:
+        if prompt is None or prompt == "":
             self.prompt_token = None
             self.prompt = None
             logger.info(f" | Prompt has been cleared. | ")
@@ -120,7 +119,7 @@ class WhisperTransformer:
             return e    
     
     
-    def transcribe(self, audio_file_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
+    def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
         """  
         Perform transcription on the given audio file.  
     
@@ -133,20 +132,8 @@ class WhisperTransformer:
         :logs: Inference status and time.  
         """  
         start = time.time()  # Start timing the transcription process  
-        padded_audio = None
 
         try:
-            if SILENCE_PADDING:
-                audio_file_path, padded_audio = add_silence_padding(audio_file_path)
-                
-            # Process previous text context
-            if prev_text.strip() != "" and len(prev_text.replace('.', '').replace('。', '').replace(',', '').replace('，', '').strip()) >= 1:
-                if not prev_text.endswith(('.', '。', '!', '！', '?', '？')):
-                    prev_text += '。' 
-            else:
-                prev_text = ""
-                
-            # Multi-strategy transcription:
             # Strategy 1: temp=0.0, do_sample=False, prompt=self.prompt_token+prev_text
             # Strategy 2: temp=0.0, do_sample=False, prompt=self.prompt_token 
             # Strategy 3: temp=0.0, do_sample=False, prompt=None
@@ -192,7 +179,7 @@ class WhisperTransformer:
                             generate_kwargs["prompt_ids"] = self.prompt_token.to(self.device) if self.device == "cuda" else self.prompt_token
                 
                 # prepare input audio if unread give audio path 
-                audio_input = padded_audio if padded_audio is not None else audio_file_path
+                audio_input = audio if audio is not None else audio_path
                 transcription_result = self.pipe(
                     audio_input, 
                     generate_kwargs=generate_kwargs,
@@ -203,7 +190,7 @@ class WhisperTransformer:
                 logger.debug(f" | Raw Transcription: {ori_pred} | ")
                 
                 if post_processing:
-                    audio_duration = get_audio_duration(audio_file_path)
+                    audio_duration = get_audio_duration(audio_path) if audio_length is None else audio_length
                     retry_flag, ori_pred = post_process(ori_pred, audio_duration, self.prompt)
                 
                 if retry_flag:
@@ -222,8 +209,9 @@ class WhisperTransformer:
         except Exception as e:
             ori_pred = ""
             inference_time = 0
+            audio_length = 0.0
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori_pred, inference_time
+        return ori_pred, inference_time, audio_length
 
     
