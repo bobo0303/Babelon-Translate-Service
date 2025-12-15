@@ -13,11 +13,24 @@ def storage_upload(logger, response_data: AudioTranslationResponse, other_info: 
     """
     處理儲存和上傳相關的任務
     """
-    # save transcription history to db
-    try:
-        _save_trans_history_to_db(logger, response_data, other_info)
-    except Exception as e:
-        logger.error(f"| 儲存轉錄歷史到資料庫錯誤: {e} | ")
+    
+    # try:
+    #     _save_trans_history_to_db(logger, response_data, other_info)
+    # except Exception as e:
+    #     logger.error(f"| 儲存轉錄歷史到資料庫錯誤: {e} | ")
+    
+    # try:
+    #     _upload_audio_to_azure_blob(logger, response_data.meeting_id, other_info.get("audio_file_name", ""))
+    # except Exception as e:
+    #     logger.error(f"| 上傳音訊檔案到 Azure Blob 錯誤: {e} | ")
+        
+    # save transcription history to db in background thread
+    db_thread = threading.Thread(
+        target=_save_trans_history_to_db,
+        args=(logger, response_data, other_info),
+        daemon=True
+    )
+    db_thread.start()
     
     # upload audio to azure blob in background thread
     upload_thread = threading.Thread(
@@ -120,7 +133,7 @@ def _save_trans_history_to_db(
         f' | after save to db | audio UID: {response_data.audio_uid} | timestamp: {response_data.times} | '
     )
     
-    logger.info(
+    logger.debug(
         f' | Save to db | audio UID: {response_data.audio_uid} | timestamp:{response_data.times} | ')
     
 def _upload_audio_to_azure_blob(logger, meeting_id: str, audio_file_name: str):
