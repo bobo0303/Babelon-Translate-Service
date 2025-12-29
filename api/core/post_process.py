@@ -168,7 +168,7 @@ def post_process(text, audio_duration=None, prompt_name=None):
                     logger.info(f" | Removed unusual characters: '{original_text[:50]}...' → '{cleaned_text[:50]}...' | ")
         except Exception as e:
             logger.error(f" | Step 5 (unusual character check) error: {e} | ")
-
+            
         # 6. Check audio duration vs text length ratio using IQR-based dynamic range
         try:
             if audio_duration is not None and audio_duration > 0:
@@ -493,7 +493,7 @@ def post_process(text, audio_duration=None, prompt_name=None):
                         i += 1
                 
                 # Rebuild cleaned_text if we removed any repetitions
-                if step8b_found_repetition and cleaned_words:
+                if step8b_found_repetition:
                     # Detect original separator style
                     if '，' in cleaned_text:
                         separator = '，'
@@ -503,44 +503,78 @@ def post_process(text, audio_duration=None, prompt_name=None):
                         separator = ' '
                     
                     cleaned_text = separator.join(cleaned_words)
+                    retry_flag = True
                     logger.info(f" | Step 8b: Cleaned word repetitions, result length {len(cleaned_words)} words | ")
                 
         except Exception as e:
             logger.error(f" | Step 8b (word repetition check) error: {e} | ")
 
-        # Step 8c: Phrase repetitions (2-word combinations, e.g., "整合 P4.0, 整合 P4.0, ...")
+        # Step 8c: Phrase repetitions (2-3 word combinations, e.g., "整合 P4.0, 整合 P4.0, ...")
         try:
-            # Re-split WITHOUT period to preserve decimals like "P4.0" and "36.5"
-            # This is different from Step 8b which needs to split on periods
-            phrase_words = re.split(r'[\s、，,]+', cleaned_text)
+            # Split by spaces and punctuation to properly detect phrase repetitions
+            # Including period to handle cases like "Let' s continue. Let' s continue."
+            phrase_words = re.split(r'[\s、，,.]+', cleaned_text)
             phrase_words = [word.strip() for word in phrase_words if word.strip()]
             
             step8c_found_repetition = False
             
-            if len(phrase_words) >= 6:
+            if len(phrase_words) >= 4:  # Changed from 6 to 4 (minimum for 2-word phrase check: 2+2)
                 final_words = []
                 removed_phrases = []
                 i = 0
                 
-                # Scan through words looking for repeated 2-word phrases
-                while i < len(phrase_words) - 1:
-                    # Check if we have at least 4 words ahead (for 2+2 comparison)
-                    if i < len(phrase_words) - 3:
-                        # Build two consecutive 2-word phrases
-                        phrase1 = ' '.join(phrase_words[i:i+2])
-                        phrase2 = ' '.join(phrase_words[i+2:i+4])
+                # Scan through words looking for repeated 2-3 word phrases
+                while i < len(phrase_words):
+                    matched = False
+                    
+                    # First try 3-word phrases - check how many times it repeats consecutively
+                    if i <= len(phrase_words) - 3:
+                        current_phrase = ' '.join(phrase_words[i:i+3])
                         
-                        # Check if they match and are meaningful (> 4 chars)
-                        if phrase1 == phrase2 and len(phrase1.strip()) > 4:
-                            removed_phrases.append(phrase1)
+                        # Count consecutive repetitions of this 3-word phrase
+                        repeat_count = 0
+                        j = i
+                        while j <= len(phrase_words) - 3:
+                            next_phrase = ' '.join(phrase_words[j:j+3])
+                            if next_phrase == current_phrase and len(current_phrase.strip()) > 6:
+                                repeat_count += 1
+                                j += 3
+                            else:
+                                break
+                        
+                        # If repeated 2+ times, remove all occurrences
+                        if repeat_count >= 2:
+                            removed_phrases.extend([current_phrase] * repeat_count)  # Log all removed
                             step8c_found_repetition = True
-                            i += 4  # Skip both phrases (don't add to final_words)
-                        else:
+                            i = j  # Skip to end of repetitions (don't add any to final_words)
+                            matched = True
+                    
+                    # Then try 2-word phrases - check how many times it repeats consecutively
+                    if not matched and i <= len(phrase_words) - 2:
+                        current_phrase = ' '.join(phrase_words[i:i+2])
+                        
+                        # Count consecutive repetitions of this 2-word phrase
+                        repeat_count = 0
+                        j = i
+                        while j <= len(phrase_words) - 2:
+                            next_phrase = ' '.join(phrase_words[j:j+2])
+                            if next_phrase == current_phrase and len(current_phrase.strip()) > 4:
+                                repeat_count += 1
+                                j += 2
+                            else:
+                                break
+                        
+                        # If repeated 2+ times, remove all occurrences
+                        if repeat_count >= 2:
+                            removed_phrases.extend([current_phrase] * repeat_count)  # Log all removed
+                            step8c_found_repetition = True
+                            i = j  # Skip to end of repetitions (don't add any to final_words)
+                            matched = True
+                    
+                    # If no match, keep current word and move forward
+                    if not matched:
+                        if i < len(phrase_words):
                             final_words.append(phrase_words[i])
-                            i += 1
-                    else:
-                        # Near the end, just keep remaining words
-                        final_words.append(phrase_words[i])
                         i += 1
                 
                 # Add any remaining words
@@ -666,7 +700,7 @@ def post_process(text, audio_duration=None, prompt_name=None):
 if __name__ == "__main__":
     
     # Example test
-    sample_text = "（字幕製作/時間軸：秋月 AutumnMoon）"
+    sample_text = "字幕由 Amara.org 社群提供"
     audio_dur = None
     
     retry, processed_text = post_process(sample_text, audio_dur)

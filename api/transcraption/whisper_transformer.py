@@ -192,7 +192,7 @@ class WhisperTransformer:
                 if post_processing:
                     audio_duration = get_audio_duration(audio_path) if audio_length is None else audio_length
                     retry_flag, ori_pred = post_process(ori_pred, audio_duration, self.prompt)
-                
+                # retry_flag = True
                 if retry_flag:
                     end = time.time() 
                     if strategy < multi_strategy_transcription - 1:

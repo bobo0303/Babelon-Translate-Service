@@ -16,6 +16,8 @@ azure_speech
 test*.py
 *.wav
 quantification
+whisper
+Breeze-ASR-25
 
 # Audio test files
 test_*.py

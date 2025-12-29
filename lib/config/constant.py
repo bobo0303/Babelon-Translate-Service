@@ -9,8 +9,17 @@ from typing import Optional, Dict, List
 class ModelPath(BaseModel):
     # Default Transcription (auto download model if network is available)
     large_v2: str = "openai/whisper-large-v2"  
-    # CPP implementation of whisper
+    large_v3: str = "openai/whisper-large-v3"  # Default large
+    breeze_asr_25: str = "MediaTek-Research/Breeze-ASR-25"  # only support ZH
+    # convert from whisper to ggml format using whisper.cpp (convert-h5-to-ggml.py)
     ggml_large_v2: str = "./models/ggml-large-v2.bin"
+    ggml_large_v3: str = "./models/ggml-large-v3.bin"
+    ggml_breeze_asr_25: str = "./models/ggml-breeze-asr-25.bin"
+    # CPP implementation of whisper (donload from cpp huggingface)
+    ggml_cpp_large_v2: str = "./models/cpp/ggml-large-v2.bin"
+    ggml_cpp_large_v3: str = "./models/cpp/ggml-large-v3.bin"
+    
+CPP_LIB_PATH = "/mnt/lib/cpp/src/libwhisper.so"
 
 
 # gpt-4o
@@ -25,8 +34,7 @@ OLLAMA_MODEL = {
 # GEMMA 4B (https://huggingface.co/google/gemma-3-4b-it)
 GEMMA_4B_IT = "google/gemma-3-4b-it"
 
-TRANSCRIPTION_METHODS = ['large_v2', 'ggml_large_v2']
-# TRANSLATE_METHODS = ['gemma4b', 'ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
+TRANSCRIPTION_METHODS = ['large_v2', 'breeze_asr_25', 'ggml_large_v2']
 TRANSLATE_METHODS = ['ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
 
 #############################################################################
@@ -84,10 +92,14 @@ class SharedResources:
     
 #############################################################################
     
-
 # LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', "de", "es"]
 LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de']
 DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
+
+#############################################################################
+
+LOGPROB_THOLD = -1.0
+ENTROPY_THOLD = 2.4
 
 #############################################################################
 
@@ -202,7 +214,7 @@ CONTAINS_UNUSUAL = [
 ONLY_UNUSUAL = [
     "Bye bye",
     "GG",
-    "Let s continue",
+    "Lets continue",
     "Let s see",
     "Music",
     "See you next time",
@@ -256,6 +268,7 @@ ONLY_UNUSUAL = [
     "字幕由 AI 產生感謝觀看",
     "字幕由 Amaraorg 社區提供",
     "字幕由 Amaraorg 社區提供不得刪改重複使用",
+    "字幕由 Amaraorg 社群提供"
     "字幕製作時間軸秋月 AutumnMoon",
     "字幕製作貝爾",
     "完",

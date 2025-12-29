@@ -45,6 +45,7 @@ class TranscribeManager:
         }
         self.transcription_method = None
         self.transcriber = None
+        self.prompt = None
         
         # Pipeline queue system (event-driven, no polling)
         self.task_queue = Queue()  # Thread-safe queue for tasks
@@ -53,6 +54,7 @@ class TranscribeManager:
         self.stop_worker = False
         self.worker_thread = None
         self.processing = False
+        self.current_task_id = None  # Track currently executing task
   
   
     def load_model(self, model_name):  
@@ -81,9 +83,13 @@ class TranscribeManager:
             logger.error(f" | TranscribeManager: load_model() model_name: '{model_name}' error: {e} | ")
             logger.error(f" | model has been released. Please use correct model name to reload the model before using | ")
             return e
+        
+        if self.prompt is not None:
+            self.set_prompt(self.prompt) 
+            
         return None
 
-    def set_prompt(self, prompt, language="zh"):  
+    def set_prompt(self, prompt):  
         """  
         Set the prompt for the transcription model.  
   
@@ -91,17 +97,16 @@ class TranscribeManager:
             The name of the prompt to be used.  
         :rtype: None  
         """  
-        language = language.lower()
+        self.prompt = " ".join(prompt.strip().split())
         
         # Build prompt text based on language
-        if prompt:
-
-            if not prompt.endswith((',', '.', '。', '!', '！', '?', '？')):
-                prompt += '.'
-            prompt = f"These are our prompts {prompt} Let's continue."
+        if self.prompt :
+            if not self.prompt .endswith((',', '.', '。', '!', '！', '?', '？')):
+                self.prompt  += '.'
+            self.prompt  = f"These are our prompts {self.prompt } Let's continue."
         
         try:
-            self.transcriber.set_prompt(prompt=prompt)
+            self.transcriber.set_prompt(prompt=self.prompt )
         except Exception as e:
             msg = f" | TranscribeManager: set_prompt() error: {e} | "
             logger.error(msg)
@@ -113,7 +118,7 @@ class TranscribeManager:
             self.stop_worker = False
             self.worker_thread = threading.Thread(target=self._queue_worker, daemon=True)
             self.worker_thread.start()
-            logger.info(" | Pipeline worker thread started. | ")
+            logger.debug(" | Pipeline worker thread started. | ")
     
     def stop_worker_thread(self):
         """Stop the background worker thread."""
@@ -122,6 +127,67 @@ class TranscribeManager:
         if self.worker_thread and self.worker_thread.is_alive():
             self.worker_thread.join(timeout=5)
             logger.info(" | Pipeline worker thread stopped. | ")
+    
+    def force_terminate_current_task(self, audio_uid):
+        """Force terminate the currently executing task if it matches the audio_uid.
+        
+        WARNING: This forcefully terminates the worker thread, which may cause:
+        - GPU memory leaks
+        - Model state corruption
+        - Resource cleanup issues
+        
+        Use only as last resort for timeout scenarios.
+        """
+        with self.task_lock:
+            if self.current_task_id is None:
+                logger.debug(f" | No task currently executing to terminate for audio_uid: {audio_uid}. | ")
+                return False
+            
+            task_info = self.task_results.get(self.current_task_id)
+            if task_info and task_info.get('audio_uid') == audio_uid:
+                task_id = self.current_task_id
+                logger.warning(f" | Force terminating task {task_id} (audio_uid: {audio_uid}) by restarting worker. | ")
+                
+                # Mark task as cancelled
+                task_info['cancelled'] = True
+                task_info['result'] = None
+                task_info['event'].set()
+                
+                # Stop and restart worker thread to kill the execution
+                if self.worker_thread and self.worker_thread.is_alive():
+                    self.stop_worker = True
+                    # Force thread termination (dangerous but necessary)
+                    try:
+                        import ctypes
+                        thread_id = self.worker_thread.ident
+                        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                            ctypes.c_long(thread_id), 
+                            ctypes.py_object(SystemExit)
+                        )
+                        if res == 0:
+                            logger.error(f" | Failed to terminate thread {thread_id}. | ")
+                        elif res > 1:
+                            # If it returns more than 1, revert the exception
+                            ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, None)
+                            logger.error(f" | Exception raised in multiple threads. | ")
+                        else:
+                            logger.info(f" | Worker thread {thread_id} terminated. | ")
+                    except Exception as e:
+                        logger.error(f" | Error terminating thread: {e} | ")
+                    
+                    # Wait a bit for thread to die
+                    self.worker_thread.join(timeout=1)
+                
+                # Clear state
+                self.processing = False
+                self.current_task_id = None
+                
+                # Restart worker
+                self.start_worker()
+                logger.info(f" | Worker thread restarted after force termination. | ")
+                return True
+        
+        return False
     
     def add_task(self, task_id, audio_file, o_lang, multi_strategy_transcription, 
                  transcription_post_processing, prev_text, audio_uid, times):
@@ -186,7 +252,7 @@ class TranscribeManager:
     
     def _queue_worker(self):
         """Background worker thread - pure event-driven, zero polling."""
-        logger.info(" | Queue worker started and waiting for tasks... | ")
+        logger.debug(" | Queue worker started and waiting for tasks... | ")
         
         while True:
             try:
@@ -218,6 +284,7 @@ class TranscribeManager:
                         logger.info(f" | Task {task_id} disappeared before processing. | ")
                         continue
                     self.task_results[task_id]['processing'] = True
+                    self.current_task_id = task_id  # Track current executing task
                 
                 # Execute transcription (set processing = True)
                 self.processing = True
@@ -232,6 +299,7 @@ class TranscribeManager:
                 
                 # Store transcription result and notify
                 with self.task_lock:
+                    self.current_task_id = None  # Clear current task
                     if task_id in self.task_results:
                         self.task_results[task_id]['result'] = (ori_pred, transcription_time, audio_length)
                         self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
@@ -245,6 +313,7 @@ class TranscribeManager:
                 
                 # Notify API thread and clean up to prevent permanent blocking
                 with self.task_lock:
+                    self.current_task_id = None  # Clear current task on error
                     if task_id in self.task_results:
                         self.task_results[task_id]['result'] = None  # Error result
                         self.task_results[task_id]['event'].set()  # Wake up waiting API thread

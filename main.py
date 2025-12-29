@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
         logger.info(f" | ##################################################### | ")  
         logger.info(f" | Start to loading default model. | ")  
         # load model  
-        default_model = "large_v2"  
+        default_model = "ggml_breeze_asr_25"  
         transcribe_manager.load_model(default_model)  # Directly load the default model  
         logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(transcribe_manager)} | ")  
         # preheat  
@@ -89,8 +89,8 @@ async def lifespan(app: FastAPI):
         # delete_old_audio_files()
         
         # Start daily task scheduling  
-        # task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
-        # task_thread.start()
+        task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
+        task_thread.start()
         
         yield  # Application starts receiving requests
         
@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
         try:
             logger.info(" | Starting shutdown... | ")
             service_stop_event.set()  
-            # task_thread.join()
+            task_thread.join()
             
             # Stop pipeline worker
             transcribe_manager.stop_worker_thread()
@@ -131,25 +131,25 @@ def HelloWorld(name:str=None):
     """Health check endpoint."""
     return {"Hello": f"World {name}"}  
 
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_page():
-    """
-    WebSocket Admin Console page.
+# @app.get("/admin", response_class=HTMLResponse)
+# async def admin_page():
+#     """
+#     WebSocket Admin Console page.
     
-    Provides a web-based interface for:
-    - Monitoring WebSocket connections
-    - Testing WebSocket messages
-    - Streaming audio from microphone
-    - Viewing real-time message logs
-    """
-    admin_html_path = os.path.join("static", "admin.html")
-    if os.path.exists(admin_html_path):
-        return FileResponse(admin_html_path)
-    else:
-        return HTMLResponse(
-            content="<h1>Admin page not found</h1><p>Please ensure static/admin.html exists.</p>",
-            status_code=404
-        )
+#     Provides a web-based interface for:
+#     - Monitoring WebSocket connections
+#     - Testing WebSocket messages
+#     - Streaming audio from microphone
+#     - Viewing real-time message logs
+#     """
+#     admin_html_path = os.path.join("static", "admin.html")
+#     if os.path.exists(admin_html_path):
+#         return FileResponse(admin_html_path)
+#     else:
+#         return HTMLResponse(
+#             content="<h1>Admin page not found</h1><p>Please ensure static/admin.html exists.</p>",
+#             status_code=404
+#         )
 
 ##############################################################################  
 
@@ -206,6 +206,7 @@ async def change_transcription_model(model_name: str = Form(...)):
     # Check if the model's name exists in the model's path  
     if not hasattr(transcribe_manager.models_path, model_name):  
         # Raise an HTTPException if the model is not found  
+        logger.info(f" | Model '{model_name}' not found. | ")
         return BaseResponse(status=Status.FAILED, message=f" | Model '{model_name}' not found. | ", data=None)  
       
     # Load the specified model
@@ -232,7 +233,7 @@ async def set_prompt(prompts = Form(None)):
     if prompts is None or prompts == "" or (isinstance(prompts, str) and prompts.strip() == ""):
         prompt_message = transcribe_manager.set_prompt(None)
     else:
-        prompt_message = transcribe_manager.set_prompt(" ".join(prompts.strip().split()))
+        prompt_message = transcribe_manager.set_prompt(prompts)
     
     if prompt_message:
         return BaseResponse(status=Status.FAILED, message=prompt_message, data=None)
@@ -489,6 +490,7 @@ async def translate_pipeline(
     in parallel, allowing the next transcription to start while the previous translation
     is still running.
     """
+    # start = time.time()
     
     # Handle t_lang parameter
     if t_lang:
@@ -569,13 +571,26 @@ async def translate_pipeline(
             timeout=WAITING_TIME  # Use the same timeout as the original design
         )
     except asyncio.TimeoutError:
+        logger.warning(f" | Translation timeout for audio_uid: {audio_uid}, force terminating task. | ")
+        
+        # Force terminate the currently executing task
+        try:
+            terminated = transcribe_manager.force_terminate_current_task(audio_uid)
+            if terminated:
+                logger.debug(f" | Successfully force terminated task for audio_uid: {audio_uid}. | ")
+            else:
+                logger.info(f" | No active task found to terminate for audio_uid: {audio_uid}. | ")
+        except Exception as term_error:
+            logger.error(f" | Error during force termination: {term_error} | ")
+        
         # Try to clean up translation threads if they exist
         try:
             translate_manager.cleanup_translation_threads()
         except Exception as cleanup_error:
             logger.warning(f" | Error during timeout cleanup: {cleanup_error} | ")
         
-        result = None  # Set result to None when timeout occurs  
+        result = None  # Set result to None when timeout occurs
+        other_info = None  # Initialize other_info to prevent UnboundLocalError  
 
     if result and result[0] is not None:  # Check if cancelled or failed
         ori_pred, translated_result, rtf, transcription_time, translate_time, translate_method, timing_dict = result
@@ -635,6 +650,8 @@ async def translate_pipeline(
         other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
         storage_upload(logger, response_data, other_info)
 
+    # end = time.time()
+    # logger.info(f" | Total pipeline processing time: {end - start:.2f} seconds. | ")
     return BaseResponse(status=state, message=message, data=response_data)
     
 

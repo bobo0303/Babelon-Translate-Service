@@ -44,7 +44,7 @@ class AzureBlobService:
                     self.connection_string
                 )
                 self._ensure_container_exists()
-                logger.info(
+                logger.debug(
                     f" | Azure Blob Service initialized with container: {container_name} | "
                 )
             except Exception as e:
@@ -112,7 +112,7 @@ class AzureBlobService:
                 )
 
             blob_url = blob_client.url
-            logger.info(f" | Upload to Azure Blob | {blob_url} | ")
+            logger.debug(f" | Upload to Azure Blob | {blob_url} | ")
             return blob_url
 
         except AzureError as e:
