@@ -149,6 +149,7 @@ class GptTranslate:
                 ],
                 max_tokens=4000,
                 temperature=0.0, 
+                response_format={ "type": "json_object" }
             )
             
             response_text = response.choices[0].message.content.strip()

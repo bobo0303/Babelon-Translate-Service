@@ -48,30 +48,12 @@ class TranslateManager:
             logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
             self.ollama_gemma_translator = None
         
-        self.translation_method = "gpt-4o"
+        # Translation configuration (translators will be created on-demand)
+        self.translation_method = "gpt-4o"  # Model version to use
         self.fallback_translate = 'ollama-gemma'
-        # Initialize 20 GPT-4o translators
-        self.gpt_4o_translators = []
-        for i in range(20):
-            try:
-                translator = GptTranslate(model_version=self.translation_method)
-                if translator.test_gpt_model():
-                    self.gpt_4o_translators.append(translator)
-                    logger.debug(f" | {self.translation_method} translator #{i+1} initialized successfully | ")
-                else:
-                    logger.warning(f" | {self.translation_method} translator #{i+1} test failed | ")
-            except Exception as e:
-                logger.warning(f" | Failed to initialize {self.translation_method} translator #{i+1}: {e} | ")
-
-        # Create translation_method dict with 10 translator instances
-        translation_method_name = self.translation_method
-        self.translation_method = {}
-        for i, translator in enumerate(self.gpt_4o_translators):
-            self.translation_method[f"{translation_method_name} #{i+1}"] = {"translator": translator, "busy": False}
         
         # Thread management
-        self.lock = threading.Lock()  # Protect busy status and task_groups
-        self.translator_available = threading.Condition(self.lock)  # Condition variable for translator availability
+        self.lock = threading.Lock()  # Protect task_groups
         self.task_groups = {}  # {task_group_id: {"threads": [], "stop_events": [], "target_langs": []}}
             
         self.device = "cuda" if torch.cuda.is_available() else "cpu"  
@@ -89,36 +71,39 @@ class TranslateManager:
         result[ori] = ori_pred
         return result
     
-    def _get_available_translator(self):
+    def _create_translator(self):
         """
-        Find any available (not busy) translator. All translator instances have equal capability.
-        
-        IMPORTANT: Caller must already hold self.translator_available lock.
+        Create a new translator instance on-demand.
+        Each task gets its own dedicated translator.
         
         Returns:
-            tuple: (translator_name, translator_instance) or (None, None) if all busy
+            tuple: (translator_name, translator_instance) or (None, None) if creation failed
         """
-        for method_name, method_info in self.translation_method.items():
-            if method_info and method_info["translator"] is not None and not method_info["busy"]:
-                method_info["busy"] = True
-                return method_name, method_info["translator"]
-        
-        # All translators are busy
-        logger.warning(f" | ##### All translators are busy ##### | ")
-        return None, None
+        try:
+            # Use method name directly (no instance numbering)
+            translator_name = self.translation_method
+            
+            # Create new GPT translator instance
+            translator = GptTranslate(model_version=self.translation_method)
+            logger.debug(f" | Created new translator: {translator_name} | ")
+            return translator_name, translator
+            
+        except Exception as e:
+            logger.error(f" | Failed to create translator: {e} | ")
+            return None, None
     
-    def _release_translator(self, translator_name):
+    def _cleanup_translator(self, translator, translator_name):
         """
-        Release translator (set busy=False) and notify one waiting dispatcher.
+        Clean up translator resources after task completion.
+        In on-demand model, we simply let the translator be garbage collected.
         
         Args:
-            translator_name: Name of the translator to release
+            translator: Translator instance to clean up
+            translator_name: Name of the translator (for logging)
         """
-        with self.translator_available:
-            if translator_name in self.translation_method:
-                self.translation_method[translator_name]["busy"] = False
-                # Notify one waiting dispatcher that a translator is available
-                self.translator_available.notify()
+        # Currently GptTranslate doesn't need explicit cleanup
+        # Translator will be garbage collected when thread completes
+        logger.debug(f" | Cleaned up translator: {translator_name} | ")
     
     def _translate_single_task(self, task_ctx: TaskContext, shared: SharedResources):
         """
@@ -201,60 +186,8 @@ class TranslateManager:
                     # Store tuple of (time, language) for detailed tracking
                     shared.timing_dict[task_ctx.translator_name].append((elapsed_time, task_ctx.target_lang))
             
-            # After completing task, actively check for more tasks in queue (event-driven)
-            # Keep translator busy and reuse it if more tasks available
-            if shared.task_queue is not None and shared.task_group_id is not None:
-                picked_next = self._try_pick_next_task(task_ctx, shared)
-                # Only release if no next task was picked up
-                if not picked_next:
-                    self._release_translator(task_ctx.translator_name)
-            else:
-                # No task queue context, release immediately
-                self._release_translator(task_ctx.translator_name)
-    
-    def _try_pick_next_task(self, task_ctx: TaskContext, shared: SharedResources) -> bool:
-        """
-        Event-driven: After completing a task, actively check queue for next task.
-        This replaces the passive polling approach.
-        Translator remains busy during this check and will be released by caller if no task found.
-        
-        Args:
-            task_ctx: Current task context (will be updated with next target_lang)
-            shared: Shared resources including task queue
-            
-        Returns:
-            bool: True if picked up next task, False if queue empty or fallback triggered
-        """
-        # Check if fallback was triggered
-        with shared.result_lock:
-            if "_fallback_triggered" in shared.result_dict:
-                return False
-        
-        # Try to get next task from queue (non-blocking)
-        try:
-            next_target_lang = shared.task_queue.get_nowait()
-        except:
-            # Queue is empty, no more tasks
-            return False
-        
-        # Translator is still marked as busy from previous task, continue using it
-        logger.debug(f" | {task_ctx.translator_name} immediately picked up next task: {next_target_lang} | ")
-        
-        # Update task context with new target language
-        next_task_ctx = TaskContext(
-            text=task_ctx.text,
-            source_lang=task_ctx.source_lang,
-            target_lang=next_target_lang,
-            prev_text=task_ctx.prev_text,
-            translator_name=task_ctx.translator_name,
-            translator=task_ctx.translator
-        )
-        
-        # Execute the new task (recursive call, will continue chain until queue empty)
-        # Note: translator remains busy, will be released when chain ends
-        self._translate_single_task(next_task_ctx, shared)
-        
-        return True  # Successfully picked up next task
+            # Clean up translator after task completes (one task per translator)
+            self._cleanup_translator(task_ctx.translator, task_ctx.translator_name)
     
     def _stop_all_threads_in_group(self, task_group_id):
         """
@@ -308,11 +241,11 @@ class TranslateManager:
         logger.debug(f" | _single_llm_translate_all called: source={source_lang}, targets={target_langs} | ")
         start_time = time.time()
         
-        # Try to get an available translator
-        translator_name, translator = self._get_available_translator()
+        # Create a new translator for this batch translation
+        translator_name, translator = self._create_translator()
         
         if translator_name is None or translator is None:
-            logger.warning(f" | No translator available, using fallback | ")
+            logger.warning(f" | Failed to create translator, using fallback | ")
             result_dict = self._fallback_translate_all(text, source_lang, target_langs, prev_text)
             elapsed_time = time.time() - start_time
             methods_used = f"{self.fallback_translate} (fallback)"
@@ -346,19 +279,19 @@ class TranslateManager:
             missing_langs = [lang for lang in target_langs if lang not in result_dict]
             if result_dict == "403_Forbidden" or missing_langs:
                 logger.warning(f" | {translator_name} failed (missing: {missing_langs}), using fallback | ")
-                self._release_translator(translator_name)
+                self._cleanup_translator(translator, translator_name)
                 result_dict = self._fallback_translate_all(text, source_lang, target_langs, prev_text)
                 elapsed_time = time.time() - start_time
                 methods_used = f"{self.fallback_translate} (fallback)"
                 timing_dict = {self.fallback_translate: [(elapsed_time, ", ".join(target_langs))]}
             else:
-                self._release_translator(translator_name)
+                self._cleanup_translator(translator, translator_name)
             
             return result_dict, elapsed_time, methods_used, timing_dict
                 
         except Exception as e:
             logger.error(f" | {translator_name} translation failed: {e}, using fallback | ")
-            self._release_translator(translator_name)
+            self._cleanup_translator(translator, translator_name)
             result_dict = self._fallback_translate_all(text, source_lang, target_langs, prev_text)
             elapsed_time = time.time() - start_time
             methods_used = f"{self.fallback_translate} (fallback)"
@@ -503,52 +436,17 @@ class TranslateManager:
                 "task_queue": task_queue
             }
         
-        # Task dispatcher: wait for translators using Condition Variable, then event-driven
+        # Task dispatcher: create translator and thread for each task
         def task_dispatcher():
-            """Dispatcher waits for available translators using Condition Variable. Subsequent tasks are picked up event-driven."""
-            initial_assigned = 0
+            """Simplified dispatcher: directly create translator for each task from queue."""
+            tasks_assigned = 0
             logger.debug(f" | Dispatcher started: queue_size={task_queue.qsize()} | ")
+            
             while not task_queue.empty():
-                # Check if fallback triggered at loop start
+                # Check if fallback triggered
                 with result_lock:
                     if "_fallback_triggered" in result_dict:
-                        logger.info(f" | Dispatcher detected fallback at loop start | ")
-                        return
-                
-                # Wait for available translator using Condition Variable
-                with self.translator_available:
-                    translator_name, translator = self._get_available_translator()
-                    
-                    # If no translator available, wait for notification
-                    while not translator_name:
-                        # Check fallback before waiting
-                        with result_lock:
-                            if "_fallback_triggered" in result_dict:
-                                logger.info(f" | Dispatcher detected fallback before wait | ")
-                                return
-                        
-                        # Wait for translator to be released (blocks until notified)
-                        self.translator_available.wait()
-                        
-                        # After wake-up, immediately check fallback
-                        with result_lock:
-                            if "_fallback_triggered" in result_dict:
-                                logger.info(f" | Dispatcher detected fallback after wake-up | ")
-                                return
-                        
-                        # Try to get translator again
-                        translator_name, translator = self._get_available_translator()
-                # Lock released here
-                
-                if not translator_name:
-                    # Should not happen, but safety check
-                    continue
-                
-                # Final fallback check before dispatching
-                with result_lock:
-                    if "_fallback_triggered" in result_dict:
-                        logger.info(f" | Dispatcher detected fallback before dispatch | ")
-                        self._release_translator(translator_name)
+                        logger.info(f" | Dispatcher detected fallback, stopping | ")
                         return
                 
                 # Get a task from queue
@@ -556,10 +454,20 @@ class TranslateManager:
                     target_lang = task_queue.get_nowait()
                 except:
                     # Queue empty, all tasks assigned
-                    self._release_translator(translator_name)
                     break
                 
-                # Start translation thread
+                # Create a new translator for this task
+                translator_name, translator = self._create_translator()
+                
+                if translator_name is None or translator is None:
+                    logger.error(f" | Failed to create translator for {target_lang}, triggering fallback | ")
+                    with result_lock:
+                        result_dict["_fallback_triggered"] = "dispatcher"
+                        result_dict["_fallback_reason"] = "Failed to create translator"
+                    fallback_event.set()
+                    return
+                
+                # Create stop event for this thread
                 stop_event = threading.Event()
                 
                 # Create task context and shared resources
@@ -577,17 +485,18 @@ class TranslateManager:
                     result_lock=result_lock,
                     stop_event=stop_event,
                     timing_dict=timing_dict,
-                    task_queue=task_queue,
+                    task_queue=None,  # No need to pass queue anymore (no reuse)
                     task_group_id=task_group_id,
                     fallback_event=fallback_event
                 )
                 
+                # Start translation thread
                 thread = threading.Thread(
                     target=self._translate_single_task,
                     args=(task_ctx, shared)
                 )
                 thread.start()
-                initial_assigned += 1
+                tasks_assigned += 1
                 logger.debug(f" | Dispatched {target_lang} to {translator_name} (thread started) | ")
                 
                 # Update task group (thread-safe)
@@ -596,7 +505,7 @@ class TranslateManager:
                         self.task_groups[task_group_id]["threads"].append(thread)
                         self.task_groups[task_group_id]["stop_events"].append(stop_event)
             
-            logger.debug(f" | Dispatcher completed: {initial_assigned} tasks initially assigned | ")
+            logger.debug(f" | Dispatcher completed: {tasks_assigned} tasks assigned | ")
         
         # Start dispatcher thread
         dispatcher_thread = threading.Thread(target=task_dispatcher, daemon=True)
