@@ -19,6 +19,7 @@ from lib.core.response_manager import storage_upload
 from wjy3 import BaseResponse, Status
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
 from api.utils import write_txt
+from api.core.utils import ResponseTracker
 from api import websocket_router
 from lib.core.logging_config import setup_application_logger
 
@@ -49,6 +50,7 @@ use_pretext = True
 # Initialize global objects and variables
 transcribe_manager = TranscribeManager()
 translate_manager = TranslateManager()
+response_tracker = ResponseTracker()  # Tracker to prevent race conditions
 waiting_list = []  # Queue for waiting translation requests
 sse_stop_event = Event()  # Global event to control SSE connection
 service_stop_event = Event()  # Event to control service shutdown  
@@ -513,6 +515,9 @@ async def translate_pipeline(
     o_lang = o_lang.lower()
     multi_strategy_transcription = multi_strategy_transcription if 0 < multi_strategy_transcription <= MAX_NUM_STRATEGIES else 1
     
+    # Register this request in the tracker
+    task_id = response_tracker.register_request(audio_uid, times)
+    
     # Create response data structure  
     response_data = AudioTranslationResponse(  
         meeting_id=meeting_id,  
@@ -592,7 +597,16 @@ async def translate_pipeline(
         result = None  # Set result to None when timeout occurs
         other_info = None  # Initialize other_info to prevent UnboundLocalError  
 
+    # Check if this request was cancelled by a newer one
+    if response_tracker.check_cancelled(audio_uid, task_id):
+        logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) cancelled due to newer request | ")
+        response_tracker.cleanup(audio_uid, task_id)
+        return BaseResponse(status=Status.OK, message=" | Translation task was cancelled due to newer request | ", data=response_data)
+    
     if result and result[0] is not None:  # Check if cancelled or failed
+        # Mark older pending requests as cancelled
+        response_tracker.complete_and_cancel_older(audio_uid, task_id, times)
+        
         ori_pred, translated_result, rtf, transcription_time, translate_time, translate_method, timing_dict = result
         response_data.transcription_text = ori_pred
         response_data.text = translated_result  
@@ -649,6 +663,9 @@ async def translate_pipeline(
     if other_info:
         other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
         storage_upload(logger, response_data, other_info)
+
+    # Clean up this request from tracker
+    response_tracker.cleanup(audio_uid, task_id)
 
     # end = time.time()
     # logger.info(f" | Total pipeline processing time: {end - start:.2f} seconds. | ")

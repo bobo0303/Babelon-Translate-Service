@@ -16,8 +16,21 @@ class WebrtcVAD:
         self.logger = logger
 
     def is_speech(self, audio_data, samplerate, frame_duration=0.03):
+        # Ensure audio_data is exactly frame_samples long
         frame_samples = int(samplerate * frame_duration)
-        frame = (audio_data[-frame_samples:] * np.iinfo(np.int16).max).astype(np.int16)
+        if len(audio_data) != frame_samples:
+            self.logger.warning(f"WebrtcVAD: Expected {frame_samples} samples, got {len(audio_data)}")
+            # Pad or trim to exact size
+            if len(audio_data) < frame_samples:
+                audio_data = np.pad(audio_data, (0, frame_samples - len(audio_data)), mode='constant')
+            else:
+                audio_data = audio_data[:frame_samples]
+        
+        # Convert float32 [-1.0, 1.0] to int16 [-32768, 32767]
+        # Clip to prevent overflow
+        frame = np.clip(audio_data, -1.0, 1.0)
+        frame = (frame * 32767).astype(np.int16)
+        
         return self.vad.is_speech(frame.tobytes(), sample_rate=samplerate)
     
 class SileroVAD:
