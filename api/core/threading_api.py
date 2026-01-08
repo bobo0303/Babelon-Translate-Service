@@ -93,12 +93,14 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
                 return tuple(result.values()), None
             
             if transcribe_manager.task_results[task_id].get('cancelled', False):
+                cancelled_by = transcribe_manager.task_results[task_id].get('cancelled_by_times', 'unknown')
                 logger.debug(f" | Pipeline task {task_id} cancelled during transcription. | ")
                 # Clean up cancelled task before returning
                 del transcribe_manager.task_results[task_id]
                 result['ori_pred'] = None
                 result['translate_method'] = "cancelled"
-                return tuple(result.values()), None
+                # Return cancelled_by_times as other_info
+                return tuple(result.values()), {'cancelled_by_times': cancelled_by}
             
             transcription_result = transcribe_manager.task_results[task_id]['result']
             # Clean up task result to free memory

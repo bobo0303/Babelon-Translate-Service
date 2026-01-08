@@ -18,7 +18,7 @@ from api.core.threading_api import audio_translate, texts_translate, waiting_tim
 from lib.core.response_manager import storage_upload
 from wjy3 import BaseResponse, Status
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
-from api.utils import write_txt
+from api.utils import write_txt, format_text_spacing, format_cleaning
 from api.core.utils import ResponseTracker
 from api import websocket_router
 from lib.core.logging_config import setup_application_logger
@@ -494,6 +494,8 @@ async def translate_pipeline(
     """
     # start = time.time()
     
+    logger.debug(f" | Received pipeline translation request: audio_uid={audio_uid}, times={times}) | ")
+    
     # Handle t_lang parameter
     if t_lang:
         if ',' in t_lang:
@@ -608,8 +610,15 @@ async def translate_pipeline(
         response_tracker.complete_and_cancel_older(audio_uid, task_id, times)
         
         ori_pred, translated_result, rtf, transcription_time, translate_time, translate_method, timing_dict = result
+        
+        # Check if this result indicates cancellation from other_info
+        if other_info and 'cancelled_by_times' in other_info:
+            cancelled_by = other_info['cancelled_by_times']
+            logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) cancelled by newer request (times: {cancelled_by}) | ")
+            response_tracker.cleanup(audio_uid, task_id)
+            return BaseResponse(status=Status.OK, message=" | Translation task was cancelled due to newer request | ", data=response_data)
         response_data.transcription_text = ori_pred
-        response_data.text = translated_result  
+        response_data.text = format_text_spacing(translated_result) if multi_strategy_transcription == 4 else format_cleaning(translated_result)
         response_data.transcribe_time = transcription_time  
         response_data.translate_time = translate_time  
         zh_result = response_data.text.get("zh", "")

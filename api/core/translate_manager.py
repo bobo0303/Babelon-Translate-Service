@@ -49,7 +49,7 @@ class TranslateManager:
             self.ollama_gemma_translator = None
         
         # Translation configuration (translators will be created on-demand)
-        self.translation_method = "gpt-4o"  # Model version to use
+        self.translation_method = "gpt-4.1-mini"  # Model version to use
         self.fallback_translate = 'ollama-gemma'
         
         # Thread management
@@ -271,7 +271,7 @@ class TranslateManager:
                 result_dict[source_lang] = text
             
             elapsed_time = time.time() - start_time
-            methods_used = self.translation_method if isinstance(self.translation_method, str) else "GPT-4o"
+            methods_used = self.translation_method
             # Store timing with all target languages as a single batch
             timing_dict = {translator_name: [(elapsed_time, ", ".join(target_langs))]}
             
@@ -561,7 +561,7 @@ class TranslateManager:
             
             methods_used = f"{self.fallback_translate} (fallback)"
         else:
-            methods_used = self.translation_method if isinstance(self.translation_method, str) else "GPT-4o"
+            methods_used = self.translation_method 
         
         # Clean up task group
         with self.lock:

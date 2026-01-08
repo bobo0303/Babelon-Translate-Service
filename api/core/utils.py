@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Dict
 from datetime import datetime
 
@@ -78,7 +79,88 @@ def _append_line_to_files(zh_text: str, en_text: str, de_text: str, ja_text: str
         filename = f"transcription_{lang}.txt"
         with open(filename, "a", encoding="utf-8") as f:
             f.write(text + "\n")
+            
+def remove_punctuation(translation_dict: dict) -> dict:
+    """
+    Remove punctuation from translated text in all languages.
+    Preserves: % symbol and decimal points in numbers (e.g., 3.14, 0.5)
+    
+    Args:
+        translation_dict: Dictionary with language codes as keys and translated text as values.
+    Returns:
+        Dictionary with punctuation removed from each language's text.
+    """
+    cleaned_dict = {}
+    
+    for lang, text in translation_dict.items():
+        # Protect decimal points in numbers (e.g., 3.14, 0.5)
+        text_protected = re.sub(r'(\d)\.(\d)', r'\1<DOT>\2', text)
+        
+        # Remove punctuation except % (keep word chars, spaces, %, and temporary markers)
+        text_no_punct = re.sub(r'[^\w\s%<>]', ' ', text_protected)
+        
+        # Restore decimal points
+        text_restored = text_no_punct.replace('<DOT>', '.')
+        
+        # Standardize whitespace
+        text_standardized = re.sub(r'\s+', ' ', text_restored).strip()
+        cleaned_dict[lang] = text_standardized
+        
+    return cleaned_dict
 
+
+def format_text_spacing(translation_dict: dict) -> dict:
+    """
+    Format spacing between CJK (Chinese/Japanese/Korean) and non-CJK characters.
+    
+    Rules:
+    - Remove spaces between CJK characters
+    - Ensure spaces between CJK and non-CJK (English/numbers)
+    
+    Args:
+        translation_dict: Dictionary with language codes as keys and text as values.
+    Returns:
+        Dictionary with properly formatted spacing.
+    """
+    # CJK character ranges: Chinese, Japanese (Hiragana, Katakana), Korean (Hangul)
+    cjk_pattern = r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]'
+    
+    formatted_dict = {}
+    
+    for lang, text in translation_dict.items():
+        # Step 1: Remove spaces between CJK characters
+        # Match: CJK + spaces + CJK → Remove spaces
+        text = re.sub(f'({cjk_pattern})\\s+({cjk_pattern})', r'\1\2', text)
+        
+        # Step 2: Ensure space between CJK and non-CJK (alphanumeric)
+        # Match: CJK + (no space) + alphanumeric → Add space
+        text = re.sub(f'({cjk_pattern})([a-zA-Z0-9%])', r'\1 \2', text)
+        # Match: alphanumeric + (no space) + CJK → Add space
+        text = re.sub(f'([a-zA-Z0-9%])({cjk_pattern})', r'\1 \2', text)
+        
+        # Step 3: Clean up multiple spaces
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        formatted_dict[lang] = text
+        
+    return formatted_dict
+    
+def format_cleaning(translation_dict: dict) -> dict:
+    """
+    Apply formatting and cleaning to translation dictionary.
+    
+    Args:
+        translation_dict: Dictionary with language codes as keys and text as values.        
+    Returns:
+        Dictionary with formatted and cleaned text for each language.
+    """
+    try:    
+        cleaned_dict = remove_punctuation(translation_dict)
+        formatted_dict = format_text_spacing(cleaned_dict)
+        return formatted_dict
+    except Exception as e:
+        print(f" | Error in format_cleaning: {e} | ")
+        return translation_dict
 
 # Response tracking for race condition prevention
 import uuid

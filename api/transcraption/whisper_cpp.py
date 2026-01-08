@@ -236,6 +236,9 @@ LOGITS_FILTER_CALLBACK = ctypes.CFUNCTYPE(
     ctypes.c_void_p
 )
 
+# Abort callback for graceful interruption
+ABORT_CALLBACK = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p)
+
 # Thread-local storage for callback data
 thread_local = threading.local()
 
@@ -271,7 +274,9 @@ class WhisperCpp:
         self.result_queue = result_queue
         self.device = "cuda" if torch.cuda.is_available() else "cpu"  
         self.prompt = None  # Store original prompt name for post-processing
-        self.transcriber = None  
+        self.transcriber = None
+        self.abort_flag = False  # Flag to request abort from C++ side
+        self._abort_callback = None  # Keep reference to prevent garbage collection  
         
     
     def load_model(self, model_name, model_path):  
@@ -348,10 +353,22 @@ class WhisperCpp:
         self.prompt = prompt
         logger.info(f" | Prompt has been set to: {prompt} | ")
     
+    def request_abort(self):
+        """Request abort for current transcription task."""
+        self.abort_flag = True
+        logger.warning(" | Abort requested for current transcription | ")
+    
+    def clear_abort(self):
+        """Clear abort flag."""
+        self.abort_flag = False
+    
     def _transcribe_single_temperature(self, audio, ori, temperature, initial_prompt=None):
         """Single temperature transcription with quality metrics."""
         # Initialize thread-local storage for this transcription
         thread_local.entropy_data = []
+        
+        # Clear abort flag at start of new transcription
+        self.abort_flag = False
         
         state = lib.whisper_init_state(self.transcriber)
         if not state:
@@ -367,10 +384,18 @@ class WhisperCpp:
             params.beam_search_beam_size = 1
             params.vad = False
             params.token_timestamps = True  # Enable to get token-level data
+            params.suppress_blank = True
+            if temperature == 0.0:
+                params.no_fallback = True
             
             # Set callback for entropy calculation
             params.logits_filter_callback = ctypes.cast(logits_filter_callback, ctypes.c_void_p)
             params.logits_filter_callback_user_data = None
+            
+            # Set abort callback for graceful interruption
+            self._abort_callback = ABORT_CALLBACK(lambda user_data: self.abort_flag)
+            params.abort_callback = ctypes.cast(self._abort_callback, ctypes.c_void_p)
+            params.abort_callback_user_data = None
             
             # Set initial prompt if provided
             if initial_prompt:
@@ -385,7 +410,10 @@ class WhisperCpp:
             )
             
             if result != 0:
-                logger.error(f" | Transcription failed for temp={temperature} | ")
+                if self.abort_flag:
+                    logger.info(f" | Transcription aborted by request (temp={temperature}) | ")
+                else:
+                    logger.error(f" | Transcription failed for temp={temperature} | ")
                 return None
             
             n_segments = lib.whisper_full_n_segments_from_state(state)
@@ -475,7 +503,10 @@ class WhisperCpp:
             A tuple containing the original transcription and inference time.  
         :logs: Inference status and time.  
         """  
-        start = time.time()  # Start timing the transcription process  
+        start = time.time()  # Start timing the transcription process
+        
+        # Clear abort flag at start of transcription
+        self.clear_abort()
 
         try:
             # Strategy 1: temp=0.0, do_sample=False, prompt=self.prompt_token+prev_text
