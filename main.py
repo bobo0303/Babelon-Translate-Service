@@ -352,6 +352,8 @@ async def translate(
         device_id=device_id,  
         ori_lang=o_lang,  
         transcription_text="",
+        n_segments=0,
+        segments=[],  
         text=DEFAULT_RESULT.copy(),  
         times=str(times),  
         audio_uid=audio_uid,  
@@ -415,9 +417,11 @@ async def translate(
   
         # Get the result from the queue  
         if not result_queue.empty():  
-            ori_pred, result, rtf, transcription_time, translate_time, translate_method, timing_dict, other_info = result_queue.get()  
+            ori_pred, n_segments, segments, result, rtf, transcription_time, translate_time, translate_method, timing_dict, other_info = result_queue.get()  
             response_data.transcription_text = ori_pred
             response_data.text = result  
+            response_data.n_segments = n_segments
+            response_data.segments = segments
             response_data.transcribe_time = transcription_time  
             response_data.translate_time = translate_time  
             zh_result = response_data.text.get("zh", "")
@@ -440,7 +444,8 @@ async def translate(
             
             logger.debug(f" | {response_data.model_dump_json()} | ")  
             logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
-            logger.info(f" | Transcription: {ori_pred} | ")                
+            logger.info(f" | Transcription: {ori_pred} | ")    
+            logger.info(f" | {n_segments} | segments: {segments} | ")            
             if timing_str != "N/A": 
                 logger.info(f" | {timing_str} | ")
             if t_lang:
@@ -526,6 +531,8 @@ async def translate_pipeline(
         device_id=device_id,  
         ori_lang=o_lang,  
         transcription_text="",
+        n_segments=0,
+        segments=[],
         text=DEFAULT_RESULT.copy(),  
         times=str(times),  
         audio_uid=audio_uid,  
@@ -609,7 +616,7 @@ async def translate_pipeline(
         # Mark older pending requests as cancelled
         response_tracker.complete_and_cancel_older(audio_uid, task_id, times)
         
-        ori_pred, translated_result, rtf, transcription_time, translate_time, translate_method, timing_dict = result
+        ori_pred, n_segments, segments, translated_result, rtf, transcription_time, translate_time, translate_method, timing_dict = result
         
         # Check if this result indicates cancellation from other_info
         if other_info and 'cancelled_by_times' in other_info:
@@ -618,6 +625,8 @@ async def translate_pipeline(
             response_tracker.cleanup(audio_uid, task_id)
             return BaseResponse(status=Status.OK, message=" | Translation task was cancelled due to newer request | ", data=response_data)
         response_data.transcription_text = ori_pred
+        response_data.n_segments = n_segments
+        response_data.segments = segments
         response_data.text = format_text_spacing(translated_result) if multi_strategy_transcription == 4 else format_cleaning(translated_result)
         response_data.transcribe_time = transcription_time  
         response_data.translate_time = translate_time  
@@ -641,7 +650,8 @@ async def translate_pipeline(
         
         logger.debug(f" | {response_data.model_dump_json()} | ")  
         logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
-        logger.info(f" | Transcription: {ori_pred} | ")                
+        logger.info(f" | Transcription: {ori_pred} | ")       
+        logger.info(f" | {n_segments} | segments: {segments} | ")         
         if timing_str != "N/A": 
             logger.info(f" | {timing_str} | ")
         if t_lang:

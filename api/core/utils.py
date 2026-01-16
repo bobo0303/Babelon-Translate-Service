@@ -128,9 +128,10 @@ def format_text_spacing(translation_dict: dict) -> dict:
     formatted_dict = {}
     
     for lang, text in translation_dict.items():
-        # Step 1: Remove spaces between CJK characters
+        # Step 1: Remove spaces between CJK characters (loop until no matches)
         # Match: CJK + spaces + CJK → Remove spaces
-        text = re.sub(f'({cjk_pattern})\\s+({cjk_pattern})', r'\1\2', text)
+        while re.search(f'({cjk_pattern})\\s+({cjk_pattern})', text):
+            text = re.sub(f'({cjk_pattern})\\s+({cjk_pattern})', r'\1\2', text)
         
         # Step 2: Ensure space between CJK and non-CJK (alphanumeric)
         # Match: CJK + (no space) + alphanumeric → Add space

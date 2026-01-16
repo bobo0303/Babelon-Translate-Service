@@ -55,6 +55,8 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     # Initialize default output structure
     result = {
         'ori_pred': "",
+        'n_segments': 0,
+        'segments': [],
         'translated_pred': DEFAULT_RESULT.copy(),
         'rtf': 0,
         'transcription_time': 0,
@@ -89,6 +91,8 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
             if task_id not in transcribe_manager.task_results:
                 logger.debug(f" | Pipeline task {task_id} cancelled before queuing (not in task_results). | ")
                 result['ori_pred'] = None
+                result['n_segments'] = 0
+                result['segments'] = []
                 result['translate_method'] = "cancelled_before_queue"
                 return tuple(result.values()), None
             
@@ -98,6 +102,8 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
                 # Clean up cancelled task before returning
                 del transcribe_manager.task_results[task_id]
                 result['ori_pred'] = None
+                result['n_segments'] = 0
+                result['segments'] = []
                 result['translate_method'] = "cancelled"
                 # Return cancelled_by_times as other_info
                 return tuple(result.values()), {'cancelled_by_times': cancelled_by}
@@ -119,7 +125,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         result['translate_method'] = "transcription_failed"
         return tuple(result.values()), None
     
-    result['ori_pred'], result['transcription_time'], audio_length = transcription_result
+    result['ori_pred'], result['n_segments'], result['segments'], result['transcription_time'], audio_length = transcription_result
     
     
     # Step 4: Handle translation if needed
@@ -178,7 +184,7 @@ def audio_translate(transcribe_manager, translate_manager, audio_file_path, resu
         The event used to signal stopping.  
     """  
     try:
-        ori_pred, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, o_lang, strategy, post_processing, prev_text)
+        ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, o_lang, strategy, post_processing, prev_text)
         if t_lang:
             # t_lang is already a list from main.py
             translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, o_lang, t_lang, prev_text, multi_translate)  
@@ -212,7 +218,7 @@ def audio_translate(transcribe_manager, translate_manager, audio_file_path, resu
             "process_method": "threading_sequential"
         }
 
-        result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict, other_info))  
+        result_queue.put((ori_pred, n_segments, segments, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict, other_info))  
         stop_event.set()  # Signal to stop the waiting thread
     finally:
         # Clean up any active translation threads when this thread is stopped
@@ -270,7 +276,7 @@ def audio_translate_sse(transcribe_manager, translate_manager, audio_file_path, 
     try:
         transcribe_manager.processing = True
         
-        ori_pred, inference_time = transcribe_manager.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
+        ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
         if other_information["use_translate"]:
             # Get target_langs from other_information or default to all languages
             target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != ori])

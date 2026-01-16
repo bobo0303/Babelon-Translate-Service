@@ -18,6 +18,7 @@ test*.py
 quantification
 whisper
 Breeze-ASR-25
+batch_test_results
 
 # Audio test files
 test_*.py
@@ -26,7 +27,7 @@ run_audio_test.sh
 README_audio_test.md
 quick_audio_test.py
 advanced_audio_test.py
-
+segment_trim_module.py
 
 
 # Byte-compiled / optimized / DLL files  

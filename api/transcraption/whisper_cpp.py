@@ -194,6 +194,13 @@ lib.whisper_full_n_segments_from_state.restype = ctypes.c_int
 lib.whisper_full_get_segment_text_from_state.argtypes = [ctypes.POINTER(WhisperState), ctypes.c_int]
 lib.whisper_full_get_segment_text_from_state.restype = ctypes.c_char_p
 
+# get segment timestamp (state-based)
+lib.whisper_full_get_segment_t0_from_state.argtypes = [ctypes.POINTER(WhisperState), ctypes.c_int]
+lib.whisper_full_get_segment_t0_from_state.restype = ctypes.c_int64
+
+lib.whisper_full_get_segment_t1_from_state.argtypes = [ctypes.POINTER(WhisperState), ctypes.c_int]
+lib.whisper_full_get_segment_t1_from_state.restype = ctypes.c_int64
+
 # get token count and data (state-based)
 lib.whisper_full_n_tokens_from_state.argtypes = [ctypes.POINTER(WhisperState), ctypes.c_int]
 lib.whisper_full_n_tokens_from_state.restype = ctypes.c_int
@@ -419,14 +426,29 @@ class WhisperCpp:
             n_segments = lib.whisper_full_n_segments_from_state(state)
             text_parts = []
             all_logprobs = []
+            segments = []  # 儲存 segment 資訊
             
             for j in range(n_segments):
+                # 取得 timestamp (單位是 10ms，除以 100 轉成秒)
+                t0 = lib.whisper_full_get_segment_t0_from_state(state, j)
+                t1 = lib.whisper_full_get_segment_t1_from_state(state, j)
+                
                 text = lib.whisper_full_get_segment_text_from_state(state, j)
+                seg_text = ""
                 if text:
                     try:
-                        text_parts.append(text.decode('utf-8', errors='ignore'))
+                        seg_text = text.decode('utf-8', errors='ignore')
                     except:
-                        text_parts.append(text.decode('utf-8', errors='replace'))
+                        seg_text = text.decode('utf-8', errors='replace')
+                    text_parts.append(seg_text)
+                
+                # 儲存 segment 資訊
+                segments.append({
+                    'index': j,
+                    'start': t0 / 100.0,
+                    'end': t1 / 100.0,
+                    'text': seg_text
+                })
                 
                 # Extract token-level logprob
                 n_tokens = lib.whisper_full_n_tokens_from_state(state, j)
@@ -447,7 +469,9 @@ class WhisperCpp:
                 'temperature': temperature,
                 'text': transcription,
                 'avg_logprob': avg_logprob,
-                'entropy': avg_entropy
+                'entropy': avg_entropy,
+                'n_segments': n_segments,
+                'segments': segments
             }
             
         finally:
@@ -467,7 +491,7 @@ class WhisperCpp:
         results = [r for r in results if r is not None]
         
         if not results:
-            return "", False
+            return "", 0, [], False
         
         # Select best result
         return self._select_best_result(results)
@@ -483,13 +507,13 @@ class WhisperCpp:
             if result['avg_logprob'] > LOGPROB_THOLD and result['entropy'] < ENTROPY_THOLD:
                 logger.info(f" | Multi-temp: Selected temp={result['temperature']:.1f} "
                           f"(logprob={result['avg_logprob']:.2f}, entropy={result['entropy']:.2f}) | ")
-                return result['text'], True
+                return result['text'], result['n_segments'], result['segments'], True
         
         # If none pass, return lowest temperature result
         best = results[0]
         logger.warning(f" | Multi-temp: No result passed quality check, using temp={best['temperature']:.1f} "
                    f"(logprob={best['avg_logprob']:.2f}, entropy={best['entropy']:.2f}) | ")
-        return best['text'], False
+        return best['text'], best['n_segments'], best['segments'], False
     
     def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
         """        
@@ -521,7 +545,7 @@ class WhisperCpp:
                 if strategy == MAX_NUM_STRATEGIES - 1:
                     # Strategy 4: Multi-temperature parallel processing
                     logger.info(f" | Strategy {strategy+1}: Running multi-temperature parallel processing | ")
-                    ori_pred, _ = self._run_multi_temperature(audio, ori)
+                    ori_pred, n_segments, segments, _ = self._run_multi_temperature(audio, ori)
                     
                     if not ori_pred:
                         logger.error(" | Multi-temperature processing failed | ")
@@ -562,6 +586,8 @@ class WhisperCpp:
                         continue
                     
                     ori_pred = result['text']
+                    n_segments = result['n_segments']
+                    segments = result['segments']
                     logger.debug(f" | Raw Transcription: {ori_pred} | ")
                             
                 if post_processing:
@@ -582,11 +608,13 @@ class WhisperCpp:
             inference_time = end - start  
         except Exception as e:
             ori_pred = ""
+            n_segments = 0
+            segments = []
             inference_time = 0
             audio_length = 0.0
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori_pred, inference_time, audio_length
+        return ori_pred, n_segments, segments, inference_time, audio_length
 
 
 if __name__ == "__main__":
@@ -604,9 +632,12 @@ if __name__ == "__main__":
     # cpp_whisper.set_prompt("")
     # cpp_whisper.set_prompt("拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul, AUO, 彭双浪, 柯富仁")
     
-    ori_pred, inference_time = cpp_whisper.transcribe(audio_path, audio, "zh", multi_strategy_transcription=1, post_processing=True, prev_text="")
+    ori_pred, n_segments, segments, inference_time, audio_length = cpp_whisper.transcribe(audio_path, audio, None, "zh", multi_strategy_transcription=1, post_processing=True, prev_text="")
     
     print(f"Transcription: {ori_pred}")
+    print(f"Segments: {n_segments}")
+    for seg in segments:
+        print(f"  [{seg['start']:.2f} -> {seg['end']:.2f}] {seg['text']}")
     print(f"Inference time: {inference_time:.2f} seconds")
     
     

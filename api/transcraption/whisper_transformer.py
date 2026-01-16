@@ -183,11 +183,23 @@ class WhisperTransformer:
                 transcription_result = self.pipe(
                     audio_input, 
                     generate_kwargs=generate_kwargs,
-                    # return_timestamps=True  
+                    return_timestamps=True  
                 )
                 
                 ori_pred = transcription_result["text"]
                 logger.debug(f" | Raw Transcription: {ori_pred} | ")
+                
+                chunks = transcription_result.get("chunks", [])
+                segments = []
+                for idx, chunk in enumerate(chunks):
+                    ts = chunk.get("timestamp", (0.0, 0.0))
+                    segments.append({
+                        'index': idx,
+                        'start': ts[0] if ts[0] is not None else 0.0,
+                        'end': ts[1] if ts[1] is not None else 0.0,
+                        'text': chunk.get("text", "").strip()
+                    })
+                n_segments = len(segments)
                 
                 if post_processing:
                     audio_duration = get_audio_duration(audio_path) if audio_length is None else audio_length
@@ -210,8 +222,10 @@ class WhisperTransformer:
             ori_pred = ""
             inference_time = 0
             audio_length = 0.0
+            n_segments = 0
+            segments = []
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori_pred, inference_time, audio_length
+        return ori_pred, n_segments, segments, inference_time, audio_length
 
     

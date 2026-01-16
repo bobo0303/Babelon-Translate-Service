@@ -308,7 +308,7 @@ class TranscribeManager:
                 
                 # Execute transcription (set processing = True)
                 self.processing = True
-                ori_pred, transcription_time, audio_length = self.transcribe(
+                ori_pred, n_segments, segments, transcription_time, audio_length = self.transcribe(
                     audio_file, o_lang, multi_strategy_transcription, 
                     transcription_post_processing, prev_text
                 )
@@ -321,7 +321,7 @@ class TranscribeManager:
                 with self.task_lock:
                     self.current_task_id = None  # Clear current task
                     if task_id in self.task_results:
-                        self.task_results[task_id]['result'] = (ori_pred, transcription_time, audio_length)
+                        self.task_results[task_id]['result'] = (ori_pred, n_segments, segments, transcription_time, audio_length)
                         self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
                         logger.debug(f" | Task {task_id} completed. | ")
                     else:
@@ -362,11 +362,11 @@ class TranscribeManager:
         audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
                 
         # Process previous text context
-        if prev_text.strip() != "" and len(prev_text.replace('.', '').replace('。', '').replace(',', '').replace('，', '').strip()) >= 1:
-            if not prev_text.endswith(('.', '。', '!', '！', '?', '？')):
-                prev_text += '。' 
-        else:
-            prev_text = ""
+        # if prev_text.strip() != "" and len(prev_text.replace('.', '').replace('。', '').replace(',', '').replace('，', '').strip()) >= 1:
+        #     if not prev_text.endswith(('.', '。', '!', '！', '?', '？')):
+        #         prev_text += '。' 
+        # else:
+        #     prev_text = ""
                 
         return self.transcriber.transcribe(audio_path,
                                            audio, 
