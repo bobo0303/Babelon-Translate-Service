@@ -360,6 +360,11 @@ class TranscribeManager:
         """
         
         audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
+        
+        # 檢查音訊是否成功載入
+        if audio is None:
+            logger.error(f" | transcribe() audio is None, file may not exist or corrupted: {audio_path} | ")
+            return "", 0, [], 0.0, 0.0
                 
         # Process previous text context
         # if prev_text.strip() != "" and len(prev_text.replace('.', '').replace('。', '').replace(',', '').replace('，', '').strip()) >= 1:
