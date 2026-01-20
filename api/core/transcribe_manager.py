@@ -209,7 +209,8 @@ class TranscribeManager:
         return False
     
     def add_task(self, task_id, audio_file, o_lang, multi_strategy_transcription, 
-                 transcription_post_processing, prev_text, audio_uid, times):
+                 transcription_post_processing, prev_text, audio_uid, times,
+                 trim_duration=0.0):
         """Add a task to the queue and return an Event for blocking wait."""
         task_event = threading.Event()
         should_add = True
@@ -227,14 +228,15 @@ class TranscribeManager:
                     'cancelled': False,
                     'processing': False,
                     'task_id': task_id,
+                    'trim_duration': trim_duration,  # 新增：記錄 trim duration
                 }
         
         # Queue optimization: Only add to queue if not cancelled
         if should_add:
             task = (task_id, audio_file, o_lang, multi_strategy_transcription,
-                    transcription_post_processing, prev_text)
+                    transcription_post_processing, prev_text, trim_duration, audio_uid)  # 新增 audio_uid
             self.task_queue.put(task)
-            logger.debug(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) added to queue. | ")
+            logger.debug(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}, trim: {trim_duration:.3f}s) added to queue. | ")
         else:
             # Task cancelled before queuing, immediately wake up API thread
             task_event.set()
@@ -282,9 +284,9 @@ class TranscribeManager:
                 if task is None:  # Stop signal
                     break
                 
-                # Unpack task
+                # Unpack task (with trim_duration and audio_uid)
                 task_id, audio_file, o_lang, multi_strategy_transcription, \
-                    transcription_post_processing, prev_text = task
+                    transcription_post_processing, prev_text, trim_duration, audio_uid = task
                 
                 # Check if task was cancelled or already cleaned up
                 with self.task_lock:
@@ -295,6 +297,18 @@ class TranscribeManager:
                         logger.info(f" | Task {task_id} skipped (cancelled). | ")
                         self.task_results[task_id]['event'].set()
                         continue
+                
+                # Re-read trim_duration from trim_manager (may have been updated while in queue)
+                try:
+                    from api.core.trim_session_manager import get_trim_manager
+                    trim_manager = get_trim_manager()
+                    if trim_manager.is_enabled():
+                        current_trim, _ = trim_manager.get_trim_info(audio_uid)
+                        if current_trim > trim_duration:
+                            logger.debug(f" | Task {task_id}: trim updated {trim_duration:.3f}s -> {current_trim:.3f}s | ")
+                            trim_duration = current_trim
+                except Exception as e:
+                    logger.warning(f" | Task {task_id}: Failed to re-read trim: {e} | ")
                 
                 logger.debug(f" | Worker processing task {task_id}... | ")
                 
@@ -310,7 +324,7 @@ class TranscribeManager:
                 self.processing = True
                 ori_pred, n_segments, segments, transcription_time, audio_length = self.transcribe(
                     audio_file, o_lang, multi_strategy_transcription, 
-                    transcription_post_processing, prev_text
+                    transcription_post_processing, prev_text, trim_duration
                 )
                 
                 # Critical: Release transcribe_manager immediately after transcription
@@ -322,8 +336,10 @@ class TranscribeManager:
                     self.current_task_id = None  # Clear current task
                     if task_id in self.task_results:
                         self.task_results[task_id]['result'] = (ori_pred, n_segments, segments, transcription_time, audio_length)
+                        self.task_results[task_id]['actual_trim_duration'] = trim_duration  # 實際使用的 trim
+                        logger.info(f" | Task {task_id} storing actual_trim_duration={trim_duration:.3f}s | ")
                         self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
-                        logger.debug(f" | Task {task_id} completed. | ")
+                        logger.debug(f" | Task {task_id} completed (trim: {trim_duration:.3f}s). | ")
                     else:
                         logger.info(f" | Task {task_id} was cleaned up before completion could be stored. | ")
                     
@@ -347,7 +363,7 @@ class TranscribeManager:
         
         logger.info(" | Queue worker stopped. | ")
 
-    def transcribe(self, audio_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
+    def transcribe(self, audio_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_duration=0.0):  
         """
         Docstring for transcribe
         
@@ -357,6 +373,7 @@ class TranscribeManager:
         :param multi_strategy_transcription: Description
         :param post_processing: Description
         :param prev_text: Description
+        :param trim_duration: Seconds to trim from the beginning of audio (for prefix-chain stability)
         """
         
         audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
@@ -365,6 +382,23 @@ class TranscribeManager:
         if audio is None:
             logger.error(f" | transcribe() audio is None, file may not exist or corrupted: {audio_path} | ")
             return "", 0, [], 0.0, 0.0
+        
+        # Apply audio trimming if trim_duration > 0
+        actual_trim_duration = 0.0
+        if trim_duration > 0.0 and audio_length > trim_duration:
+            # Calculate samples to trim (audio is 16kHz float32 numpy array)
+            sample_rate = 16000
+            samples_to_trim = int(trim_duration * sample_rate)
+            
+            # Trim audio in memory (not modifying original file)
+            audio = audio[samples_to_trim:]
+            actual_trim_duration = trim_duration
+            audio_length = audio_length - trim_duration
+            
+            logger.debug(f" | Audio trimmed: {trim_duration:.3f}s ({samples_to_trim} samples), "
+                        f"new length: {audio_length:.3f}s | ")
+        elif trim_duration > 0.0:
+            logger.warning(f" | Trim skipped: trim_duration ({trim_duration:.3f}s) >= audio_length ({audio_length:.3f}s) | ")
                 
         # Process previous text context
         # if prev_text.strip() != "" and len(prev_text.replace('.', '').replace('。', '').replace(',', '').replace('，', '').strip()) >= 1:

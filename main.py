@@ -12,16 +12,15 @@ import datetime
 import threading
 from queue import Queue  
 from threading import Thread, Event  
+from api import websocket_router
 from api.core.transcribe_manager import TranscribeManager
 from api.core.translate_manager import TranslateManager
 from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
+from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
-from wjy3 import BaseResponse, Status
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
-from api.utils import write_txt, format_text_spacing, format_cleaning
-from api.core.utils import ResponseTracker
-from api import websocket_router
 from lib.core.logging_config import setup_application_logger
+from wjy3 import BaseResponse, Status
 
 # Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  
@@ -424,6 +423,16 @@ async def translate(
             response_data.segments = segments
             response_data.transcribe_time = transcription_time  
             response_data.translate_time = translate_time  
+            
+            # Add trim feature fields from other_info
+            if other_info:
+                response_data.stable_text = other_info.get('stable_text', '')
+                response_data.unstable_text = other_info.get('unstable_text', '')
+                response_data.trim_duration = other_info.get('trim_duration', 0.0)
+                response_data.current_trim_duration = other_info.get('current_trim_duration', 0.0)
+                response_data.trim_updated = other_info.get('trim_updated', False)
+                response_data.window_count = other_info.get('window_count', 0)
+            
             zh_result = response_data.text.get("zh", "")
             en_result = response_data.text.get("en", "")
             de_result = response_data.text.get("de", "")
@@ -467,7 +476,7 @@ async def translate(
         if other_info:
             other_info['audio_uid'] = audio_uid
             other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
-            storage_upload(logger, response_data, other_info) 
+            # storage_upload(logger, response_data, other_info) 
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
     except Exception as e:  
@@ -530,14 +539,8 @@ async def translate_pipeline(
         meeting_id=meeting_id,  
         device_id=device_id,  
         ori_lang=o_lang,  
-        transcription_text="",
-        n_segments=0,
-        segments=[],
-        text=DEFAULT_RESULT.copy(),  
         times=str(times),  
         audio_uid=audio_uid,  
-        transcribe_time=0.0,  
-        translate_time=0.0,  
     )  
   
     # Save the uploaded audio file  
@@ -624,12 +627,23 @@ async def translate_pipeline(
             logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) cancelled by newer request (times: {cancelled_by}) | ")
             response_tracker.cleanup(audio_uid, task_id)
             return BaseResponse(status=Status.OK, message=" | Translation task was cancelled due to newer request | ", data=response_data)
+       
         response_data.transcription_text = ori_pred
         response_data.n_segments = n_segments
         response_data.segments = segments
         response_data.text = format_text_spacing(translated_result) if multi_strategy_transcription == 4 else format_cleaning(translated_result)
         response_data.transcribe_time = transcription_time  
         response_data.translate_time = translate_time  
+        
+        # Add trim feature fields from other_info
+        if other_info:
+            response_data.stable_text = other_info.get('stable_text', '')
+            response_data.unstable_text = other_info.get('unstable_text', '')
+            response_data.trim_duration = other_info.get('trim_duration', 0.0)
+            response_data.current_trim_duration = other_info.get('current_trim_duration', 0.0)
+            response_data.trim_updated = other_info.get('trim_updated', False)
+            response_data.window_count = other_info.get('window_count', 0)
+        
         zh_result = response_data.text.get("zh", "")
         en_result = response_data.text.get("en", "")
         de_result = response_data.text.get("de", "")
@@ -678,10 +692,11 @@ async def translate_pipeline(
             # Other failure reasons (interrupted, transcription failed, etc.)
             message = " | Pipeline processing failed | "
         logger.warning(message)
-    
+        
+
     if other_info:
         other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
-        storage_upload(logger, response_data, other_info)
+        # storage_upload(logger, response_data, other_info)
 
     # Clean up this request from tracker
     response_tracker.cleanup(audio_uid, task_id)
