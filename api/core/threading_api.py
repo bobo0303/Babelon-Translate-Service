@@ -60,7 +60,6 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         'n_segments': 0,
         'segments': [],
         'translated_pred': DEFAULT_RESULT.copy(),
-        'rtf': 0,
         'transcription_time': 0,
         'translate_time': 0,
         'translate_method': "none",

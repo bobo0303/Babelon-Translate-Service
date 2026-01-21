@@ -1110,7 +1110,7 @@ def schedule_daily_task(stop_event):
         time.sleep(1)  
   
 if __name__ == "__main__":  
-    port = int(os.environ.get("PORT", 80))  
+    port = int(os.environ.get("PORT", 81))  
     uvicorn.config.LOGGING_CONFIG["formatters"]["default"]["fmt"] = "%(asctime)s [%(name)s] %(levelprefix)s %(message)s"  
     uvicorn.config.LOGGING_CONFIG["formatters"]["access"]["fmt"] = '%(asctime)s [%(name)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'  
     uvicorn.run(app, log_level='info', host='0.0.0.0', port=port)   

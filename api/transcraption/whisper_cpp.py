@@ -401,7 +401,7 @@ class WhisperCpp:
             logger.error(f" | Failed to tokenize prompt | ")
             return 0
         
-        logger.info(f" | Prompt token count: {n_tokens} | ")
+        logger.debug(f" | Prompt token count: {n_tokens} | ")
         return n_tokens
     
     def request_abort(self):
