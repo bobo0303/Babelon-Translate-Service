@@ -212,6 +212,15 @@ lib.whisper_full_get_token_data_from_state.restype = WhisperTokenData
 lib.whisper_n_vocab.argtypes = [ctypes.POINTER(WhisperContext)]
 lib.whisper_n_vocab.restype = ctypes.c_int
 
+# tokenization - convert text to tokens
+lib.whisper_tokenize.argtypes = [
+    ctypes.POINTER(WhisperContext),
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_int),
+    ctypes.c_int
+]
+lib.whisper_tokenize.restype = ctypes.c_int
+
 # release model
 lib.whisper_free.argtypes = [ctypes.POINTER(WhisperContext)]
 lib.whisper_free.restype = None
@@ -359,6 +368,41 @@ class WhisperCpp:
         # Store original prompt string (not bytes) for later use
         self.prompt = prompt
         logger.info(f" | Prompt has been set to: {prompt} | ")
+    
+    def get_prompt_token_count(self, prompt_text: str) -> int:
+        """
+        Get the number of tokens in the given prompt text.
+        
+        :param prompt_text: str
+            The prompt text to tokenize.
+        :return: int
+            The number of tokens in the prompt.
+        """
+        if not self.transcriber:
+            logger.error(" | Model not loaded, cannot tokenize prompt | ")
+            return 0
+        
+        if not prompt_text:
+            return 0
+        
+        # Allocate buffer for tokens (max 448 tokens as per whisper.cpp limit)
+        max_tokens = 448
+        tokens = (ctypes.c_int * max_tokens)()
+        
+        # Tokenize the prompt
+        n_tokens = lib.whisper_tokenize(
+            self.transcriber,
+            prompt_text.encode('utf-8'),
+            tokens,
+            max_tokens
+        )
+        
+        if n_tokens < 0:
+            logger.error(f" | Failed to tokenize prompt | ")
+            return 0
+        
+        logger.info(f" | Prompt token count: {n_tokens} | ")
+        return n_tokens
     
     def request_abort(self):
         """Request abort for current transcription task."""
@@ -515,7 +559,7 @@ class WhisperCpp:
                    f"(logprob={best['avg_logprob']:.2f}, entropy={best['entropy']:.2f}) | ")
         return best['text'], best['n_segments'], best['segments'], False
     
-    def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
+    def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
         """        
         Perform transcription on the given audio file.  
     
@@ -559,7 +603,7 @@ class WhisperCpp:
                     
                     # Set initial prompt based on strategy (match transformer logic)
                     if strategy < MAX_NUM_STRATEGIES - 2:
-                        # if available strategy > 3 and not prompt and not prev_text -> skip to strategy 3 
+                        # if available strategy > 3 and no prompt and no prev_text -> skip to strategy 3 
                         if multi_strategy_transcription >= MAX_NUM_STRATEGIES - 1 and self.prompt is None:
                             if strategy == 0 and prev_text != "":
                                 pass
@@ -568,15 +612,25 @@ class WhisperCpp:
                         # if no prev_text -> strategy 0 already handled
                         if prev_text == "" and strategy == 1:
                             continue
+                        
+                        if self.prompt:
+                            initial_prompt = self.prompt
+                                
                         # strategy 0 with prev_text
                         if strategy == 0 and prev_text != "":
                             prompt_text = (self.prompt + " " + prev_text) if self.prompt else prev_text
-                            # Rough estimation: whisper.cpp limit is 224 tokens (~448 chars for mixed CN/EN)
-                            initial_prompt = prompt_text
-                        # strategy 0 without prev_text (handled as strategy 1)
-                        else:
-                            if self.prompt:
-                                initial_prompt = self.prompt
+                            # Log token count for prompt
+                            prompt_size = self.get_prompt_token_count(prompt_text)
+                            if prompt_size <= 400:    
+                                initial_prompt = prompt_text
+                            else:
+                                logger.warning(f" | len of prompt: {prompt_size} over the limit 448 tokens. Use no prev_text prompt. | ")
+                    
+                    if trim_text != "": 
+                        initial_prompt = (initial_prompt + " " + trim_text) if initial_prompt else trim_text
+                        if self.get_prompt_token_count(initial_prompt) > 400:
+                            initial_prompt = (self.prompt + " " + trim_text) if self.prompt is not None else trim_text
+                            logger.warning(f" | add trim text | len of prompt with trim_text over the limit 448 tokens. Use original prompt with trim prompt. (ignored prev text) | ")                              
                     
                     # Call single temperature transcription
                     result = self._transcribe_single_temperature(audio, ori, 0.0, initial_prompt)
@@ -593,7 +647,7 @@ class WhisperCpp:
                 if post_processing:
                     audio_duration = get_audio_duration(audio_path) if audio_length is None else audio_length
                     retry_flag, ori_pred = post_process(ori_pred, audio_duration, self.prompt)
-                # retry_flag = True
+
                 if retry_flag:
                     end = time.time() 
                     logger.info(f" | Strategy {strategy+1} | Transcription: {ori_pred} | ")

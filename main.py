@@ -416,7 +416,7 @@ async def translate(
   
         # Get the result from the queue  
         if not result_queue.empty():  
-            ori_pred, n_segments, segments, result, rtf, transcription_time, translate_time, translate_method, timing_dict, other_info = result_queue.get()  
+            ori_pred, n_segments, segments, result, transcription_time, translate_time, translate_method, timing_dict, other_info = result_queue.get()  
             response_data.transcription_text = ori_pred
             response_data.text = result  
             response_data.n_segments = n_segments
@@ -429,10 +429,10 @@ async def translate(
                 response_data.stable_text = other_info.get('stable_text', '')
                 response_data.unstable_text = other_info.get('unstable_text', '')
                 response_data.trim_duration = other_info.get('trim_duration', 0.0)
-                response_data.current_trim_duration = other_info.get('current_trim_duration', 0.0)
                 response_data.trim_updated = other_info.get('trim_updated', False)
                 response_data.window_count = other_info.get('window_count', 0)
-            
+                
+            rtf = other_info.get('rtf', 'N/A')
             zh_result = response_data.text.get("zh", "")
             en_result = response_data.text.get("en", "")
             de_result = response_data.text.get("de", "")
@@ -608,6 +608,14 @@ async def translate_pipeline(
         
         result = None  # Set result to None when timeout occurs
         other_info = None  # Initialize other_info to prevent UnboundLocalError  
+        
+    # Add trim feature fields from other_info
+    if other_info:
+        response_data.stable_text = other_info.get('stable_text', '')
+        response_data.unstable_text = other_info.get('unstable_text', '')
+        response_data.trim_duration = other_info.get('trim_duration', 0.0)
+        response_data.trim_updated = other_info.get('trim_updated', False)
+        response_data.window_count = other_info.get('window_count', 0)
 
     # Check if this request was cancelled by a newer one
     if response_tracker.check_cancelled(audio_uid, task_id):
@@ -619,7 +627,7 @@ async def translate_pipeline(
         # Mark older pending requests as cancelled
         response_tracker.complete_and_cancel_older(audio_uid, task_id, times)
         
-        ori_pred, n_segments, segments, translated_result, rtf, transcription_time, translate_time, translate_method, timing_dict = result
+        ori_pred, n_segments, segments, translated_result, transcription_time, translate_time, translate_method, timing_dict = result
         
         # Check if this result indicates cancellation from other_info
         if other_info and 'cancelled_by_times' in other_info:
@@ -634,16 +642,8 @@ async def translate_pipeline(
         response_data.text = format_text_spacing(translated_result) if multi_strategy_transcription == 4 else format_cleaning(translated_result)
         response_data.transcribe_time = transcription_time  
         response_data.translate_time = translate_time  
-        
-        # Add trim feature fields from other_info
-        if other_info:
-            response_data.stable_text = other_info.get('stable_text', '')
-            response_data.unstable_text = other_info.get('unstable_text', '')
-            response_data.trim_duration = other_info.get('trim_duration', 0.0)
-            response_data.current_trim_duration = other_info.get('current_trim_duration', 0.0)
-            response_data.trim_updated = other_info.get('trim_updated', False)
-            response_data.window_count = other_info.get('window_count', 0)
-        
+       
+        rtf = other_info.get('rtf', 'N/A')
         zh_result = response_data.text.get("zh", "")
         en_result = response_data.text.get("en", "")
         de_result = response_data.text.get("de", "")
@@ -664,6 +664,8 @@ async def translate_pipeline(
         
         logger.debug(f" | {response_data.model_dump_json()} | ")  
         logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
+        if response_data.trim_updated:
+            logger.info(f" | Trim updated | trim duration: {response_data.trim_duration:.2f}s | Stable Text: {response_data.stable_text} | ")
         logger.info(f" | Transcription: {ori_pred} | ")       
         logger.info(f" | {n_segments} | segments: {segments} | ")         
         if timing_str != "N/A": 

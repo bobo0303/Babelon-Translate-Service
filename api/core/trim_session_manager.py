@@ -216,7 +216,7 @@ class TrimSessionManager:
         with self.session_lock:
             if audio_uid not in self.sessions:
                 self.sessions[audio_uid] = TrimSession(audio_uid=audio_uid)
-                trim_logger.info(f"[SESSION] Created: uid={audio_uid}")
+                trim_logger.info(f" | [SESSION] Created: uid={audio_uid} | ")
             
             session = self.sessions[audio_uid]
             session.active_requests += 1
@@ -224,8 +224,8 @@ class TrimSessionManager:
             session.last_activity = time.time()
             
             trim_logger.debug(
-                f"[ACQUIRE] uid={audio_uid}, active={session.active_requests}, "
-                f"trim_duration={session.trim_duration:.3f}s"
+                f" | [ACQUIRE] uid={audio_uid}, active={session.active_requests}, "
+                f"trim_duration={session.trim_duration:.3f}s | "
             )
             
             return session
@@ -287,7 +287,7 @@ class TrimSessionManager:
         self, 
         audio_uid: str, 
         segments: List[dict],
-        send_trim_duration: float
+        trim_duration: float
     ) -> TrimResult:
         """
         添加轉譯結果到 window 並檢查穩定性
@@ -295,7 +295,7 @@ class TrimSessionManager:
         Args:
             audio_uid: 音訊 UID
             segments: 本次轉譯的 segments（時間戳相對於 trim 後音訊）
-            send_trim_duration: 發送這個請求時的 trim_duration
+            trim_duration: 發送這個請求時的 trim_duration
         
         Returns:
             TrimResult 包含是否需要更新 trim
@@ -313,21 +313,13 @@ class TrimSessionManager:
             
             session = self.sessions[audio_uid]
             
-            # 過濾過時的結果（trim 已經更新過了）
-            if send_trim_duration != session.trim_duration:
-                trim_logger.debug(
-                    f"[SKIP] Outdated result: uid={audio_uid}, "
-                    f"send_trim={send_trim_duration:.3f}, current_trim={session.trim_duration:.3f}"
-                )
-                return result
-            
             # 將 segments 轉換為絕對時間戳並加入 window
             absolute_segments = []
             for seg in segments:
                 absolute_segments.append({
                     'index': seg.get('index', 0),
-                    'start': send_trim_duration + seg.get('start', 0.0),
-                    'end': send_trim_duration + seg.get('end', 0.0),
+                    'start': trim_duration + seg.get('start', 0.0),
+                    'end': trim_duration + seg.get('end', 0.0),
                     'text': seg.get('text', '')
                 })
             
@@ -422,7 +414,6 @@ class TrimSessionManager:
     
     def compose_output_text(
         self, 
-        audio_uid: str, 
         transcription_text: str,
         send_trim_text: str = ""
     ) -> Tuple[str, str, str]:
@@ -443,7 +434,7 @@ class TrimSessionManager:
         unstable_text = transcription_text
         
         # full_text = stable + unstable
-        full_text = (stable_text + " " + unstable_text).strip() if stable_text else unstable_text
+        full_text = (stable_text + unstable_text).strip() if stable_text else unstable_text
         
         return full_text, stable_text, unstable_text
     
@@ -453,40 +444,101 @@ class TrimSessionManager:
         """
         檢查 window 中的 segment 穩定性並更新 trim
         
-        使用前綴鏈檢查：每個 window 的 segment 文字必須是後續 window 的前綴
+        邏輯：
+        1. W0 是最早的（最短音訊），取 W0 的每個 Segment
+        2. W0 的 Segment 文本必須是 W1~W9 各自「合併文本」的前綴
+        3. 時間戳只取「單一 Segment 文本完全相同」的 window，取最小值
+        4. 跨 segment 的不考慮時間戳
         """
         result = TrimResult()
         
-        trim_logger.debug(f"[CHECK] Starting stability check for uid={session.audio_uid}, window_size={len(session.window_buffer)}")
+        if len(session.window_buffer) < TRIM_WINDOW_SIZE:
+            return result
         
-        # 從 segment 0 開始逐個檢查
-        for seg_index in range(10):  # 最多檢查到 segment 9
-            is_stable, segment_infos = self._check_segment_prefix(session.window_buffer, seg_index)
+        windows = list(session.window_buffer)
+        w0 = windows[0]
+        w0_segments = w0.get('segments', [])
+        
+        if not w0_segments:
+            return result
+        
+        trim_logger.debug(
+            f"[CHECK] Starting stability check for uid={session.audio_uid}, "
+            f"window_size={len(windows)}, W0_segments={len(w0_segments)}"
+        )
+        
+        # 預先計算 W1~W9 的合併文本（用於前綴檢查）
+        merged_texts = []  # W1~W9 的合併文本
+        for w in windows[1:]:
+            segments = w.get('segments', [])
+            merged = "".join(seg.get('text', '') for seg in segments)
+            merged_texts.append(normalize_text(merged))
+        
+        # 從 W0 的 segment 0 開始逐個檢查
+        for seg_index, w0_seg in enumerate(w0_segments):
+            w0_text = w0_seg.get('text', '')
+            w0_normalized = normalize_text(w0_text)
             
-            if not is_stable:
-                trim_logger.debug(f"[CHECK] Segment {seg_index} is NOT stable, stopping")
+            if not w0_normalized:
+                trim_logger.debug(f"[CHECK] W0 S{seg_index} is empty, stopping")
                 break
             
-            trim_logger.debug(f"[CHECK] Segment {seg_index} is STABLE")
+            # Step 1: 檢查 W0 S{seg_index} 是否為 W1~W9 合併文本的前綴
+            is_stable = True
+            for i, merged in enumerate(merged_texts):
+                if not merged.startswith(w0_normalized):
+                    trim_logger.debug(
+                        f"[CHECK] W0 S{seg_index} NOT prefix of W{i+1} merged: "
+                        f"'{w0_normalized[:30]}' vs '{merged[:30]}'"
+                    )
+                    is_stable = False
+                    break
             
-            # 這個 segment 穩定，更新結果
-            # 找最短的文字作為確認文本
-            shortest_text = min(
-                [info['text'] for info in segment_infos],
-                key=lambda t: len(normalize_text(t))
-            )
+            if not is_stable:
+                trim_logger.debug(f"[CHECK] S{seg_index} is NOT stable, stopping")
+                break
             
-            # 計算新的 trim 終點（取最小的 end）
-            min_end = min(info['end'] for info in segment_infos)
+            trim_logger.debug(f"[CHECK] S{seg_index} is STABLE: '{w0_text[:30]}...'")
             
-            result.should_update = True
-            result.new_trim_duration = min_end
-            result.new_trim_text = (session.trim_text + " " + shortest_text).strip()
-            result.stable_segments.append({
-                'index': seg_index,
-                'text': shortest_text,
-                'end': min_end
-            })
+            # Step 2: 找時間戳 - 只取「單一 Segment 完全相同」的 window
+            matching_ends = []
+            
+            # W0 自己的 segment
+            matching_ends.append(w0_seg.get('end', 0.0))
+            
+            # 檢查 W1~W9
+            for w_idx, w in enumerate(windows[1:], start=1):
+                w_segments = w.get('segments', [])
+                
+                # 找這個 window 中是否有「完全相同」的單一 segment
+                for seg in w_segments:
+                    seg_text = seg.get('text', '')
+                    if normalize_text(seg_text) == w0_normalized:
+                        # 完全相同！記錄 end 時間
+                        matching_ends.append(seg.get('end', 0.0))
+                        trim_logger.debug(
+                            f"[CHECK] W{w_idx} has exact match: end={seg.get('end', 0.0):.3f}s"
+                        )
+                        break  # 每個 window 只取一個
+                # 如果沒找到（跨 segment），就不加入 matching_ends
+            
+            # 取最小的 end 時間
+            if matching_ends:
+                min_end = min(matching_ends)
+                
+                result.should_update = True
+                result.new_trim_duration = min_end
+                result.new_trim_text = (session.trim_text + " " + w0_text).strip()
+                result.stable_segments.append({
+                    'index': seg_index,
+                    'text': w0_text,
+                    'end': min_end,
+                    'matching_windows': len(matching_ends)
+                })
+                
+                trim_logger.debug(
+                    f"[CHECK] S{seg_index} min_end={min_end:.3f}s from {len(matching_ends)} matches"
+                )
         
         # 如果有穩定的 segment，更新 session
         if result.should_update:
@@ -504,57 +556,6 @@ class TrimSessionManager:
             )
         
         return result
-    
-    def _check_segment_prefix(
-        self, 
-        window_buffer: deque, 
-        seg_index: int
-    ) -> Tuple[bool, List[dict]]:
-        """
-        檢查單一 segment 的前綴鏈穩定性
-        
-        Returns:
-            (is_stable, segment_infos)
-        """
-        segment_infos = []
-        normalized_texts = []
-        
-        for window in window_buffer:
-            segments = window.get('segments', [])
-            
-            # 這個 window 沒有這個 segment
-            if seg_index >= len(segments):
-                trim_logger.debug(
-                    f"[PREFIX] seg[{seg_index}] MISSING: window has only {len(segments)} segments"
-                )
-                return False, []
-            
-            seg = segments[seg_index]
-            text = seg.get('text', '')
-            normalized = normalize_text(text)
-            
-            segment_infos.append({
-                'start': seg.get('start', 0.0),
-                'end': seg.get('end', 0.0),
-                'text': text
-            })
-            normalized_texts.append(normalized)
-        
-        # 檢查前綴鏈：Window i 必須是 Window i+1, i+2, ..., N-1 的前綴
-        for i in range(len(normalized_texts) - 1):
-            current = normalized_texts[i]
-            
-            for j in range(i + 1, len(normalized_texts)):
-                next_text = normalized_texts[j]
-                if not next_text.startswith(current):
-                    trim_logger.debug(
-                        f"[PREFIX] seg[{seg_index}] FAILED: window[{i}]->window[{j}], "
-                        f"'{current[:30]}' is NOT prefix of '{next_text[:30]}'"
-                    )
-                    return False, []
-        
-        trim_logger.debug(f"[PREFIX] seg[{seg_index}] PASSED: all {len(normalized_texts)} windows form prefix-chain")
-        return True, segment_infos
 
 
 # ============================================================================

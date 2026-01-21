@@ -77,8 +77,7 @@ class AudioTranslationResponse(BaseModel):
     # Trim feature fields (optional for backward compatibility)
     stable_text: str = ""
     unstable_text: str = ""
-    trim_duration: float = 0.0  # 發送時的 trim (send_trim_duration)
-    current_trim_duration: float = 0.0  # 完成後的 trim
+    trim_duration: float = 0.0 
     trim_updated: bool = False
     window_count: int = 0
     

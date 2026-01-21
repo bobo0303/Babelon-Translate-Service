@@ -80,8 +80,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     # ========== Trim Session 管理 ==========
     trim_manager = get_trim_manager()
     trim_enabled = trim_manager.is_enabled() and ENABLE_TRIM
-    send_trim_duration = 0.0  # 發送時的 trim duration（用於圖表 X 軸定位）
-    actual_trim_duration = 0.0  # worker 實際處理時使用的 trim duration
+    trim_duration = 0.0  # trim duration（用於圖表 X 軸定位）
     trim_text = ""
     trim_updated = False
     stable_text = ""
@@ -91,21 +90,20 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     if trim_enabled:
         # 獲取 session 並增加引用計數
         session = trim_manager.acquire_session(audio_uid)
-        send_trim_duration = session.trim_duration
+        trim_duration = session.trim_duration
         trim_text = session.trim_text
         stable_text = session.trim_text  # 初始化 stable_text
         window_count = len(session.window_buffer)
         
-        # 組合 prompt（original_prompt + trim_text + prev_text）
-        # 注意：transcribe_manager 的 prompt 是在 set_prompt 時設定的
+        # 組合 prompt（original_prompt + prev_text + trim_text ）
         # 這裡只處理 prev_text 的組合
-        if trim_text:
-            # 將 trim_text 加到 prev_text 前面
-            combined_prev = (trim_text + " " + prev_text).strip() if prev_text else trim_text
-            # 限制長度，優先保留 trim_text
-            if len(combined_prev) > 400:
-                combined_prev = trim_text[:400]
-            prev_text = combined_prev
+        # if trim_text:
+        #     # 將 trim_text 加到 prev_text 前面
+        #     combined_prev = (prev_text + " " + trim_text).strip() if prev_text else trim_text
+        #     # 限制長度，優先保留 trim_text
+        #     if len(combined_prev) > 400:
+        #         combined_prev = trim_text[:400]
+        #     prev_text = combined_prev
     
     # Helper function to build trim info for all return paths
     def build_trim_info(cancelled_by=None):
@@ -113,9 +111,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         return {
             'cancelled_by_times': cancelled_by,
             'trim_enabled': trim_enabled,
-            'send_trim_duration': send_trim_duration,
-            'current_trim_duration': send_trim_duration,  # 取消時 current = send
-            'trim_duration': send_trim_duration,
+            'trim_duration': trim_duration,
             'stable_text': stable_text,
             'unstable_text': unstable_text,
             'trim_updated': trim_updated,
@@ -127,7 +123,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         transcription_event = transcribe_manager.add_task(
             task_id, audio_file, o_lang, multi_strategy_transcription,
             transcription_post_processing, prev_text, audio_uid, times,
-            trim_duration=send_trim_duration  # 新增：傳遞 trim duration
+            trim_duration=trim_duration, trim_text=trim_text  # 新增：傳遞 trim duration
         )
         
         # Step 2: Wait for transcription completion
@@ -162,12 +158,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
                 return tuple(result.values()), build_trim_info(cancelled_by)
             
             transcription_result = transcribe_manager.task_results[task_id]['result']
-            # 讀取實際使用的 trim_duration（可能在排隊時更新了）
-            stored_trim = transcribe_manager.task_results[task_id].get('actual_trim_duration')
-            if stored_trim is not None:
-                actual_trim_duration = stored_trim
-            else:
-                actual_trim_duration = send_trim_duration  # 回退到發送時的值
+
             # Clean up task result to free memory
             del transcribe_manager.task_results[task_id]
     
@@ -197,13 +188,12 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         trim_result = trim_manager.add_result_and_check(
             audio_uid, 
             result['segments'],
-            send_trim_duration
+            trim_duration
         )
         trim_updated = trim_result.should_update
         
         # 組合完整輸出文本（使用發送時的 trim_text，避免重複）
         full_text, stable_text, unstable_text = trim_manager.compose_output_text(
-            audio_uid, 
             result['ori_pred'],
             send_trim_text=trim_text  # 發送時的 trim_text
         )
@@ -213,7 +203,6 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     elif trim_enabled:
         # 空 segments 時，仍然使用發送時的 trim 資訊組合輸出
         full_text, stable_text, unstable_text = trim_manager.compose_output_text(
-            audio_uid, 
             result['ori_pred'] or "",
             send_trim_text=trim_text  # 發送時的 trim_text
         )
@@ -237,7 +226,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
             result['translate_method'] = "translation_failed"
     
     # Step 5: Calculate RTF and return results
-    result['rtf'] = calculate_rtf(audio_file, result['transcription_time'], result['translate_time'])
+    rtf = calculate_rtf(audio_file, result['transcription_time'], result['translate_time'])
     
     # 獲取最新的 session 資訊（用於 window_count 等）
     if trim_enabled:
@@ -256,13 +245,11 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
             "post_processing": transcription_post_processing,
             "audio_tags": audio_tags,
             "strategy": multi_strategy_transcription,
-            "rtf": result['rtf'],
+            "rtf": rtf,
             "process_method": "pipeline_coordinator",
             # Trim 相關資訊
             "trim_enabled": trim_enabled,
-            "send_trim_duration": send_trim_duration,  # 發送時的 trim（用於圖表 X 軸）
-            "current_trim_duration": actual_trim_duration,  # worker 實際處理時使用的 trim
-            "trim_duration": send_trim_duration,  # 保持向後相容
+            "trim_duration": trim_duration,  
             "stable_text": stable_text,
             "unstable_text": unstable_text,
             "trim_updated": trim_updated,
@@ -332,7 +319,7 @@ def audio_translate(transcribe_manager, translate_manager, audio_file_path, resu
             "process_method": "threading_sequential"
         }
 
-        result_queue.put((ori_pred, n_segments, segments, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict, other_info))  
+        result_queue.put((ori_pred, n_segments, segments, translated_pred, inference_time, translate_time, translate_method, timing_dict, other_info))  
         stop_event.set()  # Signal to stop the waiting thread
     finally:
         # Clean up any active translation threads when this thread is stopped
