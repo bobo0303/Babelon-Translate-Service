@@ -287,7 +287,8 @@ class TrimSessionManager:
         self, 
         audio_uid: str, 
         segments: List[dict],
-        trim_duration: float
+        trim_duration: float,
+        audio_length: float = 0.0
     ) -> TrimResult:
         """
         添加轉譯結果到 window 並檢查穩定性
@@ -296,6 +297,7 @@ class TrimSessionManager:
             audio_uid: 音訊 UID
             segments: 本次轉譯的 segments（時間戳相對於 trim 後音訊）
             trim_duration: 發送這個請求時的 trim_duration
+            audio_length: 當前音頻的實際長度（trim 後），用於驗證 segment 時間戳
         
         Returns:
             TrimResult 包含是否需要更新 trim
@@ -314,12 +316,25 @@ class TrimSessionManager:
             session = self.sessions[audio_uid]
             
             # 將 segments 轉換為絕對時間戳並加入 window
+            # 驗證 segment end 不超過實際音頻長度（Whisper 有時會返回錯誤的時間戳）
+            max_valid_end = trim_duration + audio_length if audio_length > 0 else float('inf')
+            
             absolute_segments = []
             for seg in segments:
+                seg_end = seg.get('end', 0.0)
+                
+                # 如果 segment end 超過實際音頻長度，限制為音頻長度
+                if audio_length > 0 and seg_end > audio_length:
+                    trim_logger.warning(
+                        f"[VALIDATE] Segment end {seg_end:.2f}s exceeds audio_length {audio_length:.2f}s, "
+                        f"capping to audio_length. uid={audio_uid}"
+                    )
+                    seg_end = audio_length
+                
                 absolute_segments.append({
                     'index': seg.get('index', 0),
                     'start': trim_duration + seg.get('start', 0.0),
-                    'end': trim_duration + seg.get('end', 0.0),
+                    'end': trim_duration + seg_end,
                     'text': seg.get('text', '')
                 })
             

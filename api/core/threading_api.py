@@ -177,7 +177,8 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         trim_result = trim_manager.add_result_and_check(
             audio_uid, 
             result['segments'],
-            trim_duration
+            trim_duration,
+            audio_length=audio_length  # 傳遞實際音頻長度用於驗證
         )
         trim_updated = trim_result.should_update
         
