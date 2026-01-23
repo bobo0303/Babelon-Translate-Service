@@ -334,6 +334,8 @@ class TrimSessionManager:
                 f"segments={len(segments)}"
             )
             
+            # logger.info(f" | [WINDOW] uid={audio_uid} | window_buffer: {session.window_buffer} | ")
+            
             # 檢查穩定性
             if len(session.window_buffer) >= TRIM_WINDOW_SIZE:
                 result = self._check_stability_and_update(session)
@@ -359,82 +361,53 @@ class TrimSessionManager:
                 "trim_updated": False  # 這個欄位在 add_result_and_check 中設定
             }
     
-    def build_prompt(
-        self, 
-        original_prompt: Optional[str], 
-        trim_text: str, 
-        prev_text: str,
-        max_length: int = 400
-    ) -> str:
-        """
-        組合 prompt：original_prompt + trim_text + prev_text
-        
-        超過 max_length 時優先捨棄 prev_text
-        
-        Args:
-            original_prompt: 原始 prompt
-            trim_text: 已確認的穩定文本
-            prev_text: 前文上下文
-            max_length: 最大字元數（粗略估計，實際 token 數會不同）
-        
-        Returns:
-            組合後的 prompt
-        """
-        parts = []
-        
-        # 1. Original prompt（最高優先級）
-        if original_prompt:
-            parts.append(original_prompt.strip())
-        
-        # 2. Trim text（第二優先級）
-        if trim_text:
-            parts.append(trim_text.strip())
-        
-        # 3. Prev text（最低優先級，可能被捨棄）
-        if prev_text:
-            parts.append(prev_text.strip())
-        
-        combined = " ".join(parts)
-        
-        # 如果超過長度限制，嘗試移除 prev_text
-        if len(combined) > max_length and prev_text:
-            parts_without_prev = parts[:-1] if len(parts) > 1 else parts
-            combined = " ".join(parts_without_prev)
-            trim_logger.debug(
-                f"[PROMPT] Dropped prev_text due to length limit: "
-                f"original_len={len(' '.join(parts))}, new_len={len(combined)}"
-            )
-        
-        # 如果還是太長，截斷
-        if len(combined) > max_length:
-            combined = combined[:max_length]
-            trim_logger.debug(f"[PROMPT] Truncated to {max_length} chars")
-        
-        return combined
-    
     def compose_output_text(
         self, 
         transcription_text: str,
-        send_trim_text: str = ""
+        send_trim_text: str = "",
+        trim_updated: bool = False,
+        new_trim_text: str = ""
     ) -> Tuple[str, str, str]:
         """
         組合輸出文本
         
         Args:
-            audio_uid: 音訊 UID
             transcription_text: 本次轉譯結果（不含 trim 部分）
             send_trim_text: 發送請求時的 trim_text（只補上這部分，避免重複）
+            trim_updated: 這次請求是否觸發了 trim 更新
+            new_trim_text: 更新後的完整 stable text（只在 trim_updated=True 時使用）
         
         Returns:
             (full_text, stable_text, unstable_text)
         """
-        # 使用發送時的 trim_text，而不是當前的
-        # 這樣可以避免：請求發送後 trim 更新，導致輸出重複
-        stable_text = send_trim_text
-        unstable_text = transcription_text
-        
-        # full_text = stable + unstable
-        full_text = (stable_text + unstable_text).strip() if stable_text else unstable_text
+        if trim_updated and new_trim_text:
+            # Trim 更新了，使用新的 stable_text
+            stable_text = new_trim_text
+            
+            # 計算新增的穩定部分（這次新確認的文字）
+            if send_trim_text:
+                # 舊的 stable 有值，新增部分 = new - old
+                new_stable_part = new_trim_text.replace(send_trim_text, '', 1).strip()
+            else:
+                # 舊的 stable 是空的，全部都是新增
+                new_stable_part = new_trim_text
+            
+            # 從 transcription_text 移除新增的穩定部分，得到 unstable
+            ori = transcription_text.strip()
+            new_part = new_stable_part.strip()
+            if ori.startswith(new_part):
+                unstable_text = ori[len(new_part):].strip()
+            else:
+                # 不完全匹配時保守處理
+                unstable_text = transcription_text
+            
+            # 組合 full_text
+            full_text = (stable_text + " " + unstable_text).strip() if unstable_text else stable_text
+        else:
+            # 沒有更新，使用發送時的 trim_text
+            stable_text = send_trim_text
+            unstable_text = transcription_text
+            full_text = (stable_text + unstable_text).strip() if stable_text else unstable_text
         
         return full_text, stable_text, unstable_text
     
@@ -528,7 +501,7 @@ class TrimSessionManager:
                 
                 result.should_update = True
                 result.new_trim_duration = min_end
-                result.new_trim_text = (session.trim_text + " " + w0_text).strip()
+                result.new_trim_text = (session.trim_text + w0_text).strip()
                 result.stable_segments.append({
                     'index': seg_index,
                     'text': w0_text,

@@ -79,7 +79,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     # ========== Trim Session 管理 ==========
     trim_manager = get_trim_manager()
     trim_enabled = trim_manager.is_enabled() and ENABLE_TRIM
-    trim_duration = 0.0  # trim duration（用於圖表 X 軸定位）
+    trim_duration = 0.0  
     trim_text = ""
     trim_updated = False
     stable_text = ""
@@ -94,16 +94,6 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         stable_text = session.trim_text  # 初始化 stable_text
         window_count = len(session.window_buffer)
         
-        # 組合 prompt（original_prompt + prev_text + trim_text ）
-        # 這裡只處理 prev_text 的組合
-        # if trim_text:
-        #     # 將 trim_text 加到 prev_text 前面
-        #     combined_prev = (prev_text + " " + trim_text).strip() if prev_text else trim_text
-        #     # 限制長度，優先保留 trim_text
-        #     if len(combined_prev) > 400:
-        #         combined_prev = trim_text[:400]
-        #     prev_text = combined_prev
-    
     # Helper function to build trim info for all return paths
     def build_trim_info(cancelled_by=None):
         """Build consistent trim info for all return paths"""
@@ -191,13 +181,16 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         )
         trim_updated = trim_result.should_update
         
-        # 組合完整輸出文本（使用發送時的 trim_text，避免重複）
+        if trim_updated:
+            trim_duration = trim_result.new_trim_duration
+        
+        # 組合輸出文本
         full_text, stable_text, unstable_text = trim_manager.compose_output_text(
             result['ori_pred'],
-            send_trim_text=trim_text  # 發送時的 trim_text
+            send_trim_text=trim_text,
+            trim_updated=trim_updated,
+            new_trim_text=trim_result.new_trim_text if trim_updated else ""
         )
-        
-        # 更新 result（用完整文本替換原始輸出）
         result['ori_pred'] = full_text
     elif trim_enabled:
         # 空 segments 時，仍然使用發送時的 trim 資訊組合輸出
