@@ -49,7 +49,7 @@ FALLBACK_METHOD = 'ollama-gemma'
 # Trim Session Configuration
 #############################################################################
 
-ENABLE_TRIM = True  # Whether to enable segment-based audio trimming
+ENABLE_TRIM = False  # Whether to enable segment-based audio trimming
 TRIM_WINDOW_SIZE = 10  # Number of consecutive API results needed to determine stability
 TRIM_SESSION_TIMEOUT = 300  # Session timeout in seconds (5 minutes)
 

@@ -473,6 +473,7 @@ async def translate(
         else:  
             logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
             ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
+            other_info = None  # Initialize other_info for timeout case
             state = Status.FAILED
             
         # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)

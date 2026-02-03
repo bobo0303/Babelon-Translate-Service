@@ -49,7 +49,8 @@ class TranslateManager:
             self.ollama_gemma_translator = None
         
         # Translation configuration (translators will be created on-demand)
-        self.translation_method = "gpt-4.1-mini"  # Model version to use
+        # self.translation_method = "gpt-4.1-mini"  # Model version to use
+        self.translation_method = "gpt-4o"  # Model version to use
         self.fallback_translate = 'ollama-gemma'
         
         # Thread management
