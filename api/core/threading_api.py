@@ -5,7 +5,8 @@ import uuid
 import time
 
 from api.audio.audio_utils import calculate_rtf
-from lib.config.constant import DEFAULT_RESULT  
+from lib.config.constant import DEFAULT_RESULT, ENABLE_TRIM
+from api.core.trim_session_manager import get_trim_manager
 
   
 logger = logging.getLogger(__name__)  
@@ -34,10 +35,11 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     Coordinate transcription and translation pipeline with proper decoupling.
     
     This function handles the complete pipeline:
-    1. Submit transcription task to TranscribeManager
+    1. Submit transcription task to TranscribeManager (with trim if enabled)
     2. Wait for transcription completion
-    3. Submit translation task to TranslateManager if needed
-    4. Return combined results
+    3. Add result to trim window and check stability
+    4. Submit translation task to TranslateManager if needed
+    5. Return combined results
     
     :param transcribe_manager: TranscribeManager instance
     :param translate_manager: TranslateManager instance  
@@ -58,7 +60,6 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         'n_segments': 0,
         'segments': [],
         'translated_pred': DEFAULT_RESULT.copy(),
-        'rtf': 0,
         'transcription_time': 0,
         'translate_time': 0,
         'translate_method': "none",
@@ -75,11 +76,43 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     elif multi_strategy_transcription == 4:
         audio_tags = "audio_end"
     
+    # ========== Trim Session 管理 ==========
+    trim_manager = get_trim_manager()
+    trim_enabled = trim_manager.is_enabled() and ENABLE_TRIM
+    trim_duration = 0.0  
+    trim_text = ""
+    trim_updated = False
+    stable_text = ""
+    unstable_text = ""
+    window_count = 0
+
+    if trim_enabled:
+        # 獲取 session 並增加引用計數
+        session = trim_manager.acquire_session(audio_uid)
+        trim_duration = session.trim_duration
+        trim_text = session.trim_text
+        stable_text = session.trim_text  # 初始化 stable_text
+        window_count = len(session.window_buffer)
+        
+    # Helper function to build trim info for all return paths
+    def build_trim_info(cancelled_by=None):
+        """Build consistent trim info for all return paths"""
+        return {
+            'cancelled_by_times': cancelled_by,
+            'trim_enabled': trim_enabled,
+            'trim_duration': trim_duration,
+            'stable_text': stable_text,
+            'unstable_text': unstable_text,
+            'trim_updated': trim_updated,
+            'window_count': window_count,
+        }
+    
     try:
-        # Step 1: Submit transcription task
+        # Step 1: Submit transcription task (with trim_duration for audio trimming)
         transcription_event = transcribe_manager.add_task(
             task_id, audio_file, o_lang, multi_strategy_transcription,
-            transcription_post_processing, prev_text, audio_uid, times
+            transcription_post_processing, prev_text, audio_uid, times,
+            trim_duration=trim_duration, trim_text=trim_text  # 新增：傳遞 trim duration
         )
         
         # Step 2: Wait for transcription completion
@@ -94,7 +127,10 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
                 result['n_segments'] = 0
                 result['segments'] = []
                 result['translate_method'] = "cancelled_before_queue"
-                return tuple(result.values()), None
+                # 釋放 trim session
+                if trim_enabled:
+                    trim_manager.release_session(audio_uid, is_audio_end=(multi_strategy_transcription == 4))
+                return tuple(result.values()), build_trim_info('unknown')
             
             if transcribe_manager.task_results[task_id].get('cancelled', False):
                 cancelled_by = transcribe_manager.task_results[task_id].get('cancelled_by_times', 'unknown')
@@ -105,10 +141,13 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
                 result['n_segments'] = 0
                 result['segments'] = []
                 result['translate_method'] = "cancelled"
-                # Return cancelled_by_times as other_info
-                return tuple(result.values()), {'cancelled_by_times': cancelled_by}
+                # 釋放 trim session
+                if trim_enabled:
+                    trim_manager.release_session(audio_uid, is_audio_end=(multi_strategy_transcription == 4))
+                return tuple(result.values()), build_trim_info(cancelled_by)
             
             transcription_result = transcribe_manager.task_results[task_id]['result']
+
             # Clean up task result to free memory
             del transcribe_manager.task_results[task_id]
     
@@ -117,16 +156,53 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         logger.warning(f" | Pipeline coordinator interrupted: {e} | ")
         _cleanup_transcription_task(transcribe_manager, task_id)
         result['translate_method'] = "interrupted"
-        return tuple(result.values()), None
+        # 釋放 trim session
+        if trim_enabled:
+            trim_manager.release_session(audio_uid, is_audio_end=(multi_strategy_transcription == 4))
+        return tuple(result.values()), build_trim_info('interrupted')
     
     # Continue with the rest of the function...
     if transcription_result is None:
         logger.error(f" | Transcription failed for task {task_id}. | ")
         result['translate_method'] = "transcription_failed"
-        return tuple(result.values()), None
+        # 釋放 trim session
+        if trim_enabled:
+            trim_manager.release_session(audio_uid, is_audio_end=(multi_strategy_transcription == 4))
+        return tuple(result.values()), build_trim_info('transcription_failed')
     
     result['ori_pred'], result['n_segments'], result['segments'], result['transcription_time'], audio_length = transcription_result
     
+    # ========== Trim: 添加結果到 window 並檢查穩定性 ==========
+    if trim_enabled and result['ori_pred'] and result['segments']:
+        trim_result = trim_manager.add_result_and_check(
+            audio_uid, 
+            result['segments'],
+            trim_duration,
+            audio_length=audio_length  # 傳遞實際音頻長度用於驗證
+        )
+        trim_updated = trim_result.should_update
+        
+        if trim_updated:
+            trim_duration = trim_result.new_trim_duration
+        
+        # 組合輸出文本
+        full_text, stable_text, unstable_text = trim_manager.compose_output_text(
+            result['ori_pred'],
+            send_trim_text=trim_text,
+            trim_updated=trim_updated,
+            new_trim_text=trim_result.new_trim_text if trim_updated else ""
+        )
+        result['ori_pred'] = full_text
+    elif trim_enabled:
+        # 空 segments 時，仍然使用發送時的 trim 資訊組合輸出
+        full_text, stable_text, unstable_text = trim_manager.compose_output_text(
+            result['ori_pred'] or "",
+            send_trim_text=trim_text  # 發送時的 trim_text
+        )
+        result['ori_pred'] = full_text if full_text else ""
+    else:
+        stable_text = ""
+        unstable_text = result['ori_pred']
     
     # Step 4: Handle translation if needed
     if t_lang:
@@ -143,7 +219,13 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
             result['translate_method'] = "translation_failed"
     
     # Step 5: Calculate RTF and return results
-    result['rtf'] = calculate_rtf(audio_file, result['transcription_time'], result['translate_time'])
+    rtf = calculate_rtf(audio_file, result['transcription_time'], result['translate_time'])
+    
+    # 獲取最新的 session 資訊（用於 window_count 等）
+    if trim_enabled:
+        session_info = trim_manager.get_session_info(audio_uid)
+    else:
+        session_info = {}
     
     other_info = {
             "audio_length": audio_length,
@@ -156,12 +238,24 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
             "post_processing": transcription_post_processing,
             "audio_tags": audio_tags,
             "strategy": multi_strategy_transcription,
-            "rtf": result['rtf'],
-            "process_method": "pipeline_coordinator"
+            "rtf": rtf,
+            "process_method": "pipeline_coordinator",
+            # Trim 相關資訊
+            "trim_enabled": trim_enabled,
+            "trim_duration": trim_duration,  
+            "stable_text": stable_text,
+            "unstable_text": unstable_text,
+            "trim_updated": trim_updated,
+            "window_count": session_info.get('window_count', 0),
         }
      
     total_time = time.time() - start_time
     logger.debug(f" | Pipeline task {task_id} completed in {total_time:.2f}s (transcription: {result['transcription_time']:.2f}s, translation: {result['translate_time']:.2f}s). | ")
+    
+    # ========== 釋放 Trim Session（在獲取所有資訊後）==========
+    if trim_enabled:
+        is_audio_end = (multi_strategy_transcription == 4)
+        trim_manager.release_session(audio_uid, is_audio_end=is_audio_end)
     
     return tuple(result.values()), other_info
 
@@ -218,7 +312,7 @@ def audio_translate(transcribe_manager, translate_manager, audio_file_path, resu
             "process_method": "threading_sequential"
         }
 
-        result_queue.put((ori_pred, n_segments, segments, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict, other_info))  
+        result_queue.put((ori_pred, n_segments, segments, translated_pred, inference_time, translate_time, translate_method, timing_dict, other_info))  
         stop_event.set()  # Signal to stop the waiting thread
     finally:
         # Clean up any active translation threads when this thread is stopped

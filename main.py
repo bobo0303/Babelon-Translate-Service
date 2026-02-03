@@ -12,16 +12,17 @@ import datetime
 import threading
 from queue import Queue  
 from threading import Thread, Event  
+from api import websocket_router
 from api.core.transcribe_manager import TranscribeManager
 from api.core.translate_manager import TranslateManager
 from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
+from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
-from wjy3 import BaseResponse, Status
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
-from api.utils import write_txt, format_text_spacing, format_cleaning
-from api.core.utils import ResponseTracker
-from api import websocket_router
+from api.core.benchmark_api import benchmark_router
+from api.core.benchmark_helper import record_pipeline_result
 from lib.core.logging_config import setup_application_logger
+from wjy3 import BaseResponse, Status
 
 # Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  
@@ -119,6 +120,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(websocket_router)
+app.include_router(benchmark_router, prefix="/benchmark", tags=["Benchmark"])
 
 # Mount static files for admin page
 if os.path.exists("./static"):
@@ -417,13 +419,23 @@ async def translate(
   
         # Get the result from the queue  
         if not result_queue.empty():  
-            ori_pred, n_segments, segments, result, rtf, transcription_time, translate_time, translate_method, timing_dict, other_info = result_queue.get()  
+            ori_pred, n_segments, segments, result, transcription_time, translate_time, translate_method, timing_dict, other_info = result_queue.get()  
             response_data.transcription_text = ori_pred
             response_data.text = result  
             response_data.n_segments = n_segments
             response_data.segments = segments
             response_data.transcribe_time = transcription_time  
             response_data.translate_time = translate_time  
+            
+            # Add trim feature fields from other_info
+            if other_info:
+                response_data.stable_text = other_info.get('stable_text', '')
+                response_data.unstable_text = other_info.get('unstable_text', '')
+                response_data.trim_duration = other_info.get('trim_duration', 0.0)
+                response_data.trim_updated = other_info.get('trim_updated', False)
+                response_data.window_count = other_info.get('window_count', 0)
+                
+            rtf = other_info.get('rtf', 'N/A')
             zh_result = response_data.text.get("zh", "")
             en_result = response_data.text.get("en", "")
             de_result = response_data.text.get("de", "")
@@ -461,13 +473,14 @@ async def translate(
         else:  
             logger.info(f" | Translation has exceeded the upper limit time and has been stopped |")  
             ori_pred = zh_result = en_result = de_result = ja_result = ko_result = ""
+            other_info = None  # Initialize other_info for timeout case
             state = Status.FAILED
             
         # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)
         if other_info:
             other_info['audio_uid'] = audio_uid
             other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
-            storage_upload(logger, response_data, other_info) 
+            # storage_upload(logger, response_data, other_info) 
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
     except Exception as e:  
@@ -497,7 +510,8 @@ async def translate_pipeline(
     in parallel, allowing the next transcription to start while the previous translation
     is still running.
     """
-    # start = time.time()
+    # Benchmark: record request start time
+    request_start_time = time.time()
     
     logger.debug(f" | Received pipeline translation request: audio_uid={audio_uid}, times={times}) | ")
     
@@ -530,14 +544,8 @@ async def translate_pipeline(
         meeting_id=meeting_id,  
         device_id=device_id,  
         ori_lang=o_lang,  
-        transcription_text="",
-        n_segments=0,
-        segments=[],
-        text=DEFAULT_RESULT.copy(),  
         times=str(times),  
         audio_uid=audio_uid,  
-        transcribe_time=0.0,  
-        translate_time=0.0,  
     )  
   
     # Save the uploaded audio file  
@@ -605,6 +613,14 @@ async def translate_pipeline(
         
         result = None  # Set result to None when timeout occurs
         other_info = None  # Initialize other_info to prevent UnboundLocalError  
+        
+    # Add trim feature fields from other_info
+    if other_info:
+        response_data.stable_text = other_info.get('stable_text', '')
+        response_data.unstable_text = other_info.get('unstable_text', '')
+        response_data.trim_duration = other_info.get('trim_duration', 0.0)
+        response_data.trim_updated = other_info.get('trim_updated', False)
+        response_data.window_count = other_info.get('window_count', 0)
 
     # Check if this request was cancelled by a newer one
     if response_tracker.check_cancelled(audio_uid, task_id):
@@ -616,7 +632,7 @@ async def translate_pipeline(
         # Mark older pending requests as cancelled
         response_tracker.complete_and_cancel_older(audio_uid, task_id, times)
         
-        ori_pred, n_segments, segments, translated_result, rtf, transcription_time, translate_time, translate_method, timing_dict = result
+        ori_pred, n_segments, segments, translated_result, transcription_time, translate_time, translate_method, timing_dict = result
         
         # Check if this result indicates cancellation from other_info
         if other_info and 'cancelled_by_times' in other_info:
@@ -624,12 +640,15 @@ async def translate_pipeline(
             logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) cancelled by newer request (times: {cancelled_by}) | ")
             response_tracker.cleanup(audio_uid, task_id)
             return BaseResponse(status=Status.OK, message=" | Translation task was cancelled due to newer request | ", data=response_data)
+       
         response_data.transcription_text = ori_pred
         response_data.n_segments = n_segments
         response_data.segments = segments
         response_data.text = format_text_spacing(translated_result) if multi_strategy_transcription == 4 else format_cleaning(translated_result)
         response_data.transcribe_time = transcription_time  
         response_data.translate_time = translate_time  
+       
+        rtf = other_info.get('rtf', 'N/A')
         zh_result = response_data.text.get("zh", "")
         en_result = response_data.text.get("en", "")
         de_result = response_data.text.get("de", "")
@@ -650,6 +669,8 @@ async def translate_pipeline(
         
         logger.debug(f" | {response_data.model_dump_json()} | ")  
         logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
+        if response_data.trim_updated:
+            logger.info(f" | Trim updated | trim duration: {response_data.trim_duration:.2f}s | Stable Text: {response_data.stable_text} | ")
         logger.info(f" | Transcription: {ori_pred} | ")       
         logger.info(f" | {n_segments} | segments: {segments} | ")         
         if timing_str != "N/A": 
@@ -678,13 +699,35 @@ async def translate_pipeline(
             # Other failure reasons (interrupted, transcription failed, etc.)
             message = " | Pipeline processing failed | "
         logger.warning(message)
-    
+        
+
     if other_info:
         other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
-        storage_upload(logger, response_data, other_info)
+        # storage_upload(logger, response_data, other_info)
 
     # Clean up this request from tracker
     response_tracker.cleanup(audio_uid, task_id)
+
+    # === Benchmark Recording ===
+    is_cancelled_for_benchmark = (state == Status.FAILED) or (other_info and 'cancelled_by_times' in other_info)
+    cancel_type_for_benchmark = None
+    if is_cancelled_for_benchmark:
+        if result and result[0] is None:
+            cancel_type_for_benchmark = "transcribe_cancel"
+        elif other_info and 'cancelled_by_times' in other_info:
+            cancel_type_for_benchmark = "translate_cancel"
+    
+    record_pipeline_result(
+        audio_uid=audio_uid,
+        times=times,
+        start_time=request_start_time,
+        result=result,
+        other_info=other_info,
+        response_data=response_data,
+        is_cancelled=is_cancelled_for_benchmark,
+        cancel_type=cancel_type_for_benchmark,
+        is_final=(multi_strategy_transcription == 4)
+    )
 
     # end = time.time()
     # logger.info(f" | Total pipeline processing time: {end - start:.2f} seconds. | ")

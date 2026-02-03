@@ -46,26 +46,47 @@ MAX_NUM_STRATEGIES = 4  # The maximum number of strategies for sampling during t
 FALLBACK_METHOD = 'ollama-gemma' 
 
 #############################################################################
+# Trim Session Configuration
+#############################################################################
+
+ENABLE_TRIM = False  # Whether to enable segment-based audio trimming
+TRIM_WINDOW_SIZE = 10  # Number of consecutive API results needed to determine stability
+TRIM_SESSION_TIMEOUT = 300  # Session timeout in seconds (5 minutes)
+
+#############################################################################
+# Translation Languages
+#############################################################################
+
+LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de']  # ['zh', 'en', 'ja', 'ko', "de", "es"]
+DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
+
+#############################################################################
 
 class AudioTranslationResponse(BaseModel):
-    meeting_id: str
+    meeting_id: str = ""
     device_id: str
-    ori_lang: str
-    transcription_text: str
-    n_segments: int
-    segments: List[Dict[str, Any]]  # id: int, start: float, end: float, text: str
-    text: Dict[str, str]
-    times: str
-    audio_uid: str
-    transcribe_time: float
-    translate_time: float
+    ori_lang: str = ""
+    transcription_text: str = ""
+    n_segments: int = 0
+    segments: List[Dict[str, Any]] = []
+    text: Dict[str, str] = DEFAULT_RESULT.copy()
+    times: str = ""
+    audio_uid: str = ""
+    transcribe_time: float = 0.0
+    translate_time: float = 0.0
+    # Trim feature fields (optional for backward compatibility)
+    stable_text: str = ""
+    unstable_text: str = ""
+    trim_duration: float = 0.0 
+    trim_updated: bool = False
+    window_count: int = 0
     
 #############################################################################
 
 class TextTranslationResponse(BaseModel):
-    ori_lang: str
-    text: Dict[str, str]
-    translate_time: float
+    ori_lang: str = ""
+    text: Dict[str, str] = {}
+    translate_time: float = 0.0
 
 #############################################################################
 
@@ -94,12 +115,6 @@ class SharedResources:
     
 #############################################################################
     
-# LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', "de", "es"]
-LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de']
-DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
-
-#############################################################################
-
 LOGPROB_THOLD = -1.0
 ENTROPY_THOLD = 2.4
 

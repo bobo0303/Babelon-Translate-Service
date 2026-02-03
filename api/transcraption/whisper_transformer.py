@@ -119,7 +119,7 @@ class WhisperTransformer:
             return e    
     
     
-    def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text=""):  
+    def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
         """  
         Perform transcription on the given audio file.  
     
@@ -159,25 +159,36 @@ class WhisperTransformer:
                     # if no prev_text -> strategy 0 already handled
                     if prev_text == "" and strategy == 1:
                         continue
+                    
+                    # strategy 0 without prev_text (handled strategy 1)
+                    if self.prompt_token is not None:
+                        generate_kwargs["prompt_ids"] = self.prompt_token.to(self.device) if self.device == "cuda" else self.prompt_token
+                 
                     # strategy 0 with prev_text
                     if strategy == 0 and prev_text != "":
                         prev_prompt = self.processor.get_prompt_ids(prev_text, return_tensors="pt")
                         prev_prompt = prev_prompt.to(self.device) if self.device == "cuda" else prev_prompt
                         prompt = torch.cat([self.prompt_token, prev_prompt], dim=-1) if self.prompt_token is not None else prev_prompt
                         prompt_size = list(prompt.size())[0]  # Get the size as an integer
+                        if prompt_size >= 400:    
+                            logger.warning(f" | len of prompt: {prompt_size} over the limit 448 tokens. Use no prev_text prompt. | ")
+                        else:
+                            generate_kwargs["prompt_ids"] = prompt
                         # logger.debug(self.prompt)
                         # logger.debug(prev_text)
                         # logger.debug(f" | len of prompt with prev_text: {prompt_size} tokens. | ")
-                        if prompt_size >= 400:    
-                            logger.warning(f" | len of prompt: {prompt_size} voer the limit 448 tokens. Use no prev_text prompt. | ")
-                            generate_kwargs["prompt_ids"] = self.prompt_token.to(self.device) if self.device == "cuda" else self.prompt_token
-                        else:
-                            generate_kwargs["prompt_ids"] = prompt
-                    # strategy 0 without prev_text (handled strategy 1)
+                            
+                if trim_text != "":
+                    trim_prompt = self.processor.get_prompt_ids(trim_text, return_tensors="pt")
+                    trim_prompt = trim_prompt.to(self.device) if self.device == "cuda" else trim_prompt
+                    if "prompt_ids" in generate_kwargs and generate_kwargs["prompt_ids"] is not None:
+                        generate_kwargs["prompt_ids"] = torch.cat([generate_kwargs["prompt_ids"], trim_prompt], dim=-1)
+                        if list(generate_kwargs["prompt_ids"].size())[0] > 400:
+                            generate_kwargs["prompt_ids"] = torch.cat([self.prompt_token, trim_prompt], dim=-1) if self.prompt_token is not None else trim_prompt
+                            logger.warning(f" | add trim text | len of prompt with trim_text over the limit 448 tokens. Use original prompt with trim prompt. (ignored prev text) | ")                              
                     else:
-                        if self.prompt_token is not None:
-                            generate_kwargs["prompt_ids"] = self.prompt_token.to(self.device) if self.device == "cuda" else self.prompt_token
-                
+                        generate_kwargs["prompt_ids"] = trim_prompt
+                    
                 # prepare input audio if unread give audio path 
                 audio_input = audio if audio is not None else audio_path
                 transcription_result = self.pipe(
