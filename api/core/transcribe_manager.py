@@ -124,6 +124,11 @@ class TranscribeManager:
     def stop_worker_thread(self):
         """Stop the background worker thread."""
         self.stop_worker = True
+        
+        # Try graceful abort if a task is running
+        if self.transcriber and hasattr(self.transcriber, 'request_abort'):
+            self.transcriber.request_abort()
+        
         self.task_queue.put(None)  # Send stop signal
         if self.worker_thread and self.worker_thread.is_alive():
             self.worker_thread.join(timeout=5)
@@ -149,20 +154,29 @@ class TranscribeManager:
                 task_info['result'] = None
                 task_info['event'].set()
                 
-                # Step 1: Try graceful abort via C++ callback (fast)
+                # Step 1: Try graceful abort via C++ callback (fast) - only for CPP models
+                supports_graceful = False
                 if self.transcriber:
-                    logger.debug(f" | Requesting graceful abort via C++ callback... | ")
-                    self.transcriber.request_abort()
+                    supports_graceful = getattr(self.transcriber, 'supports_graceful_abort', lambda: False)()
+                    if supports_graceful:
+                        logger.debug(f" | Requesting graceful abort via C++ callback... | ")
+                        self.transcriber.request_abort()
+                    else:
+                        logger.debug(f" | Transcriber does not support graceful abort, will force terminate. | ")
+                        self.transcriber.request_abort()  # Still set the flag for logging
                 
                 # Clear the completion event before waiting
                 self.task_complete_event.clear()
         
-        # Step 2: Wait for task completion event (no polling, instant notification)
-        completed = self.task_complete_event.wait(timeout=0.5)  # Wait max 500ms
-        
-        if completed:
-            logger.info(f" | Task gracefully aborted (C++ responded to abort). | ")
-            return True
+        # Step 2: Wait for task completion event - only if graceful abort is supported
+        if supports_graceful:
+            completed = self.task_complete_event.wait(timeout=0.5)  # Wait max 500ms
+            
+            if completed:
+                logger.info(f" | Task gracefully aborted (C++ responded to abort). | ")
+                return True
+        else:
+            completed = False  # Skip waiting, go directly to force terminate
         
         # Step 3: Graceful abort timeout, force kill thread (slow backup)
         with self.task_lock:

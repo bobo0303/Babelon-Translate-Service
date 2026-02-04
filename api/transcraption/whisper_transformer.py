@@ -44,7 +44,26 @@ class WhisperTransformer:
         self.prompt_token = None
         self.prompt = None  # Store original prompt name for post-processing
         self.processor = None
-        self.pipe = None  
+        self.pipe = None
+        self.abort_flag = False  # Flag for abort request
+        
+    def request_abort(self):
+        """
+        Request abort for current transcription task.
+        Note: Transformer models don't support graceful abort like whisper.cpp.
+        This only sets a flag but cannot interrupt the pipeline mid-inference.
+        Force thread termination will be used instead.
+        """
+        self.abort_flag = True
+        logger.warning(" | Abort requested for Transformer (no graceful abort support, will force terminate) | ")
+    
+    def clear_abort(self):
+        """Clear abort flag."""
+        self.abort_flag = False
+    
+    def supports_graceful_abort(self):
+        """Check if this transcriber supports graceful abort."""
+        return False
         
     def load_model(self, model_name, model_path):  
         """Load the specified model based on the model's name."""  

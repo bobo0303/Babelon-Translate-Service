@@ -19,8 +19,8 @@ from api.core.threading_api import audio_translate, texts_translate, waiting_tim
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
-from api.core.benchmark_api import benchmark_router
-from api.core.benchmark_helper import record_pipeline_result
+# from api.core.benchmark_api import benchmark_router
+# from api.core.benchmark_helper import record_pipeline_result
 from lib.core.logging_config import setup_application_logger
 from wjy3 import BaseResponse, Status
 
@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(websocket_router)
-app.include_router(benchmark_router, prefix="/benchmark", tags=["Benchmark"])
+# app.include_router(benchmark_router, prefix="/benchmark", tags=["Benchmark"])
 
 # Mount static files for admin page
 if os.path.exists("./static"):
@@ -510,8 +510,8 @@ async def translate_pipeline(
     in parallel, allowing the next transcription to start while the previous translation
     is still running.
     """
-    # Benchmark: record request start time
-    request_start_time = time.time()
+    # # Benchmark: record request start time
+    # request_start_time = time.time()
     
     logger.debug(f" | Received pipeline translation request: audio_uid={audio_uid}, times={times}) | ")
     
@@ -708,26 +708,26 @@ async def translate_pipeline(
     # Clean up this request from tracker
     response_tracker.cleanup(audio_uid, task_id)
 
-    # === Benchmark Recording ===
-    is_cancelled_for_benchmark = (state == Status.FAILED) or (other_info and 'cancelled_by_times' in other_info)
-    cancel_type_for_benchmark = None
-    if is_cancelled_for_benchmark:
-        if result and result[0] is None:
-            cancel_type_for_benchmark = "transcribe_cancel"
-        elif other_info and 'cancelled_by_times' in other_info:
-            cancel_type_for_benchmark = "translate_cancel"
-    
-    record_pipeline_result(
-        audio_uid=audio_uid,
-        times=times,
-        start_time=request_start_time,
-        result=result,
-        other_info=other_info,
-        response_data=response_data,
-        is_cancelled=is_cancelled_for_benchmark,
-        cancel_type=cancel_type_for_benchmark,
-        is_final=(multi_strategy_transcription == 4)
-    )
+    # # === Benchmark Recording ===
+    # is_cancelled_for_benchmark = (state == Status.FAILED) or (other_info and 'cancelled_by_times' in other_info)
+    # cancel_type_for_benchmark = None
+    # if is_cancelled_for_benchmark:
+    #     if result and result[0] is None:
+    #         cancel_type_for_benchmark = "transcribe_cancel"
+    #     elif other_info and 'cancelled_by_times' in other_info:
+    #         cancel_type_for_benchmark = "translate_cancel"
+    # 
+    # record_pipeline_result(
+    #     audio_uid=audio_uid,
+    #     times=times,
+    #     start_time=request_start_time,
+    #     result=result,
+    #     other_info=other_info,
+    #     response_data=response_data,
+    #     is_cancelled=is_cancelled_for_benchmark,
+    #     cancel_type=cancel_type_for_benchmark,
+    #     is_final=(multi_strategy_transcription == 4)
+    # )
 
     # end = time.time()
     # logger.info(f" | Total pipeline processing time: {end - start:.2f} seconds. | ")

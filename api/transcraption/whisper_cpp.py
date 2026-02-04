@@ -413,6 +413,10 @@ class WhisperCpp:
         """Clear abort flag."""
         self.abort_flag = False
     
+    def supports_graceful_abort(self):
+        """Check if this transcriber supports graceful abort."""
+        return True
+    
     def _transcribe_single_temperature(self, audio, ori, temperature, initial_prompt=None):
         """Single temperature transcription with quality metrics."""
         # Initialize thread-local storage for this transcription
