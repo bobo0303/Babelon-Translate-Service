@@ -4,10 +4,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH  
   
 # 設置工作目錄  
-WORKDIR /app  
-COPY . /app  
+# WORKDIR /app  
+# COPY . /app  
 
-# WORKDIR /mnt
+WORKDIR /mnt
 
 # 更新系統並安裝必要的軟體包  
 RUN apt-get update && apt-get install -y --no-install-recommends \  
@@ -45,6 +45,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV NVIDIA_VISIBLE_DEVICES=all  
 ENV LD_LIBRARY_PATH=/mnt/lib/cpp/ggml/src:/mnt/lib/cpp/ggml/src/ggml-cuda:/opt/conda/lib:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib/llvm-10/lib:$LD_LIBRARY_PATH  
 ENV PYTHONPATH=/mnt  
+# ENV LD_LIBRARY_PATH=/app/lib/cpp/ggml/src:/app/lib/cpp/ggml/src/ggml-cuda:/opt/conda/lib:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib/llvm-10/lib:$LD_LIBRARY_PATH  
+# ENV PYTHONPATH=/app  
 
 # 設置時區  
 RUN ln -sf /usr/share/zoneinfo/Asia/Taipei /etc/localtime && \  
@@ -60,4 +62,10 @@ RUN ln -sf /usr/share/zoneinfo/Asia/Taipei /etc/localtime && \
 # AZURE_STORAGE_CONTAINER_NAME
 
 # DB -> alembic init -> alembic.ini 刪除 sqlalchemy.url 內容 -> alembic revision --autogenerate -m "init table" -> python3 init_job.py
- 
+
+# EXPOSE 80
+
+# CMD ["python3", "main.py"]
+
+# nohup python3 main.py > output.log 2>&1 &
+

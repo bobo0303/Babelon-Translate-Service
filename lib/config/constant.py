@@ -19,23 +19,23 @@ class ModelPath(BaseModel):
     ggml_cpp_large_v2: str = "./models/cpp/ggml-large-v2.bin"
     ggml_cpp_large_v3: str = "./models/cpp/ggml-large-v3.bin"
     
-CPP_LIB_PATH = "/mnt/lib/cpp/src/libwhisper.so"
+CPP_LIB_PATH = "./lib/cpp/src/libwhisper.so"
 
 
 # gpt-4o
-AZURE_CONFIG = '/mnt/lib/config/azure_config.yaml'
+AZURE_CONFIG = './lib/config/azure_config.yaml'
 
 # ollama-gemma3-12b-qat + ollama-qwen3-14b-q4_K_M
 OLLAMA_MODEL = {
-    "ollama-gemma": "/mnt/lib/config/gemma3_12b-it-qat.yaml",
-    "ollama-qwen": "/mnt/lib/config/qwen3_14b-q4_K_M.yaml",
+    "ollama-gemma": "./lib/config/gemma3_12b-it-qat.yaml",
+    "ollama-qwen": "./lib/config/qwen3_14b-q4_K_M.yaml",
 }
 
 # GEMMA 4B (https://huggingface.co/google/gemma-3-4b-it)
 GEMMA_4B_IT = "google/gemma-3-4b-it"
 
-TRANSCRIPTION_METHODS = ['large_v2', 'breeze_asr_25', 'ggml_large_v2']
-TRANSLATE_METHODS = ['ollama-gemma', 'ollama-qwen', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini']
+TRANSCRIPTION_METHODS = ['large_v2', 'large_v3', 'breeze_asr_25', 'ggml_large_v2', 'ggml_large_v3', 'ggml_breeze_asr_25']
+TRANSLATE_METHODS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini'] # 'ollama-gemma', 'ollama-qwen' prepare for 403
 
 #############################################################################
 
