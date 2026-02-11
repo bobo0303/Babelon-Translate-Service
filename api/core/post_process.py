@@ -105,7 +105,7 @@ def post_process(text, audio_duration=None, prompt_name=None):
         except Exception as e:
             logger.error(f" | Step 2 (whitespace removal) error: {e} | ")
         
-        # 3. Clean 【】 and 《》 format and inside text
+        # 3. Clean 【】 and 《》and <||> format and inside text
         try:
             # Check for 【】 brackets
             if '【' in cleaned_text or '】' in cleaned_text:
@@ -120,6 +120,13 @@ def post_process(text, audio_duration=None, prompt_name=None):
                 cleaned_text = re.sub(r'《[^》]*》', '', cleaned_text)
                 cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
                 logger.warning(f" | Clean 《》format: '{original_text}' → '{cleaned_text}' | ")
+                
+            # Check for <||> brackets
+            if '<|' in cleaned_text or '|>' in cleaned_text:
+                original_text = cleaned_text
+                cleaned_text = re.sub(r'<\|[^|]*\|>', '', cleaned_text)
+                cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+                logger.warning(f" | Clean <||> format: '{original_text}' → '{cleaned_text}' | ")
         except Exception as e:
             logger.error(f" | Step 3 (bracket cleaning) error: {e} | ")
 
@@ -700,7 +707,7 @@ def post_process(text, audio_duration=None, prompt_name=None):
 if __name__ == "__main__":
     
     # Example test
-    sample_text = "字幕由 Amara.org 社群提供"
+    sample_text = "<| 6.55|>我知道很多在場主管是<| 9.59|><| 9.59|>當然<| 10.59|>"
     audio_dur = None
     
     retry, processed_text = post_process(sample_text, audio_dur)
