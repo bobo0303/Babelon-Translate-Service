@@ -628,11 +628,11 @@ async def translate_pipeline(
         response_tracker.cleanup(audio_uid, task_id)
         return BaseResponse(status=Status.OK, message=" | Translation task was cancelled due to newer request | ", data=response_data)
     
-    if result and result[0] is not None:  # Check if cancelled or failed
+    if result and result[1] is not None:  # Check if cancelled or failed
         # Mark older pending requests as cancelled
         response_tracker.complete_and_cancel_older(audio_uid, task_id, times)
         
-        ori_pred, n_segments, segments, translated_result, transcription_time, translate_time, translate_method, timing_dict = result
+        o_lang, ori_pred, n_segments, segments, translated_result, transcription_time, translate_time, translate_method, timing_dict = result
         
         # Check if this result indicates cancellation from other_info
         if other_info and 'cancelled_by_times' in other_info:
@@ -640,7 +640,9 @@ async def translate_pipeline(
             logger.info(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}) cancelled by newer request (times: {cancelled_by}) | ")
             response_tracker.cleanup(audio_uid, task_id)
             return BaseResponse(status=Status.OK, message=" | Translation task was cancelled due to newer request | ", data=response_data)
-       
+
+        if response_data.ori_lang == 'auto':
+            response_data.ori_lang = o_lang if o_lang in LANGUAGE_LIST else 'auto'
         response_data.transcription_text = ori_pred
         response_data.n_segments = n_segments
         response_data.segments = segments

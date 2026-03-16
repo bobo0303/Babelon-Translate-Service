@@ -337,7 +337,7 @@ class TranscribeManager:
                 
                 # Execute transcription (set processing = True)
                 self.processing = True
-                ori_pred, n_segments, segments, transcription_time, audio_length = self.transcribe(
+                ori, ori_pred, n_segments, segments, transcription_time, audio_length = self.transcribe(
                     audio_file, o_lang, multi_strategy_transcription, 
                     transcription_post_processing, prev_text, trim_duration, trim_text
                 )
@@ -350,7 +350,7 @@ class TranscribeManager:
                 with self.task_lock:
                     self.current_task_id = None  # Clear current task
                     if task_id in self.task_results:
-                        self.task_results[task_id]['result'] = (ori_pred, n_segments, segments, transcription_time, audio_length)
+                        self.task_results[task_id]['result'] = (ori, ori_pred, n_segments, segments, transcription_time, audio_length)
                         self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
                         logger.debug(f" | Task {task_id} completed (trim: {trim_duration:.3f}s). | ")
                     else:
@@ -395,7 +395,7 @@ class TranscribeManager:
         # 檢查音訊是否成功載入
         if audio is None:
             logger.error(f" | transcribe() audio is None, file may not exist or corrupted: {audio_path} | ")
-            return "", 0, [], 0.0, 0.0
+            return "", "", 0, [], 0.0, 0.0
         
         # Apply audio trimming if trim_duration > 0
         actual_trim_duration = 0.0

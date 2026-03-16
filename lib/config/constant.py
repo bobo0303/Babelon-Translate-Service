@@ -57,7 +57,7 @@ TRIM_SESSION_TIMEOUT = 300  # Session timeout in seconds (5 minutes)
 # Translation Languages
 #############################################################################
 
-LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de']  # ['zh', 'en', 'ja', 'ko', "de", "es"]
+LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de', 'auto']  # ['zh', 'en', 'ja', 'ko', "de", "es"]
 DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
 #############################################################################
@@ -85,7 +85,7 @@ class AudioTranslationResponse(BaseModel):
 
 class TextTranslationResponse(BaseModel):
     ori_lang: str = ""
-    text: Dict[str, str] = {}
+    text: Dict[str, str] = DEFAULT_RESULT.copy()
     translate_time: float = 0.0
 
 #############################################################################

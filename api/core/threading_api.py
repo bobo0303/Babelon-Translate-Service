@@ -56,6 +56,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     """
     # Initialize default output structure
     result = {
+        'ori': "",
         'ori_pred': "",
         'n_segments': 0,
         'segments': [],
@@ -170,7 +171,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
             trim_manager.release_session(audio_uid, is_audio_end=(multi_strategy_transcription == 4))
         return tuple(result.values()), build_trim_info('transcription_failed')
     
-    result['ori_pred'], result['n_segments'], result['segments'], result['transcription_time'], audio_length = transcription_result
+    result['ori'], result['ori_pred'], result['n_segments'], result['segments'], result['transcription_time'], audio_length = transcription_result
     
     # ========== Trim: 添加結果到 window 並檢查穩定性 ==========
     if trim_enabled and result['ori_pred'] and result['segments']:

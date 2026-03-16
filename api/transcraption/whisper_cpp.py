@@ -221,6 +221,13 @@ lib.whisper_tokenize.argtypes = [
 ]
 lib.whisper_tokenize.restype = ctypes.c_int
 
+# language detection
+lib.whisper_full_lang_id_from_state.argtypes = [ctypes.POINTER(WhisperState)]
+lib.whisper_full_lang_id_from_state.restype = ctypes.c_int
+
+lib.whisper_lang_str.argtypes = [ctypes.c_int]
+lib.whisper_lang_str.restype = ctypes.c_char_p
+
 # release model
 lib.whisper_free.argtypes = [ctypes.POINTER(WhisperContext)]
 lib.whisper_free.restype = None
@@ -470,6 +477,11 @@ class WhisperCpp:
                 else:
                     logger.error(f" | Transcription failed for temp={temperature} | ")
                 return None
+        
+            if ori == "auto":
+                lang_id = lib.whisper_full_lang_id_from_state(state)
+                lang_str = lib.whisper_lang_str(lang_id)
+                ori = lang_str.decode('utf-8') if lang_str else "unknown"
             
             n_segments = lib.whisper_full_n_segments_from_state(state)
             text_parts = []
@@ -515,6 +527,7 @@ class WhisperCpp:
             
             return {
                 'temperature': temperature,
+                'ori': ori,
                 'text': transcription,
                 'avg_logprob': avg_logprob,
                 'entropy': avg_entropy,
@@ -539,9 +552,9 @@ class WhisperCpp:
         results = [r for r in results if r is not None]
         
         if not results:
-            return "", 0, [], False
+            return ori, "", 0, [], False
         
-        # Select best result
+        # Select best result (returns ori, text, n_segments, segments, quality_passed)
         return self._select_best_result(results)
     
     
@@ -555,13 +568,13 @@ class WhisperCpp:
             if result['avg_logprob'] > LOGPROB_THOLD and result['entropy'] < ENTROPY_THOLD:
                 logger.info(f" | Multi-temp: Selected temp={result['temperature']:.1f} "
                           f"(logprob={result['avg_logprob']:.2f}, entropy={result['entropy']:.2f}) | ")
-                return result['text'], result['n_segments'], result['segments'], True
+                return result['ori'], result['text'], result['n_segments'], result['segments'], True
         
         # If none pass, return lowest temperature result
         best = results[0]
         logger.warning(f" | Multi-temp: No result passed quality check, using temp={best['temperature']:.1f} "
                    f"(logprob={best['avg_logprob']:.2f}, entropy={best['entropy']:.2f}) | ")
-        return best['text'], best['n_segments'], best['segments'], False
+        return best['ori'], best['text'], best['n_segments'], best['segments'], False
     
     def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
         """        
@@ -593,7 +606,7 @@ class WhisperCpp:
                 if strategy == MAX_NUM_STRATEGIES - 1:
                     # Strategy 4: Multi-temperature parallel processing
                     logger.info(f" | Strategy {strategy+1}: Running multi-temperature parallel processing | ")
-                    ori_pred, n_segments, segments, _ = self._run_multi_temperature(audio, ori)
+                    ori, ori_pred, n_segments, segments, _ = self._run_multi_temperature(audio, ori)
                     
                     if not ori_pred:
                         logger.error(" | Multi-temperature processing failed | ")
@@ -643,6 +656,7 @@ class WhisperCpp:
                         logger.error(f" | Strategy {strategy+1} transcription failed | ")
                         continue
                     
+                    ori = result['ori']
                     ori_pred = result['text']
                     n_segments = result['n_segments']
                     segments = result['segments']
@@ -665,6 +679,7 @@ class WhisperCpp:
             end = time.time() 
             inference_time = end - start  
         except Exception as e:
+            ori = ""
             ori_pred = ""
             n_segments = 0
             segments = []
@@ -672,7 +687,7 @@ class WhisperCpp:
             audio_length = 0.0
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori_pred, n_segments, segments, inference_time, audio_length
+        return ori, ori_pred, n_segments, segments, inference_time, audio_length
 
 
 if __name__ == "__main__":
