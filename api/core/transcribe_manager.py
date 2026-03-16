@@ -104,7 +104,8 @@ class TranscribeManager:
         if self.prompt :
             if not self.prompt .endswith((',', '.', '。', '!', '！', '?', '？')):
                 self.prompt  += '.'
-            self.prompt  = f"These are our prompts {self.prompt } Let's continue."
+            if not (self.prompt.startswith("These are our prompts ") and self.prompt.endswith(" Let's continue.")):
+                self.prompt  = f"These are our prompts {self.prompt } Let's continue."
         
         try:
             self.transcriber.set_prompt(prompt=self.prompt )

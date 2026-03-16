@@ -170,7 +170,7 @@ async def get_items():
     logger.info(f" | ################# Translate methods ########################### | ")  
     logger.info(f" | current translation model is {translate_manager.translation_method} | ")  
     logger.info(f" | ############################################################### | ")  
-    return BaseResponse(message=f" | current transcription model is {transcribe_manager.transcription_method} | current translation model is {translate_manager.translation_method} | ", data=[transcribe_manager.transcription_method, translate_manager.translation_method])  
+    return BaseResponse(message=f" | current transcription model is {transcribe_manager.transcription_method} | current translation model is {translate_manager.translation_method} | ", data={"transcription": transcribe_manager.transcription_method, "translation": translate_manager.translation_method})  
 
 @app.get("/list_optional_items")  
 async def get_items():  
@@ -187,7 +187,7 @@ async def get_items():
     logger.info(f" | ################### Translate methods ############################# | ")  
     logger.info(f" | You can choose {TRANSLATE_METHODS} | ")  
     logger.info(f" | ################################################################### | ")  
-    return BaseResponse(message=f" | Transcription method: You can choose '{TRANSCRIPTION_METHODS}' | Translate method: You can choose '{TRANSLATE_METHODS}' | ", data=None)  
+    return BaseResponse(message=f" | Transcription method: You can choose '{TRANSCRIPTION_METHODS}' | Translate method: You can choose '{TRANSLATE_METHODS}' | ", data={"transcription_methods": TRANSCRIPTION_METHODS, "translate_methods": TRANSLATE_METHODS})  
    
 @app.post("/change_transcription_model")  
 async def change_transcription_model(model_name: str = Form(...)):  
