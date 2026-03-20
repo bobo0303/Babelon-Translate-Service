@@ -56,7 +56,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     """
     # Initialize default output structure
     result = {
-        'ori': "",
+        'detected_lang': "",
         'ori_pred': "",
         'n_segments': 0,
         'segments': [],
@@ -171,7 +171,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
             trim_manager.release_session(audio_uid, is_audio_end=(multi_strategy_transcription == 4))
         return tuple(result.values()), build_trim_info('transcription_failed')
     
-    result['ori'], result['ori_pred'], result['n_segments'], result['segments'], result['transcription_time'], audio_length = transcription_result
+    result['detected_lang'], result['ori_pred'], result['n_segments'], result['segments'], result['transcription_time'], audio_length = transcription_result
     
     # ========== Trim: 添加結果到 window 並檢查穩定性 ==========
     if trim_enabled and result['ori_pred'] and result['segments']:
@@ -205,6 +205,9 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         stable_text = ""
         unstable_text = result['ori_pred']
     
+    if o_lang == 'auto' and result['detected_lang']:
+        o_lang = result['detected_lang']
+        
     # Step 4: Handle translation if needed
     if t_lang:
         try:
@@ -279,7 +282,7 @@ def audio_translate(transcribe_manager, translate_manager, audio_file_path, resu
         The event used to signal stopping.  
     """  
     try:
-        ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, o_lang, strategy, post_processing, prev_text)
+        detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, o_lang, strategy, post_processing, prev_text)
         if t_lang:
             # t_lang is already a list from main.py
             translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, o_lang, t_lang, prev_text, multi_translate)  
@@ -371,7 +374,7 @@ def audio_translate_sse(transcribe_manager, translate_manager, audio_file_path, 
     try:
         transcribe_manager.processing = True
         
-        ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
+        detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
         if other_information["use_translate"]:
             # Get target_langs from other_information or default to all languages
             target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != ori])

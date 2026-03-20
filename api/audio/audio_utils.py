@@ -94,7 +94,17 @@ def add_silence_padding(audio, sr, padding_duration=0.05):  # Reduce to 0.05 sec
         return padded_audio
 
         
-def audio_preprocess(audio_path, padding_duration=0.05):
+def audio_preprocess(audio_path, padding_duration=0.05, max_duration=28.0, reject_duration=60.0):
+    # Check duration before loading (fast metadata read)
+    try:
+        info = sf.info(audio_path)
+        raw_duration = info.frames / info.samplerate
+        if reject_duration and raw_duration > reject_duration:
+            logger.warning(f" | audio_preprocess rejected: duration {raw_duration:.2f}s > {reject_duration:.2f}s | File: {audio_path} | ")
+            return None, 0.0
+    except Exception as e:
+        logger.warning(f" | audio_preprocess info check failed: {e} | File: {audio_path} | ")
+    
     # fast load
     try:
         audio, sr = sf.read(audio_path)
@@ -108,6 +118,13 @@ def audio_preprocess(audio_path, padding_duration=0.05):
         # Convert to mono if stereo
         if len(audio.shape) > 1:
             audio = audio.mean(axis=1)
+        
+        # Truncate to max_duration if exceeded
+        if max_duration and audio_length > max_duration:
+            max_samples = int(max_duration * sr)
+            audio = audio[:max_samples]
+            logger.debug(f" | audio_preprocess truncated from {audio_length:.2f}s to {max_duration:.2f}s | File: {audio_path} | ")
+            audio_length = max_duration
             
         # silence padding
         if SILENCE_PADDING:

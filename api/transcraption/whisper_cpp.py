@@ -481,7 +481,9 @@ class WhisperCpp:
             if ori == "auto":
                 lang_id = lib.whisper_full_lang_id_from_state(state)
                 lang_str = lib.whisper_lang_str(lang_id)
-                ori = lang_str.decode('utf-8') if lang_str else "unknown"
+                detected_lang = lang_str.decode('utf-8') if lang_str else "unknown"
+            else:
+                detected_lang = ""
             
             n_segments = lib.whisper_full_n_segments_from_state(state)
             text_parts = []
@@ -527,7 +529,7 @@ class WhisperCpp:
             
             return {
                 'temperature': temperature,
-                'ori': ori,
+                'detected_lang': detected_lang,
                 'text': transcription,
                 'avg_logprob': avg_logprob,
                 'entropy': avg_entropy,
@@ -568,13 +570,13 @@ class WhisperCpp:
             if result['avg_logprob'] > LOGPROB_THOLD and result['entropy'] < ENTROPY_THOLD:
                 logger.info(f" | Multi-temp: Selected temp={result['temperature']:.1f} "
                           f"(logprob={result['avg_logprob']:.2f}, entropy={result['entropy']:.2f}) | ")
-                return result['ori'], result['text'], result['n_segments'], result['segments'], True
+                return result['detected_lang'], result['text'], result['n_segments'], result['segments'], True
         
         # If none pass, return lowest temperature result
         best = results[0]
         logger.warning(f" | Multi-temp: No result passed quality check, using temp={best['temperature']:.1f} "
                    f"(logprob={best['avg_logprob']:.2f}, entropy={best['entropy']:.2f}) | ")
-        return best['ori'], best['text'], best['n_segments'], best['segments'], False
+        return best['detected_lang'], best['text'], best['n_segments'], best['segments'], False
     
     def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
         """        
@@ -606,7 +608,7 @@ class WhisperCpp:
                 if strategy == MAX_NUM_STRATEGIES - 1:
                     # Strategy 4: Multi-temperature parallel processing
                     logger.info(f" | Strategy {strategy+1}: Running multi-temperature parallel processing | ")
-                    ori, ori_pred, n_segments, segments, _ = self._run_multi_temperature(audio, ori)
+                    detected_lang, ori_pred, n_segments, segments, _ = self._run_multi_temperature(audio, ori)
                     
                     if not ori_pred:
                         logger.error(" | Multi-temperature processing failed | ")
@@ -656,7 +658,7 @@ class WhisperCpp:
                         logger.error(f" | Strategy {strategy+1} transcription failed | ")
                         continue
                     
-                    ori = result['ori']
+                    detected_lang = result['detected_lang']
                     ori_pred = result['text']
                     n_segments = result['n_segments']
                     segments = result['segments']
@@ -679,7 +681,7 @@ class WhisperCpp:
             end = time.time() 
             inference_time = end - start  
         except Exception as e:
-            ori = ""
+            detected_lang = ""
             ori_pred = ""
             n_segments = 0
             segments = []
@@ -687,7 +689,52 @@ class WhisperCpp:
             audio_length = 0.0
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori, ori_pred, n_segments, segments, inference_time, audio_length
+        return detected_lang, ori_pred, n_segments, segments, inference_time, audio_length
+    
+    def detect_language(self, audio):
+        """Detect language of the given audio using the current transcriber."""
+        
+        state = lib.whisper_init_state(self.transcriber)
+        if not state:
+            logger.error(" | Failed to create whisper state for language detection | ")
+            return "unknown", 0.0
+        
+        try:
+            _ = lib.whisper_pcm_to_mel_with_state(
+                self.transcriber,
+                state,
+                audio.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+                len(audio),
+                8  # n_threads
+            )
+            
+            n_langs = lib.whisper_lang_max_id() + 1  # language number
+            lang_probs = (ctypes.c_float * n_langs)()  # create probability array
+            
+            # language detection
+            lang_id = lib.whisper_lang_auto_detect_with_state(
+                self.transcriber,
+                state,
+                0,  # offset_ms
+                8,  # n_threads
+                lang_probs
+            )
+            
+            if lang_id >= 0:
+                # Get detected language
+                lang_str = lib.whisper_lang_str(lang_id)
+                detected_language = lang_str.decode('utf-8') if lang_str else "unknown"
+                
+                # Get confidence (probability of detected language)
+                confidence = float(lang_probs[lang_id])
+            else:
+                detected_language = "unknown"
+                confidence = 0.0
+                
+            return detected_language, confidence
+        
+        finally:
+            lib.whisper_free_state(state)
 
 
 if __name__ == "__main__":
@@ -705,7 +752,7 @@ if __name__ == "__main__":
     # cpp_whisper.set_prompt("")
     # cpp_whisper.set_prompt("拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul, AUO, 彭双浪, 柯富仁")
     
-    ori_pred, n_segments, segments, inference_time, audio_length = cpp_whisper.transcribe(audio_path, audio, None, "zh", multi_strategy_transcription=1, post_processing=True, prev_text="")
+    detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = cpp_whisper.transcribe(audio_path, audio, None, "zh", multi_strategy_transcription=1, post_processing=True, prev_text="")
     
     print(f"Transcription: {ori_pred}")
     print(f"Segments: {n_segments}")

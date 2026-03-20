@@ -1,6 +1,7 @@
 import gc  
 import time  
 import torch
+import librosa
 import logging  
 import logging.handlers
 
@@ -209,27 +210,102 @@ class WhisperTransformer:
                         generate_kwargs["prompt_ids"] = trim_prompt
                     
                 # prepare input audio if unread give audio path 
-                audio_input = audio if audio is not None else audio_path
-                transcription_result = self.pipe(
+                # audio_input = audio if audio is not None else audio_path
+                
+                # whole pipelne not support return detecct language yet (20260316 bug issue). We use another transcribe way below 
+                # transcription_result = self.pipe(
+                #     audio_input, 
+                #     generate_kwargs=generate_kwargs,
+                #     return_timestamps=True  
+                # )
+                
+                # ori_pred = transcription_result["text"]
+                # logger.debug(f" | Raw Transcription: {ori_pred} | ")
+                
+                # chunks = transcription_result.get("chunks", [])
+                # segments = []
+                # for idx, chunk in enumerate(chunks):
+                #     ts = chunk.get("timestamp", (0.0, 0.0))
+                #     segments.append({
+                #         'index': idx,
+                #         'start': ts[0] if ts[0] is not None else 0.0,
+                #         'end': ts[1] if ts[1] is not None else 0.0,
+                #         'text': chunk.get("text", "").strip()
+                #     })
+                # n_segments = len(segments)
+                
+                # audio path load audio if audio is None
+                audio_input = audio
+                if audio is None:
+                    audio_input, _ = librosa.load(audio_path, sr=16000)
+                    
+                # audio to mel spectrogram
+                audio_input = self.pipe.feature_extractor(
                     audio_input, 
-                    generate_kwargs=generate_kwargs,
-                    return_timestamps=True  
+                    sampling_rate=16000, 
+                    return_tensors="pt"
+                ).input_features.to(device=self.device, dtype=self.pipe.model.dtype)
+
+                # transcribe with model.generate and get language tag from token and do token to text by ourself
+                transcription_result = self.pipe.model.generate(
+                    audio_input,
+                    return_timestamps=True,
+                    return_dict_in_generate=True,
+                    language=generate_kwargs["language"] if generate_kwargs["language"] != "auto" else None, 
+                    task=generate_kwargs["task"],
+                    temperature=generate_kwargs["temperature"],
+                    do_sample=generate_kwargs["do_sample"],
+                    forced_decoder_ids=generate_kwargs["forced_decoder_ids"],
+                    prompt_ids=generate_kwargs.get("prompt_ids", None),
                 )
                 
-                ori_pred = transcription_result["text"]
-                logger.debug(f" | Raw Transcription: {ori_pred} | ")
-                
-                chunks = transcription_result.get("chunks", [])
+                # 初始化變數
+                detected_language = ori if ori != "auto" else "unknown"
+                transcription_parts = []
                 segments = []
-                for idx, chunk in enumerate(chunks):
-                    ts = chunk.get("timestamp", (0.0, 0.0))
-                    segments.append({
-                        'index': idx,
-                        'start': ts[0] if ts[0] is not None else 0.0,
-                        'end': ts[1] if ts[1] is not None else 0.0,
-                        'text': chunk.get("text", "").strip()
-                    })
+                
+                for batch_segments in transcription_result['segments']:
+                    for seg in batch_segments:
+                        # time stamps
+                        start_time = seg['start'].item() if hasattr(seg['start'], 'item') else float(seg['start'])
+                        end_time = seg['end'].item() if hasattr(seg['end'], 'item') else float(seg['end'])
+                        
+                        # 從 result['sequences'] 提取語言 (僅在 auto 模式且尚未檢測時)
+                        if detected_language == "unknown":
+                            result_seq = seg['result']['sequences']
+                            # 找 <|startoftranscript|> (50258) 後面的語言 token
+                            start_token_id = 50258
+                            for i, t in enumerate(result_seq):
+                                t_val = t.item() if hasattr(t, 'item') else t
+                                if t_val == start_token_id and i + 1 < len(result_seq):
+                                    lang_token_id = result_seq[i + 1].item() if hasattr(result_seq[i + 1], 'item') else result_seq[i + 1]
+                                    lang_token_str = self.pipe.tokenizer.decode([lang_token_id])
+                                    detected_language = lang_token_str.strip("<|>")
+                                    break
+                        
+                        # Decode segment text
+                        seg_text = self.pipe.tokenizer.decode(seg['tokens'], skip_special_tokens=True)
+                        transcription_parts.append(seg_text)
+                        
+                        # 建立 segment (原本格式)
+                        segments.append({
+                            'index': len(segments),
+                            'start': start_time if start_time is not None else 0.0,
+                            'end': end_time if end_time is not None else 0.0,
+                            'text': seg_text.strip()
+                        })
+                
+                # 合併所有 segments 的文字
+                ori_pred = ''.join(transcription_parts)
                 n_segments = len(segments)
+                
+                # 更新 ori 為檢測到的語言 (供後續使用)
+                if ori == "auto":
+                    detected_lang = detected_language
+                else:
+                    detected_lang = ""
+                    
+                logger.debug(f" | Raw Transcription: {ori_pred} | ")
                 
                 if post_processing:
                     audio_duration = get_audio_duration(audio_path) if audio_length is None else audio_length
@@ -249,6 +325,7 @@ class WhisperTransformer:
             end = time.time() 
             inference_time = end - start  
         except Exception as e:
+            detected_lang = ""
             ori_pred = ""
             inference_time = 0
             audio_length = 0.0
@@ -256,6 +333,42 @@ class WhisperTransformer:
             segments = []
             logger.error(f" | transcribe() error: {e} | ") 
 
-        return ori_pred, n_segments, segments, inference_time, audio_length
+        return detected_lang, ori_pred, n_segments, segments, inference_time, audio_length
 
-    
+    def detect_language(self, audio, count_confidence=True):
+        """Detect language of the given audio using the current transcriber."""
+
+        try:
+            # prepare input feature 
+            input_features = self.pipe.feature_extractor(
+                audio, 
+                sampling_rate=16000, 
+                return_tensors="pt"
+            ).input_features.to(self.pipe.device, dtype=self.pipe.model.dtype)
+            
+            # detect language token and confidence (if count_confidence=True)
+            with torch.no_grad():
+                # detect_language ID (50259 ~ 50358)
+                lang_token_ids = self.pipe.model.detect_language(input_features)
+                
+                # ID to language string
+                detected_token_id = lang_token_ids[0].item()
+                detected_language = self.pipe.tokenizer.decode(detected_token_id).strip("<|>")
+                
+                if count_confidence:
+                    # encoder + once decoder step to get confidence
+                    encoder_outputs = self.pipe.model.get_encoder()(input_features)
+                    decoder_input_ids = torch.tensor([[self.pipe.model.config.decoder_start_token_id]]).to(self.pipe.device)
+                    outputs = self.pipe.model(encoder_outputs=encoder_outputs, decoder_input_ids=decoder_input_ids)
+                    logits = outputs.logits[0, 0]
+                    probs = torch.softmax(logits, dim=-1)
+                    confidence = probs[detected_token_id].item()
+                else:
+                    confidence = 0.0
+                    
+        except Exception as e:
+            detected_language = "unknown"
+            confidence = 0.0
+            logger.error(f" | detect_language() error: {e} | ")
+        
+        return detected_language, confidence

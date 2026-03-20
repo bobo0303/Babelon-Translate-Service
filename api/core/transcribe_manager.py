@@ -337,7 +337,7 @@ class TranscribeManager:
                 
                 # Execute transcription (set processing = True)
                 self.processing = True
-                ori, ori_pred, n_segments, segments, transcription_time, audio_length = self.transcribe(
+                detected_lang, ori_pred, n_segments, segments, transcription_time, audio_length = self.transcribe(
                     audio_file, o_lang, multi_strategy_transcription, 
                     transcription_post_processing, prev_text, trim_duration, trim_text
                 )
@@ -350,7 +350,7 @@ class TranscribeManager:
                 with self.task_lock:
                     self.current_task_id = None  # Clear current task
                     if task_id in self.task_results:
-                        self.task_results[task_id]['result'] = (ori, ori_pred, n_segments, segments, transcription_time, audio_length)
+                        self.task_results[task_id]['result'] = (detected_lang, ori_pred, n_segments, segments, transcription_time, audio_length)
                         self.task_results[task_id]['event'].set()  # Wake up waiting endpoint
                         logger.debug(f" | Task {task_id} completed (trim: {trim_duration:.3f}s). | ")
                     else:
@@ -431,3 +431,14 @@ class TranscribeManager:
                                            trim_text)
 
     
+    def detect_language(self, audio_path):
+        """Detect language of the given audio using the current transcriber."""
+        
+        audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
+        
+        if audio_length <= 0:
+            return "unknown", 0.0
+        
+        return self.transcriber.detect_language(audio)
+        
+        

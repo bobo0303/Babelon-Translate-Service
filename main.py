@@ -19,8 +19,6 @@ from api.core.threading_api import audio_translate, texts_translate, waiting_tim
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
-# from api.core.benchmark_api import benchmark_router
-# from api.core.benchmark_helper import record_pipeline_result
 from lib.core.logging_config import setup_application_logger
 from wjy3 import BaseResponse, Status
 
@@ -120,7 +118,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(websocket_router)
-# app.include_router(benchmark_router, prefix="/benchmark", tags=["Benchmark"])
 
 # Mount static files for admin page
 if os.path.exists("./static"):
@@ -510,9 +507,6 @@ async def translate_pipeline(
     in parallel, allowing the next transcription to start while the previous translation
     is still running.
     """
-    # # Benchmark: record request start time
-    # request_start_time = time.time()
-    
     logger.debug(f" | Received pipeline translation request: audio_uid={audio_uid}, times={times}) | ")
     
     # Handle t_lang parameter
@@ -632,7 +626,7 @@ async def translate_pipeline(
         # Mark older pending requests as cancelled
         response_tracker.complete_and_cancel_older(audio_uid, task_id, times)
         
-        o_lang, ori_pred, n_segments, segments, translated_result, transcription_time, translate_time, translate_method, timing_dict = result
+        detected_lang, ori_pred, n_segments, segments, translated_result, transcription_time, translate_time, translate_method, timing_dict = result
         
         # Check if this result indicates cancellation from other_info
         if other_info and 'cancelled_by_times' in other_info:
@@ -641,8 +635,7 @@ async def translate_pipeline(
             response_tracker.cleanup(audio_uid, task_id)
             return BaseResponse(status=Status.OK, message=" | Translation task was cancelled due to newer request | ", data=response_data)
 
-        if response_data.ori_lang == 'auto':
-            response_data.ori_lang = o_lang if o_lang in LANGUAGE_LIST else 'auto'
+        response_data.detected_lang = detected_lang 
         response_data.transcription_text = ori_pred
         response_data.n_segments = n_segments
         response_data.segments = segments
@@ -670,7 +663,10 @@ async def translate_pipeline(
         timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
         
         logger.debug(f" | {response_data.model_dump_json()} | ")  
-        logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
+        if o_lang == "auto":
+            logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | detected language: {detected_lang} | translate_method: {translate_method} | time: {times} | ")  
+        else:
+            logger.info(f" | meeting_id: {response_data.meeting_id} | audio_uid: {response_data.audio_uid} | source language: {o_lang} | translate_method: {translate_method} | time: {times} | ")  
         if response_data.trim_updated:
             logger.info(f" | Trim updated | trim duration: {response_data.trim_duration:.2f}s | Stable Text: {response_data.stable_text} | ")
         logger.info(f" | Transcription: {ori_pred} | ")       
@@ -709,27 +705,6 @@ async def translate_pipeline(
 
     # Clean up this request from tracker
     response_tracker.cleanup(audio_uid, task_id)
-
-    # # === Benchmark Recording ===
-    # is_cancelled_for_benchmark = (state == Status.FAILED) or (other_info and 'cancelled_by_times' in other_info)
-    # cancel_type_for_benchmark = None
-    # if is_cancelled_for_benchmark:
-    #     if result and result[0] is None:
-    #         cancel_type_for_benchmark = "transcribe_cancel"
-    #     elif other_info and 'cancelled_by_times' in other_info:
-    #         cancel_type_for_benchmark = "translate_cancel"
-    # 
-    # record_pipeline_result(
-    #     audio_uid=audio_uid,
-    #     times=times,
-    #     start_time=request_start_time,
-    #     result=result,
-    #     other_info=other_info,
-    #     response_data=response_data,
-    #     is_cancelled=is_cancelled_for_benchmark,
-    #     cancel_type=cancel_type_for_benchmark,
-    #     is_final=(multi_strategy_transcription == 4)
-    # )
 
     # end = time.time()
     # logger.info(f" | Total pipeline processing time: {end - start:.2f} seconds. | ")
@@ -1078,6 +1053,46 @@ async def stop_sse():
     sse_stop_event.set() 
     return BaseResponse(status=Status.OK, message=" | SSE connection has been stopped | ", data=None)  
 
+@app.post("/language_detect")
+async def language_detect(  
+    file: UploadFile = File(...),  
+):  
+    """Detect the language of an audio file."""  
+    
+    return_data = {"detected_language": "unknown", 
+                   "confidence": 0.0}
+
+    if "breeze" in transcribe_manager.transcription_method:
+        logger.info(f" | current model \'{transcribe_manager.transcription_method}\' is not supported for the language detection | ")  
+        return BaseResponse(status=Status.FAILED, message=f" | current model \'{transcribe_manager.transcription_method}\' is not supported for the language detection | ", data=return_data)
+
+    start_time = time.time()
+    
+    try:  
+        # Save the uploaded audio file  
+        filename = f"temp_{int(time.time())}.wav"
+        os.makedirs("audio/temp", exist_ok=True)
+        audio_buffer = f"audio/temp/{filename}"  
+        
+        file_content = file.file.read()
+        with open(audio_buffer, 'wb') as f:  
+            f.write(file_content)  
+
+        detected_lang, confidence = transcribe_manager.detect_language(audio_buffer)  
+        return_data["detected_language"] = detected_lang
+        return_data["confidence"] = confidence
+        
+        # Clean up the temporary audio file
+        if os.path.exists(audio_buffer):
+            os.remove(audio_buffer)
+            
+        end_time = time.time()
+
+        logger.info(f" | Detect time: {end_time - start_time:.2f}s | Detected language: {detected_lang} | Confidence: {confidence:.2f} | ")  
+        return BaseResponse(status=Status.OK, message=f" | Detect time: {end_time - start_time:.2f}s | Detected language: {detected_lang} | Confidence: {confidence:.2f} | ", data=return_data)  
+    except Exception as e:  
+        logger.error(f" | language_detect() error: {e} | ")  
+        return BaseResponse(status=Status.FAILED, message=f" | language_detect() error: {e} | ", data=return_data)
 
 ##############################################################################  
 # Utility Functions

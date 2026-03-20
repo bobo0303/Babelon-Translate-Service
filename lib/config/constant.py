@@ -66,6 +66,7 @@ class AudioTranslationResponse(BaseModel):
     meeting_id: str = ""
     device_id: str
     ori_lang: str = ""
+    detected_lang: str = ""
     transcription_text: str = ""
     n_segments: int = 0
     segments: List[Dict[str, Any]] = []
