@@ -15,6 +15,7 @@ from threading import Thread, Event
 from api import websocket_router
 from api.core.transcribe_manager import TranscribeManager
 from api.core.translate_manager import TranslateManager
+from api.azure_sdk.speech_lid import AzureSpeechLID
 from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
@@ -49,6 +50,7 @@ use_pretext = True
 # Initialize global objects and variables
 transcribe_manager = TranscribeManager()
 translate_manager = TranslateManager()
+azure_speech = AzureSpeechLID()  # Initialize Azure Speech LID
 response_tracker = ResponseTracker()  # Tracker to prevent race conditions
 waiting_list = []  # Queue for waiting translation requests
 sse_stop_event = Event()  # Global event to control SSE connection
@@ -1056,13 +1058,14 @@ async def stop_sse():
 @app.post("/language_detect")
 async def language_detect(  
     file: UploadFile = File(...),  
+    method: str = Form("whisper") # "whisper" or "azure_speech"
 ):  
     """Detect the language of an audio file."""  
     
     return_data = {"detected_language": "unknown", 
                    "confidence": 0.0}
 
-    if "breeze" in transcribe_manager.transcription_method:
+    if method != "azure_speech" and "breeze" in transcribe_manager.transcription_method:
         logger.info(f" | current model \'{transcribe_manager.transcription_method}\' is not supported for the language detection | ")  
         return BaseResponse(status=Status.FAILED, message=f" | current model \'{transcribe_manager.transcription_method}\' is not supported for the language detection | ", data=return_data)
 
@@ -1077,10 +1080,15 @@ async def language_detect(
         file_content = file.file.read()
         with open(audio_buffer, 'wb') as f:  
             f.write(file_content)  
-
-        detected_lang, confidence = transcribe_manager.detect_language(audio_buffer)  
-        return_data["detected_language"] = detected_lang
-        return_data["confidence"] = confidence
+            
+        if method == "azure_speech":
+            lid_result = await azure_speech.detect_language(audio_buffer)
+            return_data["detected_language"] = lid_result.language
+            return_data["confidence"] = lid_result.confidence
+        else:
+            detected_lang, confidence = transcribe_manager.detect_language(audio_buffer)  
+            return_data["detected_language"] = detected_lang
+            return_data["confidence"] = confidence
         
         # Clean up the temporary audio file
         if os.path.exists(audio_buffer):
@@ -1088,8 +1096,8 @@ async def language_detect(
             
         end_time = time.time()
 
-        logger.info(f" | Detect time: {end_time - start_time:.2f}s | Detected language: {detected_lang} | Confidence: {confidence:.2f} | ")  
-        return BaseResponse(status=Status.OK, message=f" | Detect time: {end_time - start_time:.2f}s | Detected language: {detected_lang} | Confidence: {confidence:.2f} | ", data=return_data)  
+        logger.info(f" | Detect time: {end_time - start_time:.2f}s | Detected language: {return_data['detected_language']} | Confidence: {return_data['confidence']:.2f} | ")  
+        return BaseResponse(status=Status.OK, message=f" | Detect time: {end_time - start_time:.2f}s | Detected language: {return_data['detected_language']} | Confidence: {return_data['confidence']:.2f} | ", data=return_data)  
     except Exception as e:  
         logger.error(f" | language_detect() error: {e} | ")  
         return BaseResponse(status=Status.FAILED, message=f" | language_detect() error: {e} | ", data=return_data)
@@ -1153,7 +1161,7 @@ def schedule_daily_task(stop_event):
         time.sleep(1)  
   
 if __name__ == "__main__":  
-    port = int(os.environ.get("PORT", 80))  
+    port = int(os.environ.get("PORT", 83))  
     uvicorn.config.LOGGING_CONFIG["formatters"]["default"]["fmt"] = "%(asctime)s [%(name)s] %(levelprefix)s %(message)s"  
     uvicorn.config.LOGGING_CONFIG["formatters"]["access"]["fmt"] = '%(asctime)s [%(name)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'  
     uvicorn.run(app, log_level='info', host='0.0.0.0', port=port)   

@@ -60,6 +60,15 @@ TRIM_SESSION_TIMEOUT = 300  # Session timeout in seconds (5 minutes)
 LANGUAGE_LIST = ['zh', 'en', 'ja', 'ko', 'de', 'auto']  # ['zh', 'en', 'ja', 'ko', "de", "es"]
 DEFAULT_RESULT = {lang: "" for lang in LANGUAGE_LIST}
 
+# Azure Speech SDK 語言標籤映射（簡短標籤 -> Azure locale）
+LANG_TO_AZURE_LOCALE = {
+    "zh": "zh-TW",
+    "en": "en-US",
+    "ja": "ja-JP",
+    "ko": "ko-KR",
+    "de": "de-DE",
+}
+
 #############################################################################
 
 class AudioTranslationResponse(BaseModel):
