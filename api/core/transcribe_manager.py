@@ -90,6 +90,10 @@ class TranscribeManager:
             
         return None
 
+    def get_current_prompt(self):
+        """Get the current prompt text."""
+        return self.prompt
+    
     def set_prompt(self, prompt):  
         """  
         Set the prompt for the transcription model.  

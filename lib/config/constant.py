@@ -21,7 +21,6 @@ class ModelPath(BaseModel):
     
 CPP_LIB_PATH = "./lib/cpp/src/libwhisper.so"
 
-
 # gpt-4o
 AZURE_CONFIG = './lib/config/azure_config.yaml'
 
@@ -36,6 +35,10 @@ GEMMA_4B_IT = "google/gemma-3-4b-it"
 
 TRANSCRIPTION_METHODS = ['large_v2', 'large_v3', 'breeze_asr_25', 'ggml_large_v2', 'ggml_large_v3', 'ggml_breeze_asr_25']
 TRANSLATE_METHODS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini'] # 'ollama-gemma', 'ollama-qwen' prepare for 403
+
+#############################################################################
+
+BACKEND_IP_LIST: List[str] = [""]
 
 #############################################################################
 
