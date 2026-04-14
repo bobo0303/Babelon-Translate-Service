@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import os  
 import time  
@@ -18,7 +18,8 @@ from api.core.translate_manager import TranslateManager
 from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
-from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model
+from lib.core.heartbeat import HeartbeatService, HeartbeatResponse, create_heartbeat_service
+from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_IP_LIST
 from lib.core.logging_config import setup_application_logger
 from wjy3 import BaseResponse, Status
 
@@ -45,6 +46,12 @@ utc_now = datetime.datetime.now(pytz.utc)
 tz = pytz.timezone('Asia/Taipei')  
 local_now = utc_now.astimezone(tz)  
 use_pretext = True
+
+# Initialize heartbeat service
+heartbeat_service = create_heartbeat_service(
+    backend_ips=BACKEND_IP_LIST,
+    timezone=tz
+)
   
 # Initialize global objects and variables
 transcribe_manager = TranscribeManager()
@@ -61,6 +68,7 @@ async def lifespan(app: FastAPI):
     """
     try:
         # Startup
+        heartbeat_service.set_start_time()
         logger.info(f" | ##################################################### | ")  
         logger.info(f" | Start to loading default model. | ")  
         # load model  
@@ -92,6 +100,10 @@ async def lifespan(app: FastAPI):
         # Start daily task scheduling  
         task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
         task_thread.start()
+        
+        # Send startup notification to backend services (active heartbeat)
+        await heartbeat_service.notify_backends()
+        logger.info(f" | Local IP: {heartbeat_service.local_ip}:{heartbeat_service.port} | ")
         
         yield  # Application starts receiving requests
         
@@ -132,25 +144,30 @@ def HelloWorld(name:str=None):
     """Health check endpoint."""
     return {"Hello": f"World {name}"}  
 
-# @app.get("/admin", response_class=HTMLResponse)
-# async def admin_page():
-#     """
-#     WebSocket Admin Console page.
+##############################################################################
+# Heartbeat Endpoints
+##############################################################################
+
+@app.get("/heartbeat")
+async def heartbeat():
+    """
+    Passive heartbeat endpoint - Let other services call this API to check status
     
-#     Provides a web-based interface for:
-#     - Monitoring WebSocket connections
-#     - Testing WebSocket messages
-#     - Streaming audio from microphone
-#     - Viewing real-time message logs
-#     """
-#     admin_html_path = os.path.join("static", "admin.html")
-#     if os.path.exists(admin_html_path):
-#         return FileResponse(admin_html_path)
-#     else:
-#         return HTMLResponse(
-#             content="<h1>Admin page not found</h1><p>Please ensure static/admin.html exists.</p>",
-#             status_code=404
-#         )
+    Returns:
+        BaseResponse: Contains HeartbeatResponse details
+    """
+    response = heartbeat_service.get_heartbeat_response(
+        is_processing=transcribe_manager.processing,
+        model_loaded=transcribe_manager.transcription_method is not None
+    )
+    
+    logger.debug(f" | Heartbeat requested | status: {response.status} | uptime: {response.uptime_seconds:.2f}s | ")
+    return BaseResponse(
+        status=Status.OK,
+        message=f" | Heartbeat from {response.ip}:{response.port} | ",
+        data=response.model_dump()
+    )
+
 
 ##############################################################################  
 
@@ -185,7 +202,8 @@ async def get_items():
     logger.info(f" | You can choose {TRANSLATE_METHODS} | ")  
     logger.info(f" | ################################################################### | ")  
     return BaseResponse(message=f" | Transcription method: You can choose '{TRANSCRIPTION_METHODS}' | Translate method: You can choose '{TRANSLATE_METHODS}' | ", data={"transcription_methods": TRANSCRIPTION_METHODS, "translate_methods": TRANSLATE_METHODS})  
-   
+
+
 @app.post("/change_transcription_model")  
 async def change_transcription_model(model_name: str = Form(...)):  
     """  
@@ -241,31 +259,18 @@ async def set_prompt(prompts = Form(None)):
     else:
         return BaseResponse(status=Status.OK, message=" | Prompt has been set successfully. | ", data=None)
     
-@app.post("/enable_pretext")
-async def enable_pretext():
+@app.post("/change_pretext_usage")
+async def change_pretext_usage(enable: bool = Form(True)):
     """
-    Enable the use of previous text context for transcription.
+    Enable or disable the use of previous text context for transcription.
     
     Returns:
         BaseResponse: Status of the operation
     """
     global use_pretext
-    use_pretext = True
-    logger.info(f" | Previous text context has been enabled. | ")
-    return BaseResponse(message=" | Previous text context has been enabled. | ", data={"use_pretext": use_pretext})
-
-@app.post("/disable_pretext")
-async def disable_pretext():
-    """
-    Disable the use of previous text context for transcription.
-    
-    Returns:
-        BaseResponse: Status of the operation
-    """
-    global use_pretext
-    use_pretext = False
-    logger.info(f" | Previous text context has been disabled. | ")
-    return BaseResponse(message=" | Previous text context has been disabled. | ", data={"use_pretext": use_pretext})
+    use_pretext = enable
+    logger.info(f" | Previous text context has been {'enabled' if use_pretext else 'disabled'}. | ")
+    return BaseResponse(message=f" | Previous text context has been {'enabled' if use_pretext else 'disabled'}. | ", data={"use_pretext": use_pretext})
 
 @app.get("/get_pretext_status")
 async def get_pretext_status():
