@@ -203,6 +203,17 @@ async def get_items():
     logger.info(f" | ################################################################### | ")  
     return BaseResponse(message=f" | Transcription method: You can choose '{TRANSCRIPTION_METHODS}' | Translate method: You can choose '{TRANSLATE_METHODS}' | ", data={"transcription_methods": TRANSCRIPTION_METHODS, "translate_methods": TRANSLATE_METHODS})  
 
+@app.get("get_current_prompt")
+async def get_current_prompt():
+    """
+    Get the current prompt used for transcription.
+    
+    Returns:
+        BaseResponse: Current prompt information
+    """
+    current_prompt = transcribe_manager.get_current_prompt()
+    logger.info(f" | Current prompt: {current_prompt} | ")
+    return BaseResponse(message=f" | Current prompt: {current_prompt} | ", data={"current_prompt": current_prompt})
 
 @app.post("/change_transcription_model")  
 async def change_transcription_model(model_name: str = Form(...)):  
