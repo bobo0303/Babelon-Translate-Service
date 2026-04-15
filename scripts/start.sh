@@ -14,16 +14,29 @@ NOTIFY_SCRIPT="$SCRIPT_DIR/notify.sh"
 POST_BUILD_TEST="$SCRIPT_DIR/post_build_test.sh"
 IMAGE_ID_FILE="$PROJECT_DIR/.last_image_id"
 
+# Load notification config early for error handler
+if [ -f "$PROJECT_DIR/.env.notify" ]; then
+    source "$PROJECT_DIR/.env.notify"
+fi
+
+# Error handler - send notification on any failure
+on_error() {
+    local exit_code=$?
+    local line_no=$1
+    echo -e "\033[0;31m❌ 腳本在第 ${line_no} 行失敗 (exit code: ${exit_code})\033[0m"
+    
+    if [ "$NOTIFY_ON_START" = "true" ] && [ -f "$NOTIFY_SCRIPT" ]; then
+        bash "$NOTIFY_SCRIPT" start-failed "Build/啟動失敗 (line ${line_no}, exit ${exit_code})"
+    fi
+    exit $exit_code
+}
+trap 'on_error ${LINENO}' ERR
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
-
-# Load notification config
-if [ -f "$PROJECT_DIR/.env.notify" ]; then
-    source "$PROJECT_DIR/.env.notify"
-fi
 
 # Change to project directory
 cd "$PROJECT_DIR"
