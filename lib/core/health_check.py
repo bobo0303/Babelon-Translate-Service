@@ -11,10 +11,17 @@ from typing import Optional
 
 import httpx
 from pydantic import BaseModel
-from lib.core.logging_config import get_logger
+from lib.core.logging_config import get_logger, create_logger
 
-# 獲取日誌器
+# 主 logger（啟動成功等重要訊息）
 logger = get_logger(__name__)  
+
+# Health check 專用 logger（只寫檔案，不輸出 terminal）
+hc_logger = create_logger(
+    "health_check",
+    log_file="logs/health_check.log",
+    console_output=False
+)
 
 ##############################################################################
 # Models
@@ -99,7 +106,7 @@ class HealthCheckService:
                 response = await client.get(url)
                 
                 if response.status_code != 200:
-                    logger.warning(f" | Backend health check failed: HTTP {response.status_code} from {self.backend_domain} | ")
+                    hc_logger.warning(f" | Backend health check failed: HTTP {response.status_code} from {self.backend_domain} | ")
                     return False
                 
                 # Parse JSON response
@@ -108,21 +115,21 @@ class HealthCheckService:
                     status = response_data.get("status", "")
                     
                     if status == "OK":
-                        logger.info(f" | Backend health check success: {self.backend_domain} is alive (status: OK) | ")
+                        hc_logger.info(f" | Backend health check success: {self.backend_domain} is alive (status: OK) | ")
                         return True
                     else:
-                        logger.warning(f" | Backend health check failed: {self.backend_domain} returned status '{status}' (expected 'OK') | ")
+                        hc_logger.warning(f" | Backend health check failed: {self.backend_domain} returned status '{status}' (expected 'OK') | ")
                         return False
                         
                 except Exception as parse_error:
-                    logger.warning(f" | Backend health check failed: Invalid JSON response from {self.backend_domain}: {parse_error} | ")
+                    hc_logger.warning(f" | Backend health check failed: Invalid JSON response from {self.backend_domain}: {parse_error} | ")
                     return False
                     
         except httpx.TimeoutException:
-            logger.warning(f" | Backend health check failed: Timeout connecting to {self.backend_domain} | ")
+            hc_logger.warning(f" | Backend health check failed: Timeout connecting to {self.backend_domain} | ")
             return False
         except Exception as e:
-            logger.warning(f" | Backend health check failed: Error connecting to {self.backend_domain}: {e} | ")
+            hc_logger.warning(f" | Backend health check failed: Error connecting to {self.backend_domain}: {e} | ")
             return False
     
     def get_health_check_response(
