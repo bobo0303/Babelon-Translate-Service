@@ -4,7 +4,7 @@ services:
   babelon-service:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile_service
     image: babelon-translate-service:latest
     container_name: babelon-translate-service
     restart: unless-stopped
