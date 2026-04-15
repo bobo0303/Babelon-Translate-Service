@@ -1,4 +1,3 @@
-import logging  
 import threading  
 import ctypes
 import uuid
@@ -7,9 +6,10 @@ import time
 from api.audio.audio_utils import calculate_rtf
 from lib.config.constant import DEFAULT_RESULT, ENABLE_TRIM
 from api.core.trim_session_manager import get_trim_manager
+from lib.core.logging_config import get_logger
 
-  
-logger = logging.getLogger(__name__)  
+# 獲取日誌器
+logger = get_logger(__name__)  
 
 def _cleanup_transcription_task(transcribe_manager, task_id):
     """

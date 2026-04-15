@@ -11,10 +11,10 @@ from fastapi import (
 )
 
 from api.websocket.websocket_manager import ConnectionManager
-from lib.core.logging_config import get_configured_logger
+from lib.core.logging_config import get_logger
 
-# 獲取配置好的日誌器
-logger = get_configured_logger(__name__)
+# 獲取日誌器
+logger = get_logger(__name__)
 
 router = APIRouter()
 connection_manager = ConnectionManager(logger)

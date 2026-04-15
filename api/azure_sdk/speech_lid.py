@@ -15,9 +15,9 @@ import azure.cognitiveservices.speech as speechsdk
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from lib.config.constant import AZURE_CONFIG, LANGUAGE_LIST, LANG_TO_AZURE_LOCALE
-from lib.core.logging_config import get_configured_logger
+from lib.core.logging_config import get_logger
 
-logger = get_configured_logger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -134,7 +134,6 @@ class AzureSpeechLID:
                         "language": lang,
                         "confidence": confidence
                     })
-                    logger.debug(f"Detected segment: lang={lang}, confidence={confidence}")
         
         def on_session_stopped(evt):
             loop.call_soon_threadsafe(done_event.set)

@@ -1,43 +1,18 @@
 import time  
 import torch
-import logging  
-import logging.handlers
 import threading
 import ctypes
 import uuid
-
 from queue import Queue  
 
 # from api.translation.gemma_translate import Gemma4BTranslate  
 from api.translation.ollama_translate import OllamaChat
 from api.translation.gpt_translate import GptTranslate  
-
 from lib.config.constant import OLLAMA_MODEL, DEFAULT_RESULT, TaskContext, SharedResources
-  
-  
-logger = logging.getLogger(__name__)  
-  
-# Configure logger settings (if not already configured)  
-if not logger.handlers:  
-    log_format = "%(asctime)s - %(message)s"  
-    log_file = "logs/app.log"  
-    logging.basicConfig(level=logging.INFO, format=log_format)  
-  
-    # Create file handler  
-    file_handler = logging.handlers.RotatingFileHandler(  
-        log_file, maxBytes=10*1024*1024, backupCount=5  
-    )  
-    file_handler.setFormatter(logging.Formatter(log_format))  
-  
-    # Create console handler  
-    console_handler = logging.StreamHandler()  
-    console_handler.setFormatter(logging.Formatter(log_format))  
-  
-    logger.addHandler(file_handler)  
-    logger.addHandler(console_handler)  
-  
-logger.setLevel(logging.INFO)  
-logger.propagate = False  
+from lib.core.logging_config import get_logger
+
+# 獲取日誌器
+logger = get_logger(__name__)  
 
 class TranslateManager:  
     def __init__(self):  

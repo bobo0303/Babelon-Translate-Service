@@ -1,15 +1,16 @@
 import os
 import sys
 import json
-import logging  
 import yaml
 import re
 from ollama import Client
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language
+from lib.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+# 獲取日誌器
+logger = get_logger(__name__)
  
 class OllamaChat:
     def __init__(self, config_path):

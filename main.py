@@ -6,7 +6,6 @@ import os
 import time  
 import pytz  
 import asyncio  
-import logging  
 import uvicorn  
 import datetime  
 import threading
@@ -19,9 +18,9 @@ from api.azure_sdk.speech_lid import AzureSpeechLID
 from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
-from lib.core.heartbeat import HeartbeatService, HeartbeatResponse, create_heartbeat_service
-from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_IP_LIST
-from lib.core.logging_config import setup_application_logger
+from lib.core.health_check import create_health_check_service
+from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN
+from lib.core.logging_config import get_logger
 from wjy3 import BaseResponse, Status
 
 # Create necessary directories if they don't exist
@@ -31,16 +30,9 @@ if not os.path.exists("./logs"):
     os.mkdir("./logs")
 if not os.path.exists("./static"):
     os.mkdir("./static")
-    
-# Configure logging using centralized configuration
-logger = setup_application_logger(
-    logger_name=__name__,
-    log_level=logging.INFO,
-    log_file="logs/app.log",
-    max_bytes=10*1024*1024,
-    backup_count=5,
-    console_output=True
-)  
+
+# Get logger (unified management)
+logger = get_logger(__name__)  
   
 # Configure UTC+8 time  
 utc_now = datetime.datetime.now(pytz.utc)  
@@ -48,9 +40,9 @@ tz = pytz.timezone('Asia/Taipei')
 local_now = utc_now.astimezone(tz)  
 use_pretext = True
 
-# Initialize heartbeat service
-heartbeat_service = create_heartbeat_service(
-    backend_ips=BACKEND_IP_LIST,
+# Initialize health check service
+health_check_service = create_health_check_service(
+    backend_domain=BACKEND_DOMAIN,
     timezone=tz
 )
   
@@ -70,7 +62,7 @@ async def lifespan(app: FastAPI):
     """
     try:
         # Startup
-        heartbeat_service.set_start_time()
+        health_check_service.set_start_time()
         logger.info(f" | ##################################################### | ")  
         logger.info(f" | Start to loading default model. | ")  
         # load model  
@@ -89,7 +81,7 @@ async def lifespan(app: FastAPI):
         transcribe_manager.set_prompt(DEFAULT_PROMPTS["DEFAULT"])
         logger.info(f" | Default prompt has been set. | ")  
         
-        # 設置 websocket 的 model
+        # Set WebSocket model
         # set_global_model(transcribe_manager)
         # logger.info(f" | WebSocket model has been set. Model ID: {id(transcribe_manager)} | ")
         
@@ -103,9 +95,9 @@ async def lifespan(app: FastAPI):
         task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
         task_thread.start()
         
-        # Send startup notification to backend services (active heartbeat)
-        await heartbeat_service.notify_backends()
-        logger.info(f" | Local IP: {heartbeat_service.local_ip}:{heartbeat_service.port} | ")
+        # Send startup notification to backend service (active health check)
+        await health_check_service.notify_backend()
+        logger.info(f" | ##################################################### | ")  
         
         yield  # Application starts receiving requests
         
@@ -147,46 +139,31 @@ def HelloWorld(name:str=None):
     return {"Hello": f"World {name}"}  
 
 ##############################################################################
-# Heartbeat Endpoints
+# Health Check Endpoints
 ##############################################################################
 
-@app.get("/heartbeat")
-async def heartbeat():
+@app.get("/health_check")
+async def health_check():
     """
-    Passive heartbeat endpoint - Let other services call this API to check status
+    Passive health check endpoint - Let other services call this API to check status
     
     Returns:
-        BaseResponse: Contains HeartbeatResponse details
+        BaseResponse: Contains HealthCheckResponse details
     """
-    response = heartbeat_service.get_heartbeat_response(
+    response = health_check_service.get_health_check_response(
         is_processing=transcribe_manager.processing,
         model_loaded=transcribe_manager.transcription_method is not None
     )
     
-    logger.debug(f" | Heartbeat requested | status: {response.status} | uptime: {response.uptime_seconds:.2f}s | ")
+    logger.info(f" | port: {response.port} | status: {response.status} | started_at: {response.started_at} | ")
     return BaseResponse(
         status=Status.OK,
-        message=f" | Heartbeat from {response.ip}:{response.port} | ",
+        message=f" | Health check from port {response.port} | ",
         data=response.model_dump()
     )
 
 
 ##############################################################################  
-
-@app.get("/get_current_model")  
-async def get_items():  
-    """
-    Get information about currently loaded models.
-    
-    Returns:
-        BaseResponse: Current transcription and translation models
-    """
-    logger.info(f" | ############### Transcription model ########################### | ")  
-    logger.info(f" | current transcription model is {transcribe_manager.transcription_method} | ")  
-    logger.info(f" | ################# Translate methods ########################### | ")  
-    logger.info(f" | current translation model is {translate_manager.translation_method} | ")  
-    logger.info(f" | ############################################################### | ")  
-    return BaseResponse(message=f" | current transcription model is {transcribe_manager.transcription_method} | current translation model is {translate_manager.translation_method} | ", data={"transcription": transcribe_manager.transcription_method, "translation": translate_manager.translation_method})  
 
 @app.get("/list_optional_items")  
 async def get_items():  
@@ -205,17 +182,44 @@ async def get_items():
     logger.info(f" | ################################################################### | ")  
     return BaseResponse(message=f" | Transcription method: You can choose '{TRANSCRIPTION_METHODS}' | Translate method: You can choose '{TRANSLATE_METHODS}' | ", data={"transcription_methods": TRANSCRIPTION_METHODS, "translate_methods": TRANSLATE_METHODS})  
 
-@app.get("get_current_prompt")
-async def get_current_prompt():
+@app.get("/get_current_model")  
+async def get_items():  
+    """
+    Get information about currently loaded models.
+    
+    Returns:
+        BaseResponse: Current transcription and translation models
+    """
+    logger.info(f" | ############### Transcription model ########################### | ")  
+    logger.info(f" | current transcription model is {transcribe_manager.transcription_method} | ")  
+    logger.info(f" | ################# Translate methods ########################### | ")  
+    logger.info(f" | current translation model is {translate_manager.translation_method} | ")  
+    logger.info(f" | ############################################################### | ")  
+    return BaseResponse(message=f" | current transcription model is {transcribe_manager.transcription_method} | current translation model is {translate_manager.translation_method} | ", data={"transcription": transcribe_manager.transcription_method, "translation": translate_manager.translation_method})  
+
+@app.get("/get_prompt")
+async def get_prompt():
     """
     Get the current prompt used for transcription.
     
     Returns:
         BaseResponse: Current prompt information
     """
-    current_prompt = transcribe_manager.get_current_prompt()
+    current_prompt = transcribe_manager.get_prompt()
+    current_prompt = current_prompt.replace("These are our prompts ", "").replace(" Let's continue.", "")
     logger.info(f" | Current prompt: {current_prompt} | ")
     return BaseResponse(message=f" | Current prompt: {current_prompt} | ", data={"current_prompt": current_prompt})
+
+@app.get("/get_pretext_status")
+async def get_pretext_status():
+    """
+    Get the current status of previous text context usage.
+    
+    Returns:
+        BaseResponse: Current status of use_pretext
+    """
+    logger.info(f" | Current pretext status: {use_pretext} | ")
+    return BaseResponse(message=f" | Current pretext status: {'enabled' if use_pretext else 'disabled'} | ", data={"use_pretext": use_pretext})
 
 @app.post("/change_transcription_model")  
 async def change_transcription_model(model_name: str = Form(...)):  
@@ -285,17 +289,52 @@ async def change_pretext_usage(enable: bool = Form(True)):
     logger.info(f" | Previous text context has been {'enabled' if use_pretext else 'disabled'}. | ")
     return BaseResponse(message=f" | Previous text context has been {'enabled' if use_pretext else 'disabled'}. | ", data={"use_pretext": use_pretext})
 
-@app.get("/get_pretext_status")
-async def get_pretext_status():
-    """
-    Get the current status of previous text context usage.
+@app.post("/language_detect")
+async def language_detect(  
+    file: UploadFile = File(...),  
+    method: str = Form("whisper") # "whisper" or "azure_speech"
+):  
+    """Detect the language of an audio file."""  
     
-    Returns:
-        BaseResponse: Current status of use_pretext
-    """
-    logger.info(f" | Current pretext status: {use_pretext} | ")
-    return BaseResponse(message=f" | Current pretext status: {'enabled' if use_pretext else 'disabled'} | ", data={"use_pretext": use_pretext})
+    return_data = {"detected_language": "unknown", 
+                   "confidence": 0.0}
 
+    if method != "azure_speech" and "breeze" in transcribe_manager.transcription_method:
+        logger.info(f" | current model \'{transcribe_manager.transcription_method}\' is not supported for the language detection | ")  
+        return BaseResponse(status=Status.FAILED, message=f" | current model \'{transcribe_manager.transcription_method}\' is not supported for the language detection | ", data=return_data)
+
+    start_time = time.time()
+    
+    try:  
+        # Save the uploaded audio file  
+        filename = f"temp_{int(time.time())}.wav"
+        os.makedirs("audio/temp", exist_ok=True)
+        audio_buffer = f"audio/temp/{filename}"  
+        
+        file_content = file.file.read()
+        with open(audio_buffer, 'wb') as f:  
+            f.write(file_content)  
+            
+        if method == "azure_speech":
+            lid_result = await azure_speech.detect_language(audio_buffer)
+            return_data["detected_language"] = lid_result.language
+            return_data["confidence"] = lid_result.confidence if lid_result.confidence is not None else 0.0
+        else:
+            detected_lang, confidence = transcribe_manager.detect_language(audio_buffer)  
+            return_data["detected_language"] = detected_lang
+            return_data["confidence"] = confidence if confidence is not None else 0.0
+        
+        # Clean up the temporary audio file
+        if os.path.exists(audio_buffer):
+            os.remove(audio_buffer)
+            
+        end_time = time.time()
+
+        logger.info(f" | Detect time: {end_time - start_time:.2f}s | Detected language: {return_data['detected_language']} | Confidence: {return_data['confidence']:.2f} | ")  
+        return BaseResponse(status=Status.OK, message=f" | Detect time: {end_time - start_time:.2f}s | Detected language: {return_data['detected_language']} | Confidence: {return_data['confidence']:.2f} | ", data=return_data)  
+    except Exception as e:  
+        logger.error(f" | language_detect() error: {e} | ")  
+        return BaseResponse(status=Status.FAILED, message=f" | language_detect() error: {e} | ", data=return_data)
 
 @app.post("/translate")
 async def translate(
@@ -1054,13 +1093,13 @@ async def sse_audio_translate():
                         yield f"data: {base_response.model_dump_json()}\n\n"  
                 await asyncio.sleep(0.1)
         except asyncio.CancelledError:
-            # 客戶端斷線時會觸發這個異常
+            # This exception is triggered when client disconnects
             logger.info(" | Client disconnected from SSE | ")
             raise
         except Exception as e:
             logger.error(f" | SSE stream error: {e} | ")
         finally:
-            # 確保清理資源
+            # Ensure resource cleanup
             logger.info(" | SSE stream ended | ")  
   
     return StreamingResponse(event_stream(), media_type="text/event-stream") 
@@ -1071,52 +1110,6 @@ async def stop_sse():
     sse_stop_event.set() 
     return BaseResponse(status=Status.OK, message=" | SSE connection has been stopped | ", data=None)  
 
-@app.post("/language_detect")
-async def language_detect(  
-    file: UploadFile = File(...),  
-    method: str = Form("whisper") # "whisper" or "azure_speech"
-):  
-    """Detect the language of an audio file."""  
-    
-    return_data = {"detected_language": "unknown", 
-                   "confidence": 0.0}
-
-    if method != "azure_speech" and "breeze" in transcribe_manager.transcription_method:
-        logger.info(f" | current model \'{transcribe_manager.transcription_method}\' is not supported for the language detection | ")  
-        return BaseResponse(status=Status.FAILED, message=f" | current model \'{transcribe_manager.transcription_method}\' is not supported for the language detection | ", data=return_data)
-
-    start_time = time.time()
-    
-    try:  
-        # Save the uploaded audio file  
-        filename = f"temp_{int(time.time())}.wav"
-        os.makedirs("audio/temp", exist_ok=True)
-        audio_buffer = f"audio/temp/{filename}"  
-        
-        file_content = file.file.read()
-        with open(audio_buffer, 'wb') as f:  
-            f.write(file_content)  
-            
-        if method == "azure_speech":
-            lid_result = await azure_speech.detect_language(audio_buffer)
-            return_data["detected_language"] = lid_result.language
-            return_data["confidence"] = lid_result.confidence
-        else:
-            detected_lang, confidence = transcribe_manager.detect_language(audio_buffer)  
-            return_data["detected_language"] = detected_lang
-            return_data["confidence"] = confidence
-        
-        # Clean up the temporary audio file
-        if os.path.exists(audio_buffer):
-            os.remove(audio_buffer)
-            
-        end_time = time.time()
-
-        logger.info(f" | Detect time: {end_time - start_time:.2f}s | Detected language: {return_data['detected_language']} | Confidence: {return_data['confidence']:.2f} | ")  
-        return BaseResponse(status=Status.OK, message=f" | Detect time: {end_time - start_time:.2f}s | Detected language: {return_data['detected_language']} | Confidence: {return_data['confidence']:.2f} | ", data=return_data)  
-    except Exception as e:  
-        logger.error(f" | language_detect() error: {e} | ")  
-        return BaseResponse(status=Status.FAILED, message=f" | language_detect() error: {e} | ", data=return_data)
 
 ##############################################################################  
 # Utility Functions
@@ -1177,7 +1170,7 @@ def schedule_daily_task(stop_event):
         time.sleep(1)  
   
 if __name__ == "__main__":  
-    port = int(os.environ.get("PORT", 83))  
+    port = int(os.environ.get("PORT", 80))  
     uvicorn.config.LOGGING_CONFIG["formatters"]["default"]["fmt"] = "%(asctime)s [%(name)s] %(levelprefix)s %(message)s"  
     uvicorn.config.LOGGING_CONFIG["formatters"]["access"]["fmt"] = '%(asctime)s [%(name)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'  
     uvicorn.run(app, log_level='info', host='0.0.0.0', port=port)   

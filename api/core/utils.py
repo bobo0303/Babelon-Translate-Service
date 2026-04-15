@@ -243,8 +243,8 @@ class ResponseTracker:
                         if info["times"] < times:
                             if not info["cancelled"]:
                                 info["cancelled"] = True
-                                from lib.core.logging_config import setup_application_logger
-                                logger = setup_application_logger(__name__)
+                                from lib.core.logging_config import get_logger
+                                logger = get_logger(__name__)
                                 logger.info(f" | Task {other_task_id} (audio_uid: {audio_uid}, times: {info['times']}) cancelled due to newer request (times: {times}). [QUEUED] | ")
     
     def cleanup(self, audio_uid: str, task_id: str):

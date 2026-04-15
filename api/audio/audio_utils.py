@@ -1,13 +1,13 @@
 import time
 import librosa
 import soundfile as sf
-import logging
 import numpy as np
 
 from lib.config.constant import SILENCE_PADDING
+from lib.core.logging_config import get_logger
 
-
-logger = logging.getLogger(__name__)
+# 獲取日誌器
+logger = get_logger(__name__)
 
 def get_audio_duration(audio_file_path):
     """

@@ -90,7 +90,7 @@ class TranscribeManager:
             
         return None
 
-    def get_current_prompt(self):
+    def get_prompt(self):
         """Get the current prompt text."""
         return self.prompt
     

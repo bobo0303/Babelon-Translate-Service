@@ -6,8 +6,6 @@ import time
 import torch
 import ctypes
 import librosa
-import logging  
-import logging.handlers
 import numpy as np
 import soundfile as sf
 import threading
@@ -18,34 +16,12 @@ from concurrent.futures import ThreadPoolExecutor
 from huggingface_hub import hf_hub_download
 
 from lib.config.constant import CPP_LIB_PATH, MAX_NUM_STRATEGIES, LOGPROB_THOLD, ENTROPY_THOLD
-
 from api.audio.audio_utils import get_audio_duration
 from api.core.post_process import post_process
+from lib.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)  
-
-
-# Configure logger settings (if not already configured)  
-if not logger.handlers:  
-    log_format = "%(asctime)s - %(message)s"  
-    log_file = "logs/app.log"  
-    logging.basicConfig(level=logging.INFO, format=log_format)  
-  
-    # Create file handler  
-    file_handler = logging.handlers.RotatingFileHandler(  
-        log_file, maxBytes=10*1024*1024, backupCount=5  
-    )  
-    file_handler.setFormatter(logging.Formatter(log_format))  
-  
-    # Create console handler  
-    console_handler = logging.StreamHandler()  
-    console_handler.setFormatter(logging.Formatter(log_format))  
-  
-    logger.addHandler(file_handler)  
-    logger.addHandler(console_handler)  
-  
-logger.setLevel(logging.INFO)  
-logger.propagate = False  
+# 獲取日誌器
+logger = get_logger(__name__)  
 
 ##############################################################################  
 
