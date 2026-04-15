@@ -38,7 +38,8 @@ TRANSLATE_METHODS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini'] # 'ollama-gemma', 'oll
 
 #############################################################################
 
-BACKEND_DOMAIN: str = ""
+BACKEND_DOMAIN: str = "https://babelon-backend-dev.azurewebsites.net/"
+HEALTH_CHECK_CYCLE_SEC: int = 30 
 
 #############################################################################
 

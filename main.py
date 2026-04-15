@@ -19,7 +19,7 @@ from api.core.threading_api import audio_translate, texts_translate, waiting_tim
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
 from lib.core.health_check import create_health_check_service
-from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN
+from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN, HEALTH_CHECK_CYCLE_SEC
 from lib.core.logging_config import get_logger
 from wjy3 import BaseResponse, Status
 
@@ -54,6 +54,23 @@ response_tracker = ResponseTracker()  # Tracker to prevent race conditions
 waiting_list = []  # Queue for waiting translation requests
 sse_stop_event = Event()  # Global event to control SSE connection
 service_stop_event = Event()  # Event to control service shutdown  
+
+async def periodic_health_check_task(loop_time: int = 30):
+    """
+    Background task to periodically notify backend service.
+    Runs every `loop_time` seconds without blocking main thread.
+    """
+    while not service_stop_event.is_set():
+        try:
+            await asyncio.sleep(loop_time)  # Wait `loop_time` seconds
+            await health_check_service.notify_backend()
+        except asyncio.CancelledError:
+            logger.info(" | Periodic health check task cancelled | ")
+            break
+        except Exception as e:
+            logger.error(f" | Error in periodic health check: {e} | ")
+            # Continue running even if one check fails
+            continue
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,8 +112,12 @@ async def lifespan(app: FastAPI):
         task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
         task_thread.start()
         
-        # Send startup notification to backend service (active health check)
+        # Send initial startup notification to backend service
         await health_check_service.notify_backend()
+        
+        # Start periodic health check task (runs every 30 seconds in background)
+        health_check_task = asyncio.create_task(periodic_health_check_task(HEALTH_CHECK_CYCLE_SEC))
+        logger.info(f" | Periodic health check task started (every {HEALTH_CHECK_CYCLE_SEC} seconds) | ")
         logger.info(f" | ##################################################### | ")  
         
         yield  # Application starts receiving requests

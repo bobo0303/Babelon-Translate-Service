@@ -93,7 +93,7 @@ class HealthCheckService:
             logger.info(" | BACKEND_DOMAIN is empty, skipping startup notification | ")
             return False
         
-        url = f"{self.backend_domain}/health_check"
+        url = f"{self.backend_domain.rstrip('/')}/health_check"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(url)
