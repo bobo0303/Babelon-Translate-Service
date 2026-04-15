@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
         default_audio = "audio/test.wav"  
         start = time.time()  
         for _ in range(5):  
-            transcribe_manager.transcribe(default_audio, "en", post_processing=False)  
+            transcribe_manager.transcribe(ori="en", post_processing=False, audio_path=default_audio)  
         end = time.time()  
         logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
         # set default prompt
@@ -108,16 +108,16 @@ async def lifespan(app: FastAPI):
         logger.info(f" | ##################################################### | ")  
         # delete_old_audio_files()
         
-        # Start daily task scheduling  
-        task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
-        task_thread.start()
+        # Daily task scheduling disabled (no longer saving audio files to disk)
+        # from api.core.utils import schedule_daily_task
+        # task_thread = Thread(target=schedule_daily_task, args=(service_stop_event,))  
+        # task_thread.start()
         
         # Send initial startup notification to backend service
         await health_check_service.notify_backend()
         
         # Start periodic health check task (runs every 30 seconds in background)
-        health_check_task = asyncio.create_task(periodic_health_check_task(HEALTH_CHECK_CYCLE_SEC))
-        logger.info(f" | Periodic health check task started (every {HEALTH_CHECK_CYCLE_SEC} seconds) | ")
+        asyncio.create_task(periodic_health_check_task(HEALTH_CHECK_CYCLE_SEC))
         logger.info(f" | ##################################################### | ")  
         
         yield  # Application starts receiving requests
@@ -132,7 +132,7 @@ async def lifespan(app: FastAPI):
         try:
             logger.info(" | Starting shutdown... | ")
             service_stop_event.set()  
-            task_thread.join()
+            # task_thread.join()
             
             # Stop pipeline worker
             transcribe_manager.stop_worker_thread()
@@ -327,27 +327,17 @@ async def language_detect(
     start_time = time.time()
     
     try:  
-        # Save the uploaded audio file  
-        filename = f"temp_{int(time.time())}.wav"
-        os.makedirs("audio/temp", exist_ok=True)
-        audio_buffer = f"audio/temp/{filename}"  
+        # Read file content into memory
+        file_content = await file.read()
         
-        file_content = file.file.read()
-        with open(audio_buffer, 'wb') as f:  
-            f.write(file_content)  
-            
         if method == "azure_speech":
-            lid_result = await azure_speech.detect_language(audio_buffer)
+            lid_result = await azure_speech.detect_language(file_content)
             return_data["detected_language"] = lid_result.language
             return_data["confidence"] = lid_result.confidence if lid_result.confidence is not None else 0.0
         else:
-            detected_lang, confidence = transcribe_manager.detect_language(audio_buffer)  
+            detected_lang, confidence = transcribe_manager.detect_language(audio_bytes=file_content)  
             return_data["detected_language"] = detected_lang
             return_data["confidence"] = confidence if confidence is not None else 0.0
-        
-        # Clean up the temporary audio file
-        if os.path.exists(audio_buffer):
-            os.remove(audio_buffer)
             
         end_time = time.time()
 
@@ -438,22 +428,7 @@ async def translate(
         translate_time=0.0,  
     )  
   
-    # Save the uploaded audio file  
-    filename = (
-                f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
-            )
-    os.makedirs(f"audio/{meeting_id}", exist_ok=True)
-    audio_buffer = f"audio/{meeting_id}/{filename}"  
-    
-    # Read file content once
-    file_content = file.file.read()
-    
-    with open(audio_buffer, 'wb') as f:  
-        f.write(file_content)
-  
-    # Check if the audio file exists  
-    if not os.path.exists(audio_buffer):  
-        return BaseResponse(status=Status.FAILED, message=" | The audio file does not exist, please check the audio path. | ", data=response_data)  
+    file_content = await file.read()  
   
     # Check if the model has been loaded  
     if transcribe_manager.transcription_method is None:  
@@ -476,9 +451,13 @@ async def translate(
         # Create an event to signal stopping  
         stop_event = threading.Event()  
   
-        # Create timing thread and inference thread  
         time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
-        inference_thread = threading.Thread(target=audio_translate, args=(transcribe_manager, translate_manager, audio_buffer, result_queue, o_lang, t_lang, stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, multi_translate))
+        inference_thread = threading.Thread(
+            target=audio_translate, 
+            args=(transcribe_manager, translate_manager, result_queue, o_lang, t_lang, 
+                  stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, 
+                  multi_translate, file_content)
+        )
   
         # Start the threads  
         time_thread.start()  
@@ -487,10 +466,6 @@ async def translate(
         # Wait for timing thread to complete and check if the inference thread is active to close  
         time_thread.join()  
         stop_thread(inference_thread)  
-  
-        # Remove the audio buffer file  
-        # if os.path.exists(audio_buffer):
-        #     os.remove(audio_buffer)  
   
         # Get the result from the queue  
         if not result_queue.empty():  
@@ -554,7 +529,6 @@ async def translate(
         # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)
         if other_info:
             other_info['audio_uid'] = audio_uid
-            other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
             # storage_upload(logger, response_data, other_info) 
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
@@ -620,18 +594,7 @@ async def translate_pipeline(
         audio_uid=audio_uid,  
     )  
   
-    # Save the uploaded audio file  
-    filename = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
-    os.makedirs(f"audio/{meeting_id}", exist_ok=True)
-    audio_buffer = f"audio/{meeting_id}/{filename}"  
-    
-    file_content = file.file.read()
-    with open(audio_buffer, 'wb') as f:  
-        f.write(file_content)
-  
-    # Validation checks
-    if not os.path.exists(audio_buffer):  
-        return BaseResponse(status=Status.FAILED, message=" | The audio file does not exist, please check the audio path. | ", data=response_data)  
+    file_content = await file.read()  
   
     if transcribe_manager.transcription_method is None:  
         return BaseResponse(status=Status.FAILED, message=" | model haven't been load successfully. may out of memory please check again | ", data=response_data)  
@@ -645,14 +608,12 @@ async def translate_pipeline(
             logger.info(f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
             return BaseResponse(status=Status.FAILED, message=f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
-    # Use the new pipeline coordinator for better decoupling with timeout
     try:
         result, other_info = await asyncio.wait_for(
             asyncio.to_thread(
                 audio_pipeline_coordinator,
                 transcribe_manager=transcribe_manager,
                 translate_manager=translate_manager,
-                audio_file=audio_buffer,
                 o_lang=o_lang,
                 t_lang=t_lang,
                 multi_strategy_transcription=multi_strategy_transcription,
@@ -660,9 +621,10 @@ async def translate_pipeline(
                 prev_text=prev_text,
                 multi_translate=multi_translate,
                 audio_uid=audio_uid,
-                times=times
+                times=times,
+                audio_bytes=file_content
             ),
-            timeout=WAITING_TIME  # Use the same timeout as the original design
+            timeout=WAITING_TIME
         )
     except asyncio.TimeoutError:
         logger.warning(f" | Translation timeout for audio_uid: {audio_uid}, force terminating task. | ")
@@ -778,8 +740,8 @@ async def translate_pipeline(
         
 
     if other_info:
-        other_info['audio_file_name'] = f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
         # storage_upload(logger, response_data, other_info)
+        pass
 
     # Clean up this request from tracker
     response_tracker.cleanup(audio_uid, task_id)
@@ -923,6 +885,8 @@ async def sse_audio_translate(
     multi_translate: bool = Form(True) # True/False
 ):  
     """  
+    [⚠️ 目前此功能未使用，測試時可能會出錯]
+    
     Transcribe and translate an audio file.  
       
     This endpoint receives an audio file and its associated metadata, and  
@@ -970,12 +934,15 @@ async def sse_audio_translate(
         logger.info(f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ")  
         return BaseResponse(status=Status.FAILED, message=f" | The original language is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
+    file_content = await file.read()
+
     other_information = {
         "prev_text": prev_text,
         "multi_strategy_transcription": multi_strategy_transcription,
         "transcription_post_processing": transcription_post_processing,
         "use_translate": use_translate,
-        "multi_translate": multi_translate
+        "multi_translate": multi_translate,
+        "audio_bytes": file_content
     }
 
     try:  
@@ -990,35 +957,22 @@ async def sse_audio_translate(
                 if item_response_data.times < response_data.times:  
                     waiting_list.remove(item)  
                     waiting_list.append([response_data, other_information])  
-                    audio = f"audio/{item_response_data.times}.wav"  
-                    if os.path.exists(audio):  
-                        os.remove(audio)  
                 break  
           
         if not audio_uid_exist:
             waiting_list.append([response_data, other_information])  
           
-        if previous_waiting_list != waiting_list:  
-            filename = (
-                f"{audio_uid}_{times.replace(':', ';').replace(' ', '_')}.wav"
-            )
-            os.makedirs(f"audio/{response_data.meeting_id}", exist_ok=True)
-            audio_buffer = f"audio/{response_data.meeting_id}/{filename}"  
-            
-            # Read file content once and save
-            file_content = file.file.read()
-            with open(audio_buffer, 'wb') as f:  
-                f.write(file_content)  
-          
         return BaseResponse(status=Status.OK, message=" | Request added to the waiting list. | ", data=None)  
     except Exception as e:  
-        logger.error(f' | save info error: {e} | ')  
-        return BaseResponse(status=Status.FAILED, message=f" | save info error: {e} | ", data=response_data)    
+        logger.error(f' | sse_audio_translate error: {e} | ')  
+        return BaseResponse(status=Status.FAILED, message=f" | sse_audio_translate error: {e} | ", data=response_data)    
     
     
 @app.get("/sse_audio_translate")  
 async def sse_audio_translate():  
     """  
+    [⚠️ 目前此功能未使用，測試時可能會出錯]
+    
     Server-Sent Events endpoint to handle real-time translation.  
   
     This endpoint checks the waiting list and processes the translation if the model is not busy.  
@@ -1030,15 +984,15 @@ async def sse_audio_translate():
             while not sse_stop_event.is_set():  
                 if waiting_list and not transcribe_manager.processing:  
                     response_data, other_information = waiting_list.pop(0)  
-                    audio_buffer = f"audio/{response_data.meeting_id}/{response_data.times}.wav" 
                     o_lang = response_data.ori_lang  
+                    audio_bytes = other_information.pop("audio_bytes", b"")  
       
                     try:  
                         # Create an event to signal stopping  
                         stop_event = threading.Event()  
                         # Create timing thread and inference thread  
                         time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
-                        inference_thread = threading.Thread(target=audio_translate_sse, args=(transcribe_manager, translate_manager, audio_buffer, o_lang, other_information, stop_event))  
+                        inference_thread = threading.Thread(target=audio_translate_sse, args=(transcribe_manager, translate_manager, audio_bytes, o_lang, other_information, stop_event))  
       
                         # Start the threads  
                         time_thread.start()  
@@ -1047,9 +1001,6 @@ async def sse_audio_translate():
                         # Wait for timing thread to complete and stop the inference thread if still running  
                         time_thread.join()  
                         stop_thread(inference_thread)  
-                        
-                        # if os.path.exists(audio_buffer):
-                        #     os.remove(audio_buffer)  
       
                         # Process all available results from the result queue
                         while not transcribe_manager.result_queue.empty():
@@ -1127,68 +1078,12 @@ async def sse_audio_translate():
 
 @app.post("/stop_sse")  
 async def stop_sse():  
-    """Endpoint to stop the SSE connection."""  
+    """[⚠️ 目前此功能未使用，測試時可能會出錯] Endpoint to stop the SSE connection."""  
     sse_stop_event.set() 
     return BaseResponse(status=Status.OK, message=" | SSE connection has been stopped | ", data=None)  
 
 
-##############################################################################  
-# Utility Functions
 ##############################################################################
-
-# Clean up audio files  
-def delete_old_audio_files():  
-    """  
-    The process of deleting old audio files recursively and removing empty directories  
-    :param  
-    ----------  
-    None: The function does not take any parameters  
-    :rtype  
-    ----------  
-    None: The function does not return any value  
-    :logs  
-    ----------  
-    Deleted old files and empty directories  
-    """  
-    current_time = time.time()  
-    audio_dir = "./audio"  
-    
-    # Recursively walk through all subdirectories
-    for root, dirs, files in os.walk(audio_dir, topdown=False):
-        # Process files in current directory
-        for filename in files:
-            if filename == "test.wav":  # Skip specific file
-                continue
-            file_path = os.path.join(root, filename)
-            file_creation_time = os.path.getctime(file_path)
-            # Delete files older than a day
-            if current_time - file_creation_time > 24 * 60 * 60:
-                os.remove(file_path)
-                logger.info(f" | Deleted old file: {file_path} | ")
-        
-        # Remove empty directories (skip the main audio directory)
-        if root != audio_dir:
-            try:
-                if not os.listdir(root):  # Check if directory is empty
-                    os.rmdir(root)
-                    logger.info(f" | Deleted empty directory: {root} | ")
-            except OSError:
-                # Directory not empty or other error, continue
-                pass  
-  
-# Daily task scheduling  
-def schedule_daily_task(stop_event):  
-    """
-    Schedule daily cleanup tasks.
-    
-    Args:
-        stop_event: Event to signal stopping the scheduler
-    """
-    while not stop_event.is_set():  
-        if local_now.hour == 0 and local_now.minute == 0:  
-            delete_old_audio_files()  
-            time.sleep(60)  # Prevent triggering multiple times within the same minute  
-        time.sleep(1)  
   
 if __name__ == "__main__":  
     port = int(os.environ.get("PORT", 80))  

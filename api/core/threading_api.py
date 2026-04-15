@@ -28,9 +28,9 @@ def _cleanup_transcription_task(transcribe_manager, task_id):
     except Exception as e:
         logger.warning(f" | Error cleaning up task {task_id}: {e} | ")  
 
-def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file, o_lang, t_lang, 
+def audio_pipeline_coordinator(transcribe_manager, translate_manager, o_lang, t_lang, 
                                multi_strategy_transcription, transcription_post_processing, 
-                               prev_text, multi_translate, audio_uid, times):
+                               prev_text, multi_translate, audio_uid, times, audio_bytes):
     """
     Coordinate transcription and translation pipeline with proper decoupling.
     
@@ -43,7 +43,6 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     
     :param transcribe_manager: TranscribeManager instance
     :param translate_manager: TranslateManager instance  
-    :param audio_file: Path to audio file
     :param o_lang: Original language
     :param t_lang: Target language(s)
     :param multi_strategy_transcription: Transcription strategy
@@ -52,6 +51,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     :param multi_translate: Multi-translation flag
     :param audio_uid: Audio unique identifier
     :param times: Timestamp
+    :param audio_bytes: Raw audio bytes
     :return: Tuple of (ori_pred, translated_pred, rtf, transcription_time, translate_time, translate_method, timing_dict)
     """
     # Initialize default output structure
@@ -109,11 +109,10 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
         }
     
     try:
-        # Step 1: Submit transcription task (with trim_duration for audio trimming)
         transcription_event = transcribe_manager.add_task(
-            task_id, audio_file, o_lang, multi_strategy_transcription,
+            task_id, o_lang, multi_strategy_transcription,
             transcription_post_processing, prev_text, audio_uid, times,
-            trim_duration=trim_duration, trim_text=trim_text  # 新增：傳遞 trim duration
+            trim_duration=trim_duration, trim_text=trim_text, audio_bytes=audio_bytes
         )
         
         # Step 2: Wait for transcription completion
@@ -222,8 +221,8 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
                 pass
             result['translate_method'] = "translation_failed"
     
-    # Step 5: Calculate RTF and return results
-    rtf = calculate_rtf(audio_file, result['transcription_time'], result['translate_time'])
+    # Step 5: Calculate RTF using audio_length from transcription result
+    rtf = calculate_rtf(audio_length, result['transcription_time'], result['translate_time'])
     
     # 獲取最新的 session 資訊（用於 window_count 等）
     if trim_enabled:
@@ -263,26 +262,32 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, audio_file
     
     return tuple(result.values()), other_info
 
-def audio_translate(transcribe_manager, translate_manager, audio_file_path, result_queue, o_lang, t_lang, 
-                    stop_event, strategy, post_processing, prev_text, multi_translate):  
-    """  
-    Transcribe and translate an audio file, then store the results in a queue.  
+def audio_translate(transcribe_manager, translate_manager, result_queue, o_lang, t_lang, 
+                    stop_event, strategy, post_processing, prev_text, multi_translate, audio_bytes):  
+    """
+    Transcribe and translate audio from bytes, then store the results in a queue.
   
     :param transcribe_manager: The TranscribeManager used for transcription.  
     :param translate_manager: The TranslateManager used for translation.
-    :param audio_file_path: str  
-        The path to the audio file to be processed.  
     :param result_queue: Queue  
         The queue to store the results.  
-    :param ori: str  
+    :param o_lang: str  
         The original language of the audio.  
-    :param tar: str or list  
+    :param t_lang: str or list  
         Target language(s) for translation  
     :param stop_event: threading.Event  
-        The event used to signal stopping.  
+        The event used to signal stopping.
+    :param strategy: Transcription strategy
+    :param post_processing: Post-processing flag
+    :param prev_text: Previous context text
+    :param multi_translate: Multi-translation flag
+    :param audio_bytes: Raw audio bytes
     """  
     try:
-        detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, o_lang, strategy, post_processing, prev_text)
+        detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(
+            ori=o_lang, multi_strategy_transcription=strategy, post_processing=post_processing, 
+            prev_text=prev_text, audio_bytes=audio_bytes
+        )
         if t_lang:
             # t_lang is already a list from main.py
             translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, o_lang, t_lang, prev_text, multi_translate)  
@@ -293,7 +298,7 @@ def audio_translate(transcribe_manager, translate_manager, audio_file_path, resu
             timing_dict = {}
         
         # Calculate RTF using audio_utils
-        rtf = calculate_rtf(audio_file_path, inference_time, translate_time)
+        rtf = calculate_rtf(audio_length, inference_time, translate_time)
         
         audio_tags = ""
         if strategy == 1:
@@ -356,14 +361,14 @@ def texts_translate(translate_manager, text, result_queue, ori, tar, stop_event,
         except Exception as e:
             logger.error(f" | Error during cleanup: {e} | ")  
   
-def audio_translate_sse(transcribe_manager, translate_manager, audio_file_path, ori, other_information, stop_event):  
+def audio_translate_sse(transcribe_manager, translate_manager, audio_bytes, ori, other_information, stop_event):  
     """  
-    Transcribe and translate an audio file for SSE, then store the results in the transcribe_manager's result queue.  
+    Transcribe and translate audio for SSE, then store the results in the transcribe_manager's result queue.  
   
     :param transcribe_manager: The TranscribeManager used for transcription.  
     :param translate_manager: The TranslateManager used for translation.
-    :param audio_file_path: str  
-        The path to the audio file to be processed.  
+    :param audio_bytes: bytes  
+        Raw audio bytes to be processed.  
     :param ori: str  
         The original language of the audio.
     :param other_information: dict
@@ -374,7 +379,13 @@ def audio_translate_sse(transcribe_manager, translate_manager, audio_file_path, 
     try:
         transcribe_manager.processing = True
         
-        detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(audio_file_path, ori, other_information["multi_strategy_transcription"], other_information["transcription_post_processing"], other_information["prev_text"])
+        detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(
+            ori=ori, 
+            multi_strategy_transcription=other_information["multi_strategy_transcription"], 
+            post_processing=other_information["transcription_post_processing"], 
+            prev_text=other_information["prev_text"],
+            audio_bytes=audio_bytes
+        )
         if other_information["use_translate"]:
             # Get target_langs from other_information or default to all languages
             target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != ori])
@@ -387,7 +398,7 @@ def audio_translate_sse(transcribe_manager, translate_manager, audio_file_path, 
             timing_dict = {}
         
         # Calculate RTF using audio_utils
-        rtf = calculate_rtf(audio_file_path, inference_time, translate_time) 
+        rtf = calculate_rtf(audio_length, inference_time, translate_time) 
         
         transcribe_manager.result_queue.put((ori_pred, translated_pred, rtf, inference_time, translate_time, translate_method, timing_dict))
         transcribe_manager.processing = False

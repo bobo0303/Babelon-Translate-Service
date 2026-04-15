@@ -1,7 +1,11 @@
 import os
 import re
+import time
+import logging
 from typing import Dict
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 # Global variables to track current state
 current_meeting_id = None
@@ -263,3 +267,48 @@ class ResponseTracker:
                 # Clean up empty audio_uid entries
                 if not self.pending_requests[audio_uid]:
                     del self.pending_requests[audio_uid] 
+
+
+def delete_old_audio_files():  
+    """  
+    Delete old audio files recursively and remove empty directories.
+    Deletes files older than 24 hours.
+    """  
+    current_time = time.time()  
+    audio_dir = "./audio"  
+    
+    for root, dirs, files in os.walk(audio_dir, topdown=False):
+        for filename in files:
+            if filename == "test.wav":
+                continue
+            file_path = os.path.join(root, filename)
+            file_creation_time = os.path.getctime(file_path)
+            if current_time - file_creation_time > 24 * 60 * 60:
+                os.remove(file_path)
+                logger.info(f" | Deleted old file: {file_path} | ")
+        
+        if root != audio_dir:
+            try:
+                if not os.listdir(root):
+                    os.rmdir(root)
+                    logger.info(f" | Deleted empty directory: {root} | ")
+            except OSError:
+                pass  
+
+
+def schedule_daily_task(stop_event):  
+    """
+    Schedule daily cleanup tasks.
+    
+    Args:
+        stop_event: Event to signal stopping the scheduler
+    """
+    from datetime import datetime as dt
+    import pytz
+    
+    while not stop_event.is_set():  
+        local_now = dt.now()
+        if local_now.hour == 0 and local_now.minute == 0:  
+            delete_old_audio_files()  
+            time.sleep(60)
+        time.sleep(1)

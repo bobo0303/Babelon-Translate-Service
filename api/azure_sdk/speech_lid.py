@@ -88,22 +88,28 @@ class AzureSpeechLID:
             )
             return speechsdk.languageconfig.AutoDetectSourceLanguageConfig(languages=languages)
 
-    async def detect_language(self, audio_file_path: str, languages: list = None) -> LIDResult:
+    async def detect_language(self, audio_bytes, languages: list = None) -> LIDResult:
         """
-        偵測音檔語言（Continuous LID 模式，非阻塞）
+        Detect audio language using Continuous LID mode (non-blocking).
         
         Args:
-            audio_file_path: 音檔路徑
-            languages: 候選語言列表（Azure locale 格式），預設使用初始化的 _azure_locales
+            audio_bytes: Raw audio bytes (WAV format)
+            languages: Candidate language list (Azure locale format), defaults to _azure_locales
             
         Returns:
-            LIDResult: 包含最常見語言、耗時、信心度等資訊
+            LIDResult: Contains most frequent language, elapsed time, and confidence
         """
         if languages is None:
             languages = self._azure_locales
         
         auto_detect_config = self._create_auto_detect_config(languages)
-        audio_config = speechsdk.audio.AudioConfig(filename=audio_file_path)
+        
+        push_stream = speechsdk.audio.PushAudioInputStream()
+        audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
+        
+        # Feed audio bytes into the stream and close it to signal end of audio
+        push_stream.write(audio_bytes)
+        push_stream.close()
         
         recognizer = speechsdk.SpeechRecognizer(
             speech_config=self._speech_config,

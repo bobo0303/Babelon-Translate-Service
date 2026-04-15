@@ -2,11 +2,12 @@ import time
 import librosa
 import soundfile as sf
 import numpy as np
+from io import BytesIO
 
 from lib.config.constant import SILENCE_PADDING
 from lib.core.logging_config import get_logger
 
-# 獲取日誌器
+# Get logger instance
 logger = get_logger(__name__)
 
 def get_audio_duration(audio_file_path):
@@ -38,12 +39,12 @@ def get_audio_duration(audio_file_path):
         logger.warning(f" | get_audio_duration failed in {execution_time:.8f}s | Error: {e} | File: {audio_file_path} | ")
         return None
 
-def calculate_rtf(audio_file_path, transcription_time, translation_time=0):
+def calculate_rtf(audio_duration, transcription_time, translation_time=0):
     """
     Calculate Real Time Factor (RTF) for audio processing.
     
     Args:
-        audio_file_path: Path to audio file
+        audio_duration: Duration of audio in seconds (from transcription result)
         transcription_time: Time spent on transcription (seconds)
         translation_time: Time spent on translation (seconds), default 0
         
@@ -51,7 +52,6 @@ def calculate_rtf(audio_file_path, transcription_time, translation_time=0):
         float: RTF value, or 0 if calculation failed
     """
     try:
-        audio_duration = get_audio_duration(audio_file_path)
         if audio_duration is not None and audio_duration > 0:
             total_processing_time = transcription_time + translation_time
             rtf = total_processing_time / audio_duration
@@ -141,3 +141,67 @@ def audio_preprocess(audio_path, padding_duration=0.05, max_duration=28.0, rejec
         audio_length = 0.0
     
     return audio, audio_length
+
+
+def audio_preprocess_from_bytes(
+    audio_bytes: bytes,
+    padding_duration=0.05,
+    max_duration=28.0,
+    reject_duration=60.0
+):
+    """
+    Preprocess audio directly from bytes.
+    
+    Args:
+        audio_bytes: Raw audio file bytes (e.g., WAV format)
+        padding_duration: Silence padding duration in seconds (default: 0.05s)
+        max_duration: Maximum audio duration to process (default: 28.0s)
+        reject_duration: Reject audio longer than this (default: 60.0s)
+        
+    Returns:
+        tuple: (audio_array, audio_length)
+            - audio_array: numpy.ndarray (float32, 16kHz, mono) or None if failed
+            - audio_length: float, duration in seconds
+    """
+    try:
+        # Step 1: Read audio from bytes (in-memory, no disk I/O)
+        audio_io = BytesIO(audio_bytes)
+        audio, sr = sf.read(audio_io)
+        audio_length = len(audio) / sr
+        
+        # Step 2: Duration validation
+        if reject_duration and audio_length > reject_duration:
+            logger.warning(f" | audio_preprocess_from_bytes rejected: duration {audio_length:.2f}s > {reject_duration:.2f}s | ")
+            return None, 0.0
+        
+        # Step 3: Resample to 16kHz if needed
+        if sr != 16000:
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+            sr = 16000
+        
+        # Step 4: Convert to mono if stereo
+        if len(audio.shape) > 1:
+            audio = audio.mean(axis=1)
+        
+        # Step 5: Truncate to max_duration if exceeded
+        if max_duration and audio_length > max_duration:
+            max_samples = int(max_duration * sr)
+            audio = audio[:max_samples]
+            logger.debug(f" | audio_preprocess_from_bytes truncated from {audio_length:.2f}s to {max_duration:.2f}s | ")
+            audio_length = max_duration
+        
+        # Step 6: Add silence padding (optional)
+        if SILENCE_PADDING:
+            try:
+                audio = add_silence_padding(audio, sr, padding_duration)
+            except Exception as e:
+                logger.warning(f" | audio_preprocess_from_bytes silence padding error: {e} | Using original audio | ")
+        
+        # Step 7: Convert to float32 for whisper.cpp compatibility
+        audio = audio.astype(np.float32)
+        
+        return audio, audio_length
+        
+    except Exception as e:
+        logger.error(f" | audio_preprocess_from_bytes error: {e} | ")
+        return None, 0.0

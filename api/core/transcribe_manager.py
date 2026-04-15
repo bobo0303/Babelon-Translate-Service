@@ -227,10 +227,27 @@ class TranscribeManager:
         
         return False
     
-    def add_task(self, task_id, audio_file, o_lang, multi_strategy_transcription, 
+    def add_task(self, task_id, o_lang, multi_strategy_transcription, 
                  transcription_post_processing, prev_text, audio_uid, times,
-                 trim_duration=0.0, trim_text=""):
-        """Add a task to the queue and return an Event for blocking wait."""
+                 trim_duration=0.0, trim_text="", audio_bytes=None):
+        """
+        Add a transcription task to the queue.
+        
+        Args:
+            task_id: Unique task identifier
+            o_lang: Original language code
+            multi_strategy_transcription: Number of strategies (1-4)
+            transcription_post_processing: Whether to apply post-processing
+            prev_text: Previous context text
+            audio_uid: Audio unique identifier
+            times: Timestamp  
+            trim_duration: Seconds to trim from beginning (default: 0.0)
+            trim_text: Text corresponding to trimmed segment
+            audio_bytes: Raw audio bytes
+            
+        Returns:
+            threading.Event: Event that will be set when task completes
+        """
         task_event = threading.Event()
         should_add = True
         
@@ -247,15 +264,15 @@ class TranscribeManager:
                     'cancelled': False,
                     'processing': False,
                     'task_id': task_id,
-                    'trim_duration': trim_duration,  # 新增：記錄 trim duration
+                    'trim_duration': trim_duration,
                 }
         
         # Queue optimization: Only add to queue if not cancelled
         if should_add:
-            task = (task_id, audio_file, o_lang, multi_strategy_transcription,
-                    transcription_post_processing, prev_text, trim_duration, trim_text, audio_uid)  # 新增 audio_uid
+            task = (task_id, o_lang, multi_strategy_transcription,
+                    transcription_post_processing, prev_text, trim_duration, trim_text, audio_uid, audio_bytes)
             self.task_queue.put(task)
-            logger.debug(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}, trim: {trim_duration:.3f}s) added to queue. | ")
+            logger.debug(f" | Task {task_id} (audio_uid: {audio_uid}, times: {times}, trim: {trim_duration:.3f}s, in-memory) added to queue. | ")
         else:
             # Task cancelled before queuing, immediately wake up API thread
             task_event.set()
@@ -303,9 +320,9 @@ class TranscribeManager:
                 if task is None:  # Stop signal
                     break
                 
-                # Unpack task (with trim_duration and audio_uid)
-                task_id, audio_file, o_lang, multi_strategy_transcription, \
-                    transcription_post_processing, prev_text, trim_duration, trim_text, audio_uid = task
+                # Unpack task (100% in-memory processing)
+                task_id, o_lang, multi_strategy_transcription, \
+                    transcription_post_processing, prev_text, trim_duration, trim_text, audio_uid, audio_bytes = task
                 
                 # Check if task was cancelled or already cleaned up
                 with self.task_lock:
@@ -339,11 +356,11 @@ class TranscribeManager:
                     self.task_results[task_id]['processing'] = True
                     self.current_task_id = task_id  # Track current executing task
                 
-                # Execute transcription (set processing = True)
                 self.processing = True
                 detected_lang, ori_pred, n_segments, segments, transcription_time, audio_length = self.transcribe(
-                    audio_file, o_lang, multi_strategy_transcription, 
-                    transcription_post_processing, prev_text, trim_duration, trim_text
+                    ori=o_lang, multi_strategy_transcription=multi_strategy_transcription, 
+                    post_processing=transcription_post_processing, prev_text=prev_text, 
+                    trim_duration=trim_duration, trim_text=trim_text, audio_bytes=audio_bytes
                 )
                 
                 # Critical: Release transcribe_manager immediately after transcription
@@ -380,25 +397,33 @@ class TranscribeManager:
         
         logger.info(" | Queue worker stopped. | ")
 
-    def transcribe(self, audio_path, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_duration=0.0, trim_text=""):  
+    def transcribe(self, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_duration=0.0, trim_text="", audio_bytes=None, audio_path=""):  
         """
-        Docstring for transcribe
+        Transcribe audio.
         
-        :param self: Description
-        :param audio_file_path: Description
-        :param ori: Description
-        :param multi_strategy_transcription: Description
-        :param post_processing: Description
-        :param prev_text: Description
-        :param trim_duration: Seconds to trim from the beginning of audio (for prefix-chain stability)
-        :param trim_text: Text corresponding to the trimmed audio segment
+        Args:
+            ori: Original language code
+            multi_strategy_transcription: Number of strategies to try (1-4)
+            post_processing: Whether to apply post-processing
+            prev_text: Previous text for context
+            trim_duration: Seconds to trim from beginning
+            trim_text: Text corresponding to trimmed segment
+            audio_bytes: Raw audio bytes
+            audio_path: Path to audio file (fallback)
+            
+        Returns:
+            tuple: (detected_lang, transcription, n_segments, segments, inference_time, audio_length)
         """
         
-        audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
+        if audio_bytes is not None:
+            from api.audio.audio_utils import audio_preprocess_from_bytes
+            audio, audio_length = audio_preprocess_from_bytes(audio_bytes, padding_duration=0.05)
+        else:
+            audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
         
-        # 檢查音訊是否成功載入
         if audio is None:
-            logger.error(f" | transcribe() audio is None, file may not exist or corrupted: {audio_path} | ")
+            error_source = "bytes" if audio_bytes is not None else f"file: {audio_path}"
+            logger.error(f" | transcribe() audio is None from {error_source} | ")
             return "", "", 0, [], 0.0, 0.0
         
         # Apply audio trimming if trim_duration > 0
@@ -414,7 +439,7 @@ class TranscribeManager:
             audio_length = audio_length - trim_duration
             
             logger.debug(f" | Audio trimmed: {trim_duration:.3f}s ({samples_to_trim} samples), "
-                        f"new length: {audio_length:.3f}s | ")
+                        f"new length:{audio_length:.3f}s | ")
         elif trim_duration > 0.0:
             logger.warning(f" | Trim skipped: trim_duration ({trim_duration:.3f}s) >= audio_length ({audio_length:.3f}s) | ")
                 
@@ -435,10 +460,23 @@ class TranscribeManager:
                                            trim_text)
 
     
-    def detect_language(self, audio_path):
-        """Detect language of the given audio using the current transcriber."""
+    def detect_language(self, audio_bytes, audio_path=""):
+        """
+        Detect language from audio.
         
-        audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
+        Args:
+            audio_bytes: Raw audio bytes
+            audio_path: Path to audio file (fallback)
+            
+        Returns:
+            tuple: (detected_language, confidence)
+        """
+        
+        if audio_bytes is not None:
+            from api.audio.audio_utils import audio_preprocess_from_bytes
+            audio, audio_length = audio_preprocess_from_bytes(audio_bytes, padding_duration=0.05)
+        else:
+            audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
         
         if audio_length <= 0:
             return "unknown", 0.0
