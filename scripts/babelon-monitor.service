@@ -1,0 +1,17 @@
+[Unit]
+Description=Babelon Translation Service Monitor
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=aioproomadmin
+WorkingDirectory=/userdata/bobo/Babelon
+ExecStart=/userdata/bobo/Babelon/scripts/health_monitor.sh startup
+ExecStop=/userdata/bobo/Babelon/scripts/health_monitor.sh shutdown
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

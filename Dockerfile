@@ -3,41 +3,30 @@ FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
 ARG DEBIAN_FRONTEND=noninteractive  
 ARG TARGETARCH  
   
-# 設置工作目錄  
-# WORKDIR /app  
-# COPY . /app  
-
 WORKDIR /mnt
 
-# 更新系統並安裝必要的軟體包  
+# 安裝系統依賴
 RUN apt-get update && apt-get install -y --no-install-recommends \  
-    tzdata libgl1 libglib2.0-0 vim ffmpeg zip unzip htop screen tree build-essential gcc g++ make cmake unixodbc-dev curl python3-dev python3-distutils git wget libvulkan1 libfreeimage-dev gnupg2 \  
+    tzdata libgl1 libglib2.0-0 vim ffmpeg zip unzip htop screen tree build-essential gcc g++ make cmake curl python3-dev python3-distutils git wget libvulkan1 libfreeimage-dev gnupg2 unixodbc unixodbc-dev \  
     && apt-get clean && rm -rf /var/lib/apt/lists/*  
 
-# 安裝 Microsoft ODBC Driver 17 for SQL Server
-RUN curl -sSL https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -o packages-microsoft-prod.deb \
-    && dpkg -i packages-microsoft-prod.deb \
-    && rm packages-microsoft-prod.deb
-
-RUN apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
-    && ACCEPT_EULA=Y apt-get install -y mssql-tools \
-    && apt-get install -y libgssapi-krb5-2 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# 設置 SQL Server 工具路徑
-ENV PATH="$PATH:/opt/mssql-tools/bin"  
-    
-# 升級 pip  
-RUN pip3 install --upgrade pip  
-  
-# 將 requirements.txt 複製到 Docker 映像中  
+# 安裝 Python 依賴（先複製 requirements，利用 Docker cache）
 COPY requirements.txt /tmp/requirements.txt  
 COPY whl/wjy3-1.8.2-py3-none-any.whl /tmp/wjy3-1.8.2-py3-none-any.whl  
-RUN pip3 install -r /tmp/requirements.txt  
-  
+RUN pip3 install --no-cache-dir --upgrade pip \
+    && pip3 install --no-cache-dir -r /tmp/requirements.txt \
+    && rm -rf /tmp/*
 
-# 設置環境變量  
+# 複製程式碼
+COPY . /mnt/
+
+# 建立必要目錄
+RUN mkdir -p /mnt/audio /mnt/logs /mnt/models /mnt/alembic/versions
+
+# 複製測試音檔
+COPY audio/test.wav /mnt/audio/test.wav
+
+# 環境變數
 ENV LC_ALL=C.UTF-8  
 ENV LANG=C.UTF-8  
 ENV TZ=Asia/Taipei
@@ -45,27 +34,13 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV NVIDIA_VISIBLE_DEVICES=all  
 ENV LD_LIBRARY_PATH=/mnt/lib/cpp/ggml/src:/mnt/lib/cpp/ggml/src/ggml-cuda:/opt/conda/lib:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib/llvm-10/lib:$LD_LIBRARY_PATH  
 ENV PYTHONPATH=/mnt  
-# ENV LD_LIBRARY_PATH=/app/lib/cpp/ggml/src:/app/lib/cpp/ggml/src/ggml-cuda:/opt/conda/lib:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib/llvm-10/lib:$LD_LIBRARY_PATH  
-# ENV PYTHONPATH=/app  
 
 # 設置時區  
 RUN ln -sf /usr/share/zoneinfo/Asia/Taipei /etc/localtime && \  
     echo "Asia/Taipei" > /etc/timezone
 
-# huggingface-cli login (要用 Gemma 要先登入 huggingface 要有 token)
-# HUGGINGFACE_HUB_TOKEN
-# hf auth login
+EXPOSE 80
 
-# 該專案有寫 DB + Blob Storage 功能，請自行在 .env 裡面設定相關參數
-# SAVE_AUDIO_TO_AZURE_BLOB
-# AZURE_STORAGE_CONNECTION_STRING
-# AZURE_STORAGE_CONTAINER_NAME
+CMD ["python3", "main.py"]
 
-# DB -> alembic init -> alembic.ini 刪除 sqlalchemy.url 內容 -> alembic revision --autogenerate -m "init table" -> python3 init_job.py
-
-# EXPOSE 80
-
-# CMD ["python3", "main.py"]
-
-# nohup python3 main.py > output.log 2>&1 &
 

@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  babelon-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: babelon-translate-service:latest
+    container_name: babelon-translate-service
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+    env_file:
+      - .env
+    environment:
+      - PORT=80
+      - TZ=Asia/Taipei
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - babelon-network
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/health_check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+networks:
+  babelon-network:
+    driver: bridge

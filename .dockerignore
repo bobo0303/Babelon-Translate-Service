@@ -1,17 +1,48 @@
-audio/output_*
-audio/202*
-models
-csv
-test.py
-panding_audio.py
-*.csv
-.git  
-*.tmp  
+# Git
+.git
+.gitignore
+
+# Docker
+docker-compose.yml
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# Logs (runtime data)
 logs/*
-test
-rtt_test
-tools
-old
-azure_speech
-quantification
+
+# Audio files (only keep test.wav for preheat)
+audio/*
+!audio/test.wav
+
+# Old/test files
+old/
+test*.py
+quick_audio_test.py
+advanced_audio_test.py
+rtt_test/
+batch_test_results/
+tools/
+azure_speech/
+quantification/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Temp files
+*.tmp
+*.csv
+csv/
+
+# Scripts
+scripts/start.sh
+scripts/stop.sh
 batch_test_results

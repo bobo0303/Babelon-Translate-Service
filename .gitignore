@@ -162,3 +162,8 @@ cython_debug/
 # Local .env files  
 .env  
 .env.*  
+# Notification config (contains webhook URL)
+.env.notify
+
+# Build test state
+.last_image_id
