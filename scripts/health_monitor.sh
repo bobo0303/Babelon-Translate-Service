@@ -105,7 +105,11 @@ startup_notify() {
 # Shutdown notification
 shutdown_notify() {
     log "系統關機，發送通知..."
-    bash "$NOTIFY_SCRIPT" shutdown
+    # 快速發送通知，不等待回應
+    bash "$NOTIFY_SCRIPT" shutdown &
+    # 等待一小段時間確保通知送出
+    sleep 1
+    log "通知已發送"
 }
 
 # Main

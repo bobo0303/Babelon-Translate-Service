@@ -92,7 +92,18 @@ notify_start_failed() {
 }
 
 notify_shutdown() {
-    send_discord "⚠️ **服務即將關閉**\\n\\n🔄 狀態: 收到關機訊號" 15105570
+    # 使用快速發送，加短超時時間
+    local vm_name=$(get_vm_name)
+    local timestamp=$(get_timestamp)
+    
+    # 記錄到本地日誌作為備份
+    echo "[$timestamp] [${vm_name}] SHUTDOWN notification sent" >> /tmp/babelon-notify.log
+    
+    # 發送 Discord 通知（5 秒超時）
+    timeout 5 bash -c "curl -s -X POST '$DISCORD_WEBHOOK_URL' \
+        -H 'Content-Type: application/json' \
+        -d '{\"embeds\": [{\"title\": \"🤖 Babelon Monitor\", \"description\": \"⚠️ **服務即將關閉**\\\\n\\\\n🔄 狀態: 收到關機訊號\", \"color\": 15105570, \"fields\": [{\"name\": \"🖥️ VM\", \"value\": \"${vm_name}\", \"inline\": true}, {\"name\": \"🕐 Time\", \"value\": \"${timestamp}\", \"inline\": true}], \"footer\": {\"text\": \"Babelon Translation Service\"}}]}' \
+        > /dev/null 2>&1" || echo "[$timestamp] Discord webhook timeout or failed" >> /tmp/babelon-notify.log
 }
 
 notify_health_ok() {

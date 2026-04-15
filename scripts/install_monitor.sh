@@ -46,6 +46,8 @@ cat > "$SYSTEMD_DIR/babelon-monitor.service" << EOF
 Description=Babelon Translation Service Monitor
 After=network.target docker.service
 Wants=docker.service
+Before=shutdown.target reboot.target halt.target
+DefaultDependencies=no
 
 [Service]
 Type=oneshot
@@ -53,9 +55,10 @@ RemainAfterExit=yes
 User=$CURRENT_USER
 WorkingDirectory=$PROJECT_DIR
 ExecStart=$SCRIPT_DIR/health_monitor.sh startup
-ExecStop=$SCRIPT_DIR/health_monitor.sh shutdown
+ExecStop=/bin/bash -c '$SCRIPT_DIR/health_monitor.sh shutdown; sleep 2'
 TimeoutStartSec=300
-TimeoutStopSec=60
+TimeoutStopSec=90
+KillMode=none
 
 [Install]
 WantedBy=multi-user.target
