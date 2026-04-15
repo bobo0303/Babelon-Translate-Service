@@ -22,7 +22,7 @@ NC='\033[0m'
 
 # Configuration
 SERVICE_URL="http://localhost:${SERVICE_PORT:-80}"
-TEST_AUDIO="${TEST_AUDIO_FILE:-$PROJECT_DIR/audio/test/test.wav}"
+TEST_AUDIO="${TEST_AUDIO_FILE:-$PROJECT_DIR/audio/test.wav}"
 
 # Models to test (from config or default)
 IFS=',' read -ra MODELS <<< "${TEST_MODELS:-ggml_large_v2,ggml_large_v3,ggml_breeze_asr_25}"
