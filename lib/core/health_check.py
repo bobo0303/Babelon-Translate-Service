@@ -29,6 +29,7 @@ hc_logger = create_logger(
 
 class HealthCheckResponse(BaseModel):
     """Passive health check response - returned when others call /health_check"""
+    ip: str                    # Host IP address
     port: int                  # Service port
     started_at: str            # Start time (ISO format)
     status: str                # Status: healthy, degraded, unhealthy
@@ -61,6 +62,7 @@ class HealthCheckService:
         self,
         backend_domain: str = None,
         port: int = 80,
+        host_ip: str = "",
         timezone = None
     ):
         """
@@ -69,10 +71,12 @@ class HealthCheckService:
         Args:
             backend_domain: Backend domain to notify (from BACKEND_DOMAIN)
             port: This service's port
+            host_ip: Host machine IP address (from HOST_IP env)
             timezone: Timezone object (pytz timezone)
         """
         self.backend_domain = backend_domain or ""
         self.port = port
+        self.host_ip = host_ip or ""
         self.timezone = timezone
         self.start_time: Optional[datetime.datetime] = None
         
@@ -157,6 +161,7 @@ class HealthCheckService:
             status = "healthy"
         
         return HealthCheckResponse(
+            ip=self.host_ip,
             port=self.port,
             started_at=self.start_time.isoformat() if self.start_time else "",
             status=status
@@ -170,6 +175,7 @@ class HealthCheckService:
 def create_health_check_service(
     backend_domain: str = None,
     port: int = None,
+    host_ip: str = None,
     timezone = None
 ) -> HealthCheckService:
     """
@@ -178,6 +184,7 @@ def create_health_check_service(
     Args:
         backend_domain: 要通知的後端域名 (從 BACKEND_DOMAIN 傳入)
         port: 服務端口 (default: 從 PORT 環境變數或 80)
+        host_ip: 主機 IP (從 HOST_IP 環境變數傳入)
         timezone: 時區物件
         
     Returns:
@@ -186,5 +193,6 @@ def create_health_check_service(
     return HealthCheckService(
         backend_domain=backend_domain or "",
         port=port or int(os.environ.get("PORT", 80)),
+        host_ip=host_ip or os.environ.get("HOST_IP", ""),
         timezone=timezone
     )
