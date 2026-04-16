@@ -56,13 +56,6 @@ RUN ln -sf /usr/share/zoneinfo/Asia/Taipei /etc/localtime && \
 # HUGGINGFACE_HUB_TOKEN
 # hf auth login
 
-# 該專案有寫 DB + Blob Storage 功能，請自行在 .env 裡面設定相關參數
-# SAVE_AUDIO_TO_AZURE_BLOB
-# AZURE_STORAGE_CONNECTION_STRING
-# AZURE_STORAGE_CONTAINER_NAME
-
-# DB -> alembic init -> alembic.ini 刪除 sqlalchemy.url 內容 -> alembic revision --autogenerate -m "init table" -> python3 init_job.py
-
 # EXPOSE 80
 
 # CMD ["python3", "main.py"]

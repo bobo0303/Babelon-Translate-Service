@@ -47,12 +47,6 @@ webrtcvad==2.0.10
 silero-vad==5.1
 
 # wjy3
-/tmp/wjy3-1.8.2-py3-none-any.whl  
-
-# Azure Blob Storage
-azure-storage-blob==12.24.1
-
-# SQL
-alembic==1.17.0
+/tmp/wjy3-1.8.2-py3-none-any.whl
 
 

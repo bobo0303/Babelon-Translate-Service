@@ -8,7 +8,6 @@ from api.core.threading_api import audio_translate, waiting_times, stop_thread
 from api.core.utils import write_txt
 
 from lib.config.constant import SAMPLERATE, DEFAULT_RESULT, LANGUAGE_LIST, WAITING_TIME, AudioTranslationResponse, get_global_model
-from lib.core.response_manager import process_stt_response
 
 is_call_stt = False
 call_web_api_threads = {}
@@ -243,7 +242,8 @@ class WebSocketSttManager:
                 "rtf": rtf
             }
 
-            process_stt_response(self.logger, response_data, other_info)
+            # WebSocket response (storage functionality removed)
+            self.logger.debug(f" | STT completed for audio_uid: {audio_uid} | ")
 
         except Exception as e:
             self.logger.error(f" | Error in STT thread for audio_uid:{audio_uid}, frame_timestamp:{frame_timestamp}, error:{e} | ")

@@ -21,7 +21,7 @@ RUN pip3 install --no-cache-dir --upgrade pip \
 COPY . /mnt/
 
 # 建立必要目錄
-RUN mkdir -p /mnt/audio /mnt/logs /mnt/models /mnt/alembic/versions
+RUN mkdir -p /mnt/audio /mnt/logs /mnt/models
 
 # 複製測試音檔
 COPY audio/test.wav /mnt/audio/test.wav

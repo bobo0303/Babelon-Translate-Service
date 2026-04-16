@@ -17,7 +17,6 @@ from api.core.translate_manager import TranslateManager
 from api.azure_sdk.speech_lid import AzureSpeechLID
 from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
-from lib.core.response_manager import storage_upload
 from lib.core.health_check import create_health_check_service, hc_logger
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN, HEALTH_CHECK_CYCLE_SEC, DEFAULT_AUDIO
 from lib.core.logging_config import get_logger
