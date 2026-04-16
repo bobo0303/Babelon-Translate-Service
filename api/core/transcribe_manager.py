@@ -6,7 +6,6 @@ from queue import Queue
 
 from api.transcraption.whisper_transformer import WhisperTransformer
 from api.transcraption.whisper_cpp import WhisperCpp 
-from api.audio.audio_utils import audio_preprocess
 
 from lib.config.constant import ModelPath
   
@@ -397,7 +396,7 @@ class TranscribeManager:
         
         logger.info(" | Queue worker stopped. | ")
 
-    def transcribe(self, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_duration=0.0, trim_text="", audio_bytes=None, audio_path=""):  
+    def transcribe(self, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_duration=0.0, trim_text="", audio_bytes=None):  
         """
         Transcribe audio.
         
@@ -408,22 +407,21 @@ class TranscribeManager:
             prev_text: Previous text for context
             trim_duration: Seconds to trim from beginning
             trim_text: Text corresponding to trimmed segment
-            audio_bytes: Raw audio bytes
-            audio_path: Path to audio file (fallback)
+            audio_bytes: Raw audio bytes (required)
             
         Returns:
             tuple: (detected_lang, transcription, n_segments, segments, inference_time, audio_length)
         """
         
-        if audio_bytes is not None:
-            from api.audio.audio_utils import audio_preprocess_from_bytes
-            audio, audio_length = audio_preprocess_from_bytes(audio_bytes, padding_duration=0.05)
-        else:
-            audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
+        if audio_bytes is None:
+            logger.error(" | transcribe() audio_bytes is None | ")
+            return "", "", 0, [], 0.0, 0.0
+        
+        from api.audio.audio_utils import audio_preprocess_from_bytes
+        audio, audio_length = audio_preprocess_from_bytes(audio_bytes, padding_duration=0.05)
         
         if audio is None:
-            error_source = "bytes" if audio_bytes is not None else f"file: {audio_path}"
-            logger.error(f" | transcribe() audio is None from {error_source} | ")
+            logger.error(" | transcribe() audio is None from bytes | ")
             return "", "", 0, [], 0.0, 0.0
         
         # Apply audio trimming if trim_duration > 0
@@ -450,8 +448,7 @@ class TranscribeManager:
         # else:
         #     prev_text = ""
                 
-        return self.transcriber.transcribe(audio_path,
-                                           audio, 
+        return self.transcriber.transcribe(audio, 
                                            audio_length,
                                            ori, 
                                            multi_strategy_transcription, 
@@ -460,23 +457,23 @@ class TranscribeManager:
                                            trim_text)
 
     
-    def detect_language(self, audio_bytes, audio_path=""):
+    def detect_language(self, audio_bytes):
         """
         Detect language from audio.
         
         Args:
-            audio_bytes: Raw audio bytes
-            audio_path: Path to audio file (fallback)
+            audio_bytes: Raw audio bytes (required)
             
         Returns:
             tuple: (detected_language, confidence)
         """
         
-        if audio_bytes is not None:
-            from api.audio.audio_utils import audio_preprocess_from_bytes
-            audio, audio_length = audio_preprocess_from_bytes(audio_bytes, padding_duration=0.05)
-        else:
-            audio, audio_length = audio_preprocess(audio_path, padding_duration=0.05)
+        if audio_bytes is None:
+            logger.error(" | detect_language() audio_bytes is None | ")
+            return "unknown", 0.0
+        
+        from api.audio.audio_utils import audio_preprocess_from_bytes
+        audio, audio_length = audio_preprocess_from_bytes(audio_bytes, padding_duration=0.05)
         
         if audio_length <= 0:
             return "unknown", 0.0

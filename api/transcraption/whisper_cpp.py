@@ -554,12 +554,14 @@ class WhisperCpp:
                    f"(logprob={best['avg_logprob']:.2f}, entropy={best['entropy']:.2f}) | ")
         return best['detected_lang'], best['text'], best['n_segments'], best['segments'], False
     
-    def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
+    def transcribe(self, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
         """        
-        Perform transcription on the given audio file.  
+        Perform transcription on the given audio.  
     
-        :param audio_file_path: str  
-            The path to the audio file to be transcribed.  
+        :param audio: numpy array
+            The preprocessed audio data (16kHz float32).
+        :param audio_length: float
+            Duration of the audio in seconds.
         :param ori: str  
             The original language of the audio.
         :rtype: tuple  
@@ -641,7 +643,7 @@ class WhisperCpp:
                     logger.debug(f" | Raw Transcription: {ori_pred} | ")
                             
                 if post_processing:
-                    audio_duration = get_audio_duration(audio_path) if audio_length is None else audio_length
+                    audio_duration = audio_length
                     retry_flag, ori_pred = post_process(ori_pred, audio_duration, self.prompt)
 
                 if retry_flag:
@@ -720,15 +722,15 @@ if __name__ == "__main__":
     result_queue = Queue()
     cpp_whisper = WhisperCpp(result_queue)
     
-    audio_path = "/mnt/old/2025_Q2_Frank/segment_001.wav"
-    audio = audio_preprocess(audio_path, 0.0)
+    test_audio_path = "/mnt/old/2025_Q2_Frank/segment_001.wav"
+    audio, audio_length = audio_preprocess(test_audio_path, 0.0)
     
     cpp_whisper.load_model("ggml-large-v2", "/mnt/models/ggml-large-v2.bin")
     
     # cpp_whisper.set_prompt("")
     # cpp_whisper.set_prompt("拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, 急單, foreX, NT dollars, Monitor, MS, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, Notebook, RD, TV, 8B, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, Pillar, 凌華, ComQi, paul, AUO, 彭双浪, 柯富仁")
     
-    detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = cpp_whisper.transcribe(audio_path, audio, None, "zh", multi_strategy_transcription=1, post_processing=True, prev_text="")
+    detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = cpp_whisper.transcribe(audio, audio_length, "zh", multi_strategy_transcription=1, post_processing=True, prev_text="")
     
     print(f"Transcription: {ori_pred}")
     print(f"Segments: {n_segments}")

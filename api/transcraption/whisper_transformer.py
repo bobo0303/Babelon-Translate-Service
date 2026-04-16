@@ -115,12 +115,14 @@ class WhisperTransformer:
             return e    
     
     
-    def transcribe(self, audio_path, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
+    def transcribe(self, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
         """  
-        Perform transcription on the given audio file.  
+        Perform transcription on the given audio.  
     
-        :param audio_file_path: str  
-            The path to the audio file to be transcribed.  
+        :param audio: numpy array
+            The preprocessed audio data (16kHz float32).
+        :param audio_length: float
+            Duration of the audio in seconds.
         :param ori: str  
             The original language of the audio.
         :rtype: tuple  
@@ -210,10 +212,8 @@ class WhisperTransformer:
                 #     })
                 # n_segments = len(segments)
                 
-                # audio path load audio if audio is None
+                # audio is always provided (preprocessed in transcribe_manager)
                 audio_input = audio
-                if audio is None:
-                    audio_input, _ = librosa.load(audio_path, sr=16000)
                     
                 # audio to mel spectrogram
                 audio_input = self.pipe.feature_extractor(
@@ -284,7 +284,7 @@ class WhisperTransformer:
                 logger.debug(f" | Raw Transcription: {ori_pred} | ")
                 
                 if post_processing:
-                    audio_duration = get_audio_duration(audio_path) if audio_length is None else audio_length
+                    audio_duration = audio_length
                     retry_flag, ori_pred = post_process(ori_pred, audio_duration, self.prompt)
                 # retry_flag = True
                 if retry_flag:

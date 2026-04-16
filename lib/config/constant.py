@@ -73,6 +73,8 @@ LANG_TO_AZURE_LOCALE = {
     "de": "de-DE",
 }
 
+DEFAULT_AUDIO = "./audio/test.wav"
+
 #############################################################################
 
 class AudioTranslationResponse(BaseModel):

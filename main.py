@@ -19,7 +19,7 @@ from api.core.threading_api import audio_translate, texts_translate, waiting_tim
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.response_manager import storage_upload
 from lib.core.health_check import create_health_check_service, hc_logger
-from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN, HEALTH_CHECK_CYCLE_SEC
+from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN, HEALTH_CHECK_CYCLE_SEC, DEFAULT_AUDIO
 from lib.core.logging_config import get_logger
 from wjy3 import BaseResponse, Status
 
@@ -88,10 +88,11 @@ async def lifespan(app: FastAPI):
         logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(transcribe_manager)} | ")  
         # preheat  
         logger.info(f" | Start to preheat model. | ")  
-        default_audio = "audio/test.wav"  
+        with open(DEFAULT_AUDIO, "rb") as f:
+            audio_bytes = f.read()
         start = time.time()  
         for _ in range(5):  
-            transcribe_manager.transcribe(ori="en", post_processing=False, audio_path=default_audio)  
+            transcribe_manager.transcribe(ori="en", post_processing=False, audio_bytes=audio_bytes)  
         end = time.time()  
         logger.info(f" | Preheat model has been completed in {end - start:.2f} seconds. | ")  
         # set default prompt
