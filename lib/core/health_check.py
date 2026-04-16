@@ -135,7 +135,8 @@ class HealthCheckService:
     def get_health_check_response(
         self,
         is_processing: bool = False,
-        model_loaded: bool = True
+        model_loaded: bool = True,
+        has_pending_tasks: bool = False
     ) -> HealthCheckResponse:
         """
         Generate health check response data
@@ -143,13 +144,14 @@ class HealthCheckService:
         Args:
             is_processing: Whether currently processing a task
             model_loaded: Whether the model is loaded
+            has_pending_tasks: Whether there are tasks waiting in the queue
             
         Returns:
             HealthCheckResponse: Health check response data
         """
         if not model_loaded:
             status = "unhealthy"
-        elif is_processing:
+        elif is_processing or has_pending_tasks:
             status = "degraded"
         else:
             status = "healthy"
