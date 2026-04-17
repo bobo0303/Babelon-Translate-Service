@@ -94,7 +94,7 @@ class HealthCheckService:
         On startup, GET backend's /health_check to notify it we're alive
         (and confirm it's alive too)
         
-        Expects wjy3 BaseResponse format with status field.
+        Expects BaseResponse format with status field.
         Only status == "OK" is considered success.
             
         Returns:

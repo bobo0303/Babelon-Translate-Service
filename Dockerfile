@@ -33,7 +33,6 @@ RUN pip3 install --upgrade pip
   
 # 將 requirements.txt 複製到 Docker 映像中  
 COPY requirements.txt /tmp/requirements.txt  
-COPY whl/wjy3-1.8.2-py3-none-any.whl /tmp/wjy3-1.8.2-py3-none-any.whl  
 RUN pip3 install -r /tmp/requirements.txt  
   
 

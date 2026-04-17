@@ -12,7 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 安裝 Python 依賴（先複製 requirements，利用 Docker cache）
 COPY requirements.txt /tmp/requirements.txt  
-COPY whl/wjy3-1.8.2-py3-none-any.whl /tmp/wjy3-1.8.2-py3-none-any.whl  
 RUN pip3 install --no-cache-dir --upgrade pip \
     && pip3 install --no-cache-dir -r /tmp/requirements.txt \
     && rm -rf /tmp/*

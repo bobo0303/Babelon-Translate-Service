@@ -20,7 +20,7 @@ from api.core.utils import write_txt, format_text_spacing, format_cleaning, Resp
 from lib.core.health_check import create_health_check_service, hc_logger
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN, HEALTH_CHECK_CYCLE_SEC, DEFAULT_AUDIO
 from lib.core.logging_config import get_logger
-from wjy3 import BaseResponse, Status
+from lib.core.base_object import BaseResponse, Status
 
 # Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  
