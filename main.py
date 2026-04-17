@@ -529,7 +529,6 @@ async def translate(
         # write_txt(zh_result, en_result, de_result, ja_result, ko_result, meeting_id, audio_uid, times)
         if other_info:
             other_info['audio_uid'] = audio_uid
-            # storage_upload(logger, response_data, other_info) 
 
         return BaseResponse(status=state, message=f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)  
     except Exception as e:  
@@ -738,10 +737,6 @@ async def translate_pipeline(
             message = " | Pipeline processing failed | "
         logger.warning(message)
         
-
-    if other_info:
-        # storage_upload(logger, response_data, other_info)
-        pass
 
     # Clean up this request from tracker
     response_tracker.cleanup(audio_uid, task_id)

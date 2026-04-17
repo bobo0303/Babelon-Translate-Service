@@ -50,7 +50,7 @@ class LogManager:
     def _configure_third_party_loggers(self):
         """配置第三方套件的日誌等級，減少冗長的輸出"""
         third_party_loggers = [
-            'azure', 'azure.storage', 'azure.core', 'azure.storage.blob',
+            'azure', 'azure.core',
             'openai', 'openai.api_requestor', 'openai._client', 'openai._base_client',
             'httpx', 'urllib3', 'requests'
         ]
