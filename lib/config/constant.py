@@ -3,6 +3,11 @@ from typing import Dict, Any
 from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Dict, List, Any
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 #############################################################################
 
@@ -21,13 +26,45 @@ class ModelPath(BaseModel):
     
 CPP_LIB_PATH = "./lib/cpp/src/libwhisper.so"
 
-# gpt-4o
-AZURE_CONFIG = './lib/config/azure_config.yaml'
+# Azure GPT Models Configuration (from environment variables)
+GPT_CONFIG = {
+    "gpt-4o": {
+        "API_KEY": os.getenv("GPT_4O_API_KEY", ""),
+        "API_VERSION": os.getenv("GPT_4O_API_VERSION", ""),
+        "ENDPOINT": os.getenv("GPT_4O_ENDPOINT", ""),
+        "DEPLOYMENT": os.getenv("GPT_4O_DEPLOYMENT", ""),
+    },
+    "gpt-4.1": {
+        "API_KEY": os.getenv("GPT_41_API_KEY", ""),
+        "API_VERSION": os.getenv("GPT_41_API_VERSION", ""),
+        "ENDPOINT": os.getenv("GPT_41_ENDPOINT", ""),
+        "DEPLOYMENT": os.getenv("GPT_41_DEPLOYMENT", ""),
+    },
+    "gpt-4.1-mini": {
+        "API_KEY": os.getenv("GPT_41_MINI_API_KEY", ""),
+        "API_VERSION": os.getenv("GPT_41_MINI_API_VERSION", ""),
+        "ENDPOINT": os.getenv("GPT_41_MINI_ENDPOINT", ""),
+        "DEPLOYMENT": os.getenv("GPT_41_MINI_DEPLOYMENT", ""),
+    },
+    "gpt-4o-aoai": {
+        "API_KEY": os.getenv("GPT_4O_AOAI_API_KEY", ""),
+        "API_VERSION": os.getenv("GPT_4O_AOAI_API_VERSION", ""),
+        "ENDPOINT": os.getenv("GPT_4O_AOAI_ENDPOINT", ""),
+        "DEPLOYMENT": os.getenv("GPT_4O_AOAI_DEPLOYMENT", ""),
+    },
+}
 
-# ollama-gemma3-12b-qat + ollama-qwen3-14b-q4_K_M
-OLLAMA_MODEL = {
-    "ollama-gemma": "./lib/config/gemma3_12b-it-qat.yaml",
-    "ollama-qwen": "./lib/config/qwen3_14b-q4_K_M.yaml",
+# Azure Speech Configuration (from environment variables)
+SPEECH_CONFIG = {
+    "SubscriptionKey": os.getenv("AZURE_SPEECH_SUBSCRIPTION_KEY", ""),
+    "ServiceRegion": os.getenv("AZURE_SPEECH_SERVICE_REGION", ""),
+}
+
+# Ollama Models Configuration (from environment variables)
+OLLAMA_CONFIG = {
+    "HOST": os.getenv("OLLAMA_HOST", "http://172.17.0.1:52013/"),
+    "ollama-gemma": os.getenv("OLLAMA_GEMMA_MODEL", "gemma3:12b-it-qat"),
+    "ollama-qwen": os.getenv("OLLAMA_QWEN_MODEL", "qwen3:14b-q4_K_M"),
 }
 
 # GEMMA 4B (https://huggingface.co/google/gemma-3-4b-it)
@@ -38,8 +75,9 @@ TRANSLATE_METHODS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini'] # 'ollama-gemma', 'oll
 
 #############################################################################
 
-BACKEND_DOMAIN: str = "https://babelon-backend-dev.azurewebsites.net/"
-HEALTH_CHECK_CYCLE_SEC: int = 30 
+# Service Configuration (from environment variables)
+BACKEND_DOMAIN: str = os.getenv("BACKEND_DOMAIN", "https://babelon-backend-dev.azurewebsites.net/")
+HEALTH_CHECK_CYCLE_SEC: int = int(os.getenv("HEALTH_CHECK_CYCLE_SEC", "30"))
 
 #############################################################################
 
@@ -47,7 +85,6 @@ SILENCE_PADDING = True  # Whether to add silence padding to audio files
 RTF = True  # Whether to calculate and log the Real-Time Factor (RTF)
 WAITING_TIME = 10 # The whisper inference max waiting time (if over the time will stop it)
 MAX_NUM_STRATEGIES = 4  # The maximum number of strategies for sampling during transcription
-FALLBACK_METHOD = 'ollama-gemma' 
 
 #############################################################################
 # Trim Session Configuration

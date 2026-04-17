@@ -10,11 +10,10 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from typing import Optional
-import yaml
 import azure.cognitiveservices.speech as speechsdk
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import AZURE_CONFIG, LANGUAGE_LIST, LANG_TO_AZURE_LOCALE
+from lib.config.constant import SPEECH_CONFIG, LANGUAGE_LIST, LANG_TO_AZURE_LOCALE
 from lib.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -30,11 +29,8 @@ class LIDResult:
 
 class AzureSpeechLID:
     def __init__(self):
-        # 載入設定
-        with open(AZURE_CONFIG, 'r') as file:
-            config = yaml.safe_load(file)
-        
-        self._azure_config = config['speech_models']['azure_speech']
+        # Load config from environment variables via SPEECH_CONFIG
+        self._azure_config = SPEECH_CONFIG
         
         # 排除 'auto'，保留有效語言
         self.language_list = [lang for lang in LANGUAGE_LIST if lang != 'auto']

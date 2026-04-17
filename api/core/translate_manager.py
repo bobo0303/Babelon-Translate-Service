@@ -1,3 +1,4 @@
+import os
 import time  
 import torch
 import threading
@@ -8,7 +9,7 @@ from queue import Queue
 # from api.translation.gemma_translate import Gemma4BTranslate  
 from api.translation.ollama_translate import OllamaChat
 from api.translation.gpt_translate import GptTranslate  
-from lib.config.constant import OLLAMA_MODEL, DEFAULT_RESULT, TaskContext, SharedResources
+from lib.config.constant import DEFAULT_RESULT, TaskContext, SharedResources
 from lib.core.logging_config import get_logger
 
 # 獲取日誌器
@@ -18,7 +19,7 @@ class TranslateManager:
     def __init__(self):  
 
         try:
-            self.ollama_gemma_translator = OllamaChat(OLLAMA_MODEL['ollama-gemma'])  # Use correct key
+            self.ollama_gemma_translator = OllamaChat(os.getenv("DEFAULT_LOCAL_TRANSLATE_MODEL", "ollama-gemma"))  # Use model name
         except Exception as e:
             logger.warning(f" | Failed to initialize Ollama translator: {e} | ")
             self.ollama_gemma_translator = None

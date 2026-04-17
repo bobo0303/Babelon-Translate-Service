@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
         logger.info(f" | ##################################################### | ")  
         logger.info(f" | Start to loading default model. | ")  
         # load model  
-        default_model = "ggml_breeze_asr_25"  
+        default_model = os.getenv("DEFAULT_MODEL", "ggml_breeze_asr_25")  
         transcribe_manager.load_model(default_model)  # Directly load the default model  
         logger.info(f" | Default model {default_model} has been loaded successfully. Model ID: {id(transcribe_manager)} | ")  
         # preheat  

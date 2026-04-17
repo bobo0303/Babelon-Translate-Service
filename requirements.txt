@@ -17,6 +17,9 @@ tqdm
 opencc-python-reimplemented
 pytz==2022.1  
 
+# Load environment variables
+python-dotenv
+
 # Gemma (request python >= 3.9.0)
 transformers==4.50.1
 accelerate

@@ -1,34 +1,34 @@
 import os
 import sys
 import json
-import yaml
 import re
 from ollama import Client
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language
+from lib.config.constant import SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language, OLLAMA_CONFIG
 from lib.core.logging_config import get_logger
 
 # 獲取日誌器
 logger = get_logger(__name__)
  
 class OllamaChat:
-    def __init__(self, config_path):
+    def __init__(self, model_name):
         """Initialize Ollama chat client
  
         Args:
-            config_path: Configuration file path
+            model_name: Model name (e.g., 'ollama-gemma' or 'ollama-qwen')
         """
-        self.config_path = config_path
-        self.config = self._load_config()
-        self.think = "/no_think\n" if "qwen3" in self.config_path else ""
+        self.model_name = model_name
+        self.host = OLLAMA_CONFIG["HOST"]
+        self.model = OLLAMA_CONFIG.get(model_name, model_name)  # Get model from config or use as-is
+        self.think = "/no_think\n" if "qwen3" in self.model else ""
         
-         # Initialize Ollama client
+        # Initialize Ollama client
         try:
-            self.client = Client(host=self.config["HOST"])
+            self.client = Client(host=self.host)
             
             self.client.chat(
-                model=self.config["MODEL"],
+                model=self.model,
                 messages="",
                 format="",
                 stream=False,
@@ -37,11 +37,6 @@ class OllamaChat:
         except Exception as e:
             logger.error(f" | initial ollama error: {e} (Maybe ollama serve not started) | ")
             raise e
- 
-    def _load_config(self):
-        """Load configuration file"""
-        with open(self.config_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
 
     def _clean_think_tags(self, text):
         """Clean <think> </think> tags and their content from response
@@ -168,7 +163,7 @@ class OllamaChat:
         ]
         try:
             response = self.client.chat(
-                model=self.config["MODEL"],
+                model=self.model,
                 messages=messages,
                 format=format,
                 options={"temperature": temperature},
@@ -204,7 +199,7 @@ class OllamaChat:
         
     def close(self):
         self.client.chat(
-            model=self.config["MODEL"],
+            model=self.model,
             messages="",
             format="",
             options={"temperature": 0.0},

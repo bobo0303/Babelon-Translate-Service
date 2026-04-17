@@ -5,11 +5,10 @@ Prevents prompt injection attacks and ensures stable translation output format
 
 import os
 import sys
-import yaml  
 import json
 from openai import AzureOpenAI
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from lib.config.constant import AZURE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language
+from lib.config.constant import GPT_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_V3, SYSTEM_PROMPT_V4_1, SYSTEM_PROMPT_V4_2, SYSTEM_PROMPT_5LANGUAGES_V3, SYSTEM_PROMPT_5LANGUAGES_V4_1, SYSTEM_PROMPT_5LANGUAGES_V4_2, SYSTEM_PROMPT_EAPC_V3, SYSTEM_PROMPT_EAPC_V4_1, SYSTEM_PROMPT_EAPC_V4_2, get_system_prompt_dynamic_language
 from lib.core.logging_config import get_logger
 
 # 獲取日誌器
@@ -17,10 +16,10 @@ logger = get_logger(__name__)
 
 class GptTranslate:
     def __init__(self, model_version='gpt-4o'):
-        with open(AZURE_CONFIG, 'r') as file:  
-            self.config = yaml.safe_load(file)  
-
-        self.config = self.config['gpt_models'][model_version]
+        # Load config from environment variables via GPT_CONFIG
+        self.config = GPT_CONFIG.get(model_version)
+        if not self.config:
+            raise ValueError(f"Unknown model version: {model_version}")
 
         self.client = AzureOpenAI(api_key=self.config['API_KEY'],
                             api_version=self.config['API_VERSION'],
