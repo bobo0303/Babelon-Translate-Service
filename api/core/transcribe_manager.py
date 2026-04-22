@@ -143,6 +143,9 @@ class TranscribeManager:
         
         Strategy: Try graceful abort first, then force kill if needed.
         """
+        
+        supports_graceful = False  # Initialize before any conditional blocks
+
         with self.task_lock:
             if self.current_task_id is None:
                 logger.debug(f" | No task currently executing to terminate for audio_uid: {audio_uid}. | ")
