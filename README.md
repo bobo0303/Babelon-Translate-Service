@@ -17,777 +17,442 @@
 
 ## 📝 Project Overview
 
-**Babelon** is a FastAPI-based multi-language audio transcription and translation service platform. It integrates the latest ASR (Automatic Speech Recognition) and AI translation technologies to provide high-precision speech-to-text and multi-language translation capabilities.
+**Babelon** is a FastAPI-based multi-language audio transcription and translation service. It integrates ASR (Automatic Speech Recognition) with multiple AI translation engines (GPT-4o/4.1, Claude Sonnet/Haiku, Ollama) to provide high-precision speech-to-text and multi-language translation capabilities.
 
 ### 🎯 Use Cases
-- 📋 **Meeting Transcription** - Automatically generate multi-language meeting minutes
-- 🎙️ **Real-time Voice Translation** - Instant multi-language support for online meetings
-- 📝 **Voice Memos** - Quickly convert voice to editable text
-- 🌍 **Multi-language Content Creation** - One-click generation of multi-language versions
+- 📋 **Meeting Transcription** — Automatically generate multi-language meeting minutes
+- 🎙️ **Real-time Voice Translation** — WebSocket streaming with VAD for live audio
+- 📝 **Text Translation** — Translate text directly to 5 languages
+- 🌍 **Multi-language Content** — One request, 5 language outputs
+
+---
 
 ## ✨ Core Features
 
-<table>
-<tr>
-<td width="50%">
+| Category | Features |
+|----------|----------|
+| **🎵 Transcription** | Whisper large-v2/v3, BreezeASR (GGML quantized), GGML C++ optimized models |
+| **🌍 Translation** | GPT-4o, GPT-4.1, GPT-4.1-mini, Claude Sonnet 4.5, Claude Haiku 4.5 |
+| **🔄 Pipeline** | Queue-based transcription + parallel multi-thread translation |
+| **⚡ Streaming** | WebSocket real-time audio with VAD (Voice Activity Detection) |
+| **🛡️ Fault Tolerance** | Auto-fallback to local Ollama on 403/failure, duplicate request cancellation |
+| **🎯 Multi-strategy** | Up to 4 transcription sampling strategies for optimal accuracy |
+| **🔍 Auto-detect** | Language auto-detection via Whisper or Azure Speech |
+| **📊 Monitoring** | Health check (active + passive), RTF metrics, log viewer API |
 
-### 🎯 **Core Functionality**
-- 🎵 **High-precision Audio Transcription** - Support for Whisper large-v2/v3/turbo models
-- 🌍 **Multi-language Translation** - Chinese (Traditional), English, German translation
-- ⚡ **Real-time Streaming Processing** - SSE technology for instant translation feedback
-- 🔄 **Multi-strategy Transcription** - Up to 4 strategies ensuring optimal accuracy
-- 🛠️ **Intelligent Post-processing** - Automatic correction of common ASR errors
+---
 
-</td>
-<td width="50%">
+## 🌐 Supported Languages
 
-### 🛠 **Technical Highlights**
-- 🚀 **Multi AI Model Integration** - Whisper, Gemma, Ollama, GPT-4o/4.1
-- ⚡ **GPU Acceleration** - CUDA support for dramatically improved processing speed
-- 🐳 **Containerized Deployment** - One-click deployment with Docker/Docker Compose
-- 🔧 **Intelligent Resource Management** - Auto cleanup, memory optimization
-- 🛡️ **Multi-strategy Fault Tolerance** - Ensuring service stability
+| Code | Language | Azure Locale |
+|------|----------|--------------|
+| `zh` | 🇹🇼 Traditional Chinese | zh-TW |
+| `en` | 🇺🇸 English | en-US |
+| `ja` | 🇯🇵 Japanese | ja-JP |
+| `ko` | 🇰🇷 Korean | ko-KR |
+| `de` | 🇩🇪 German | de-DE |
+| `auto` | 🔍 Auto-detect | — |
 
-</td>
-</tr>
-</table>
+---
 
 ## 🏗 System Architecture
 
 ```
 🌐 Babelon Translation Service
 │
-├── 🚀 main.py                    # FastAPI main application
+├── 🚀 main.py                          # FastAPI application & all endpoints
 │
-├── 📂 api/                       # API core modules
-│   ├── 🧠 model.py               # Model management center
-│   ├── 🔤 gemma_translate.py     # Gemma translation engine
-│   ├── 💬 gpt_translate.py       # GPT-4o/4.1 translation engine
-│   ├── 🦙 ollama_translate.py    # Ollama translation engine
-│   ├── ⚙️ post_process.py        # Intelligent post-processing module
-│   ├── 🔄 threading_api.py       # Multi-threading API
-│   └── 🛠️ utils.py               # Utility functions
+├── 📂 api/
+│   ├── 📂 core/
+│   │   ├── 🧠 transcribe_manager.py    # ASR model management & inference
+│   │   ├── 🔤 translate_manager.py     # Translation orchestration & fallback
+│   │   ├── 🔄 threading_api.py         # Pipeline coordinator & threading
+│   │   └── 🛠️ utils.py                 # Post-processing, formatting, response tracking
+│   │
+│   ├── 📂 translation/
+│   │   ├── 💬 gpt_translate.py          # Azure OpenAI GPT translation
+│   │   ├── 🤖 claude_translate.py       # Azure Claude translation
+│   │   └── 🦙 ollama_translate.py       # Local Ollama fallback translation
+│   │
+│   ├── 📂 transcraption/
+│   │   └── ⚙️ post_process.py           # ASR post-processing & error correction
+│   │
+│   ├── 📂 azure_sdk/
+│   │   └── 🎤 speech_lid.py             # Azure Speech language detection
+│   │
+│   └── 📂 websocket/
+│       └── 🔌 vad_translate_stream.py   # WebSocket real-time VAD streaming
 │
-├── 📚 lib/                       # Shared libraries
-│   ├── 🏗️ base_object.py         # Base object definitions
-│   ├── ⚙️ constant.py            # System constants
-│   └── ☁️ azure_config.yaml      # Azure API configuration
+├── 📚 lib/
+│   ├── 📂 config/
+│   │   └── ⚙️ constant.py               # Languages, models, prompts, settings
+│   └── 📂 core/
+│       ├── 📋 logging_config.py          # Logging configuration
+│       ├── 💓 health_check.py            # Health check service
+│       └── 🏗️ base_object.py             # BaseResponse, Status enums
 │
-├── 🛠️ tools/                     # Tool programs
-│   └── 🔊 audio_splitter.py      # Audio splitting tool
-│
-├── 🎵 audio/                     # Audio temporary storage
-└── 📋 logs/                      # System logs
+├── 🐳 Dockerfile / docker-compose.yml   # Container deployment
+├── 📦 requirements.txt                  # Python dependencies
+└── 📋 logs/app.log                      # Application logs
 ```
 
-## 🚀 Quick Start
+---
 
-### 📋 System Requirements
+## 📋 API Endpoints
 
-<table>
-<tr>
-<td><strong>🐍 Python</strong></td>
-<td>3.9 or higher</td>
-</tr>
-<tr>
-<td><strong>🔥 GPU</strong></td>
-<td>NVIDIA CUDA support (4GB+ VRAM recommended)</td>
-</tr>
-<tr>
-<td><strong>🐳 Container</strong></td>
-<td>Docker & Docker Compose</td>
-</tr>
-<tr>
-<td><strong>💾 Memory</strong></td>
-<td>16GB+ RAM (recommended)</td>
-</tr>
-</table>
+### Health & Status
 
-### 🛠️ Installation & Deployment
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Basic health check |
+| `GET` | `/health_check` | Detailed status (port, uptime, processing state) |
+| `GET` | `/list_optional_items` | List available transcription & translation models |
+| `GET` | `/get_current_model` | Currently loaded transcription & translation model |
+| `GET` | `/get_prompt` | Current transcription prompt |
+| `GET` | `/get_pretext_status` | Previous text context enabled/disabled |
+| `GET` | `/get_logs?lines=100` | Latest N lines from app.log |
 
-<details>
-<summary><strong>🐳 Method 1: Docker Deployment (Recommended)</strong></summary>
+### Configuration
 
-```bash
-# 📥 Clone the project
-git clone https://github.com/bobo0303/Babelon-Translate-Service.git
-cd Babelon-Translate-Service
+| Method | Endpoint | Parameters | Description |
+|--------|----------|------------|-------------|
+| `POST` | `/change_transcription_model` | `model_name` | Switch ASR model |
+| `POST` | `/change_translator` | `model_name` | Switch translation engine |
+| `POST` | `/set_prompt` | `prompts` | Set/clear custom transcription prompt |
+| `POST` | `/change_pretext_usage` | `enable` (bool) | Toggle previous text context |
 
-# 🏗️ Build and start the service
-docker build -t babelon .
-# Or use Docker Compose
-docker-compose up -d
+### Language Detection
 
-# 🔧 Enter the container
-docker exec -it babelon bash
+| Method | Endpoint | Parameters | Description |
+|--------|----------|------------|-------------|
+| `POST` | `/language_detect` | `file`, `method` ("whisper"\|"azure_speech") | Detect audio language |
 
-# 🚀 Start the service
-python main.py
-```
+### Translation
 
-</details>
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/translate_pipeline` | ✅ **Recommended** — Queue-based pipeline with parallel translation |
+| `POST` | `/translate` | Legacy — Thread-based transcription + translation |
+| `POST` | `/text_translate` | Text-only translation (no audio) |
+| `WebSocket` | `/S2TT/vad_translate_stream` | Real-time audio streaming with VAD |
 
-<details>
-<summary><strong>💻 Method 2: Local Installation</strong></summary>
+---
 
-```bash
-# 📦 Install dependencies
-pip install -r requirements.txt
+### `POST /translate_pipeline` — Main Endpoint
 
-# ⚙️ Set environment variables
-export HUGGINGFACE_HUB_TOKEN="your-hf-token"
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `file` | UploadFile | *required* | Audio file (.wav, .mp3, .m4a) |
+| `meeting_id` | str | `123` | Meeting identifier |
+| `device_id` | str | `123` | Device identifier |
+| `audio_uid` | str | `123` | Audio unique ID |
+| `times` | datetime | *required* | Timestamp |
+| `o_lang` | str | `zh` | Source language (zh\|en\|ja\|ko\|de\|auto) |
+| `t_lang` | str | `zh,en,ja,ko,de` | Target languages (comma-separated) |
+| `prev_text` | str | `""` | Previous context for better accuracy |
+| `multi_strategy_transcription` | int | `4` | Strategies count (1-4) |
+| `transcription_post_processing` | bool | `True` | Enable ASR post-processing |
+| `multi_translate` | bool | `True` | Parallel multi-thread translation |
 
-# 🚀 Start the service
-python main.py
-```
-
-</details>
-
-### ⚙️ Initial Setup
-
-<table>
-<tr>
-<td>⚠️</td>
-<td><strong>Important Note</strong>: <code>azure_config.yaml</code> needs to be prepared separately and is not included in the repository</td>
-</tr>
-</table>
-
-<details>
-<summary><strong>🔧 Step 1: Azure OpenAI Configuration</strong></summary>
-
-Create an `azure_config.yaml` file and fill in the following content:
-
-```yaml
-# GPT version configuration - unified variable naming
-gpt_models:
-  # GPT-4o
-  "gpt-4o":
-    API_KEY: "your_azure_api_key"  
-    API_VERSION: "2024-02-15-preview"  
-    ENDPOINT: "https://your-endpoint.openai.azure.com"  
-    DEPLOYMENT: "your-deployment-name"
-  
-  # GPT-4.1
-  "gpt-4.1":
-    API_KEY: "your_azure_api_key"  
-    API_VERSION: "2025-01-01-preview"
-    ENDPOINT: "https://your-endpoint.openai.azure.com/"
-    DEPLOYMENT: "gpt-4.1"
-  
-  # GPT-4.1 Mini
-  "gpt-4.1-mini":
-    API_KEY: "your_azure_api_key"
-    API_VERSION: "2025-01-01-preview"
-    ENDPOINT: "https://your-endpoint.openai.azure.com/"
-    DEPLOYMENT: "gpt-4.1-mini"
-```
-
-</details>
-
-<details>
-<summary><strong>🤗 Step 2: Hugging Face Login (Gemma Model)</strong></summary>
-
-```bash
-# First need to agree to terms of use on Hugging Face
-# Visit: https://huggingface.co/google/gemma-3-4b-it
-
-# Login using Token
-huggingface-cli login --token your_hf_token
-```
-
-</details>
-
-<details>
-<summary><strong>🦙 Step 3: Ollama Setup (Optional)</strong></summary>
-
-```bash
-# 🐳 Build Ollama Docker container
-docker run -d -it --gpus all --shm-size 32G --runtime nvidia \
-  --device=/dev/nvidia-uvm --device=/dev/nvidia-uvm-tools \
-  --device=/dev/nvidiactl --device=/dev/nvidia0 \
-  -v ./ollama:/root/.ollama -p 52013:11434 \
-  --name ollama ollama/ollama
-
-# 🧪 Test Ollama model
-docker exec -it ollama ollama run gemma3:12b-it-qat --verbose
-```
-
-</details>
-
-## 📋 API Documentation
-
-### Basic Information
-- **Service Address**: `http://localhost:80`
-- **API Documentation**: `http://localhost:80/docs`
-- **Health Check**: `GET /`
-
-### Main API Endpoints
-
-#### 🎵 Audio Transcription & Translation
-**Endpoint**: `POST /translate`
-
-Perform speech recognition on audio files and translate into multiple languages, supporting meeting transcription, voice memos, and other applications.
-
-```http
-POST /translate
-Content-Type: multipart/form-data
-
-file: audio file (.wav, .mp3, .m4a)
-meeting_id: string
-device_id: string  
-audio_uid: string
-times: datetime
-o_lang: string (zh|en|de)
-prev_text: string (optional, previous context)
-multi_strategy_transcription: int (1-4, default 1)
-transcription_post_processing: bool (default true)
-use_translate: bool (default true)
-```
-
-**Response Format**:
+**Response**:
 ```json
 {
   "status": "OK",
-  "message": "Translation result summary",
+  "message": " | Transcription: ... | ZH: ... | EN: ... | ",
   "data": {
     "meeting_id": "123",
-    "device_id": "456", 
+    "device_id": "456",
     "ori_lang": "zh",
-    "transcription_text": "Original transcription",
+    "detected_lang": "zh",
+    "transcription_text": "原始辨識文字",
+    "n_segments": 3,
+    "segments": [{"id": 0, "start": 0.0, "end": 2.5, "text": "..."}],
     "text": {
-      "zh": "Chinese translation",
+      "zh": "中文翻譯",
       "en": "English translation",
-      "de": "German translation"
+      "ja": "日本語翻訳",
+      "ko": "한국어 번역",
+      "de": "Deutsche Übersetzung"
     },
-    "times": "2024-01-01T10:00:00",
-    "audio_uid": "789",
-    "transcribe_time": 2.5,
-    "translate_time": 1.2
+    "transcribe_time": 1.25,
+    "translate_time": 1.91,
+    "stable_text": "",
+    "unstable_text": "",
+    "trim_duration": 0.0,
+    "trim_updated": false
   }
 }
 ```
 
-#### 📝 Text Translation
-**Endpoint**: `POST /text_translate`
+### `POST /text_translate` — Text Only
 
-Directly translate existing text content to quickly obtain multi-language versions.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `text` | str | *required* | Text to translate |
+| `source_language` | str | `zh` | Source language |
+| `target_language` | str | `zh,en,ja,ko,de` | Target languages (comma-separated) |
+| `multi_translate` | bool | `True` | Parallel translation |
 
-```http
-POST /text_translate
-Content-Type: application/x-www-form-urlencoded
+---
 
-text: Text to be translated
-language: Source language (zh|en|de)
-```
+## 🎙️ Transcription Models
 
-#### ⚡ Real-time Streaming Translation (SSE)
-**Endpoint**: `POST/GET /sse_audio_translate`
+| Model | Type | Default | Description |
+|-------|------|---------|-------------|
+| **`ggml_breeze_asr_25`** | GGML | ✅ | Chinese-optimized, quantized, fast |
+| `ggml_large_v3` | GGML | | Memory-efficient Whisper large-v3 |
+| `large_v2` | PyTorch | | OpenAI Whisper large-v2 |
+| `large_v3` | PyTorch | | OpenAI Whisper large-v3 |
+| `breeze_asr_25` | PyTorch | | MediaTek BreezeASR (Chinese-only) |
+| `ggml_cpp_*` | C++ GGML | | Native optimized (requires C++ libs) |
 
-Support real-time audio processing, suitable for online meetings, live broadcasts, and other scenarios requiring instant feedback.
+Default model can be set via `DEFAULT_MODEL` environment variable.
 
-```http
-# Submit audio to processing queue
-POST /sse_audio_translate
+## 🤖 Translation Models
 
-# Establish Server-Sent Events connection to receive results
-GET /sse_audio_translate
-Accept: text/event-stream
+| Model | Provider | Notes |
+|-------|----------|-------|
+| **`gpt-4o`** | Azure OpenAI | ✅ Default |
+| `gpt-4.1` | Azure OpenAI | Highest quality |
+| `gpt-4.1-mini` | Azure OpenAI | Best speed/quality balance |
+| `claude-sonnet-4-5` | Azure Anthropic | High quality |
+| `claude-haiku-4-5` | Azure Anthropic | Fast |
 
-# Stop streaming connection
-POST /stop_sse
-```
+**Fallback**: All models auto-fallback to local `ollama-gemma` on 403 or failure.
 
-#### ⚙️ System Management
-**Endpoint**: Multiple management endpoints
+**Translation modes**:
+- `multi_translate: True` → Each target language gets its own translator thread (parallel)
+- `multi_translate: False` → Single LLM translates all languages in one request
 
-Provide model switching, parameter adjustment, system status query, and other management functions.
+---
 
-```http
-GET /get_current_model          # View currently used model
-GET /list_optional_items        # List all available models and translation options
-POST /change_transcription_model # Switch speech recognition model
-POST /change_translation_method  # Switch translation engine
-POST /set_prompt                # Set custom prompt
-```
+## 🎯 Multi-strategy Transcription
 
-## ⚙️ System Configuration
+| Strategy | Prompt | Context | Temperature | Use Case |
+|----------|--------|---------|-------------|----------|
+| **1** | Custom prompt | + Previous text | Standard | Continuous dialogue |
+| **2** | Custom prompt | — | Standard | Professional terminology |
+| **3** | None | — | Low | General speech, high accuracy |
+| **4** | None | — | High | Unclear audio, heavy accents |
 
-### 🌍 Supported Languages
+Set `multi_strategy_transcription=4` (default) to use all strategies and select the best result.
 
-<table>
-<tr>
-<th>Language Code</th>
-<th>Language Name</th>
-<th>Description</th>
-</tr>
-<tr>
-<td><code>zh</code></td>
-<td>🇹🇼 Traditional Chinese</td>
-<td>Taiwan standard Chinese</td>
-</tr>
-<tr>
-<td><code>en</code></td>
-<td>🇺🇸 English</td>
-<td>American English</td>
-</tr>
-<tr>
-<td><code>de</code></td>
-<td>🇩🇪 German</td>
-<td>Standard German</td>
-</tr>
-</table>
+---
 
-### 🎙️ Transcription Model Options
+## 🚀 Quick Start
 
-<table>
-<tr>
-<th>Model Name</th>
-<th>Description</th>
-<th>Recommended Use</th>
-</tr>
-<tr>
-<td><code>large_v2</code></td>
-<td>OpenAI Whisper Large v2 (default)</td>
-<td>✅ Good stability</td>
-</tr>
-<tr>
-<td><code>large_v3</code></td>
-<td>OpenAI Whisper Large v3</td>
-<td>🎯 Higher accuracy</td>
-</tr>
-<tr>
-<td><code>turbo</code></td>
-<td>OpenAI Whisper Large v3 Turbo</td>
-<td>⚡ Speed priority</td>
-</tr>
-<tr>
-<td><code>TCM</code></td>
-<td>Custom model path</td>
-<td>🔧 Customization needs</td>
-</tr>
-</table>
+### System Requirements
 
-### 🤖 Translation Engine Options
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| **Python** | 3.9+ | 3.11+ |
+| **GPU** | GTX 1660 (6GB) | RTX 3080+ (10GB+) |
+| **RAM** | 8GB | 16GB+ |
+| **Docker** | 20.10+ | Latest |
 
-<table>
-<tr>
-<th>Engine Name</th>
-<th>Description</th>
-<th>Deployment</th>
-<th>Features</th>
-</tr>
-<tr>
-<td><code>gpt-4.1-mini</code></td>
-<td>GPT-4.1 Mini (default)</td>
-<td>☁️ Azure OpenAI API</td>
-<td>🏆 Best quality & speed</td>
-</tr>
-<tr>
-<td><code>gpt-4.1</code></td>
-<td>GPT-4.1</td>
-<td>☁️ Azure OpenAI API</td>
-<td>🏆 Highest quality</td>
-</tr>
-<tr>
-<td><code>gpt-4o</code></td>
-<td>GPT-4o</td>
-<td>☁️ Azure OpenAI API</td>
-<td>🏆 Excellent quality</td>
-</tr>
-<tr>
-<td><code>gemma4b</code></td>
-<td>Google Gemma 4B</td>
-<td>💻 Local execution</td>
-<td>🔒 Privacy protection</td>
-</tr>
-<tr>
-<td><code>ollama-gemma</code></td>
-<td>Ollama Gemma</td>
-<td>🐳 Container deployment</td>
-<td>⚡ Quick deployment</td>
-</tr>
-<tr>
-<td><code>ollama-qwen</code></td>
-<td>Ollama Qwen</td>
-<td>🐳 Container deployment</td>
-<td>🌏 Chinese optimized</td>
-</tr>
-</table>
-
-### 🔧 Environment Variable Configuration
+### Docker Deployment (Recommended)
 
 ```bash
-# 🤗 Hugging Face Token (for Gemma model usage)
-# Please visit and agree to terms first: https://huggingface.co/google/gemma-3-4b-it
-export HUGGINGFACE_HUB_TOKEN="your_hf_token"
-
-# 🔥 GPU Configuration
-export NVIDIA_VISIBLE_DEVICES=all
-export CUDA_VISIBLE_DEVICES=0
-```
-
-## 🔧 Advanced Features
-
-### 🎯 Multi-strategy Transcription
-
-<table>
-<tr>
-<th>Strategy</th>
-<th>Description</th>
-<th>Use Case</th>
-</tr>
-<tr>
-<td>🔹 <strong>Strategy 1</strong></td>
-<td>Custom prompt + previous context</td>
-<td>Continuous dialogue, meeting transcription</td>
-</tr>
-<tr>
-<td>🔸 <strong>Strategy 2</strong></td>
-<td>Custom prompt only</td>
-<td>Professional terminology, specific domains</td>
-</tr>
-<tr>
-<td>🔹 <strong>Strategy 3</strong></td>
-<td>No prompt, low temperature sampling</td>
-<td>General speech, high accuracy requirements</td>
-</tr>
-<tr>
-<td>🔸 <strong>Strategy 4</strong></td>
-<td>High temperature diversified sampling</td>
-<td>Unclear audio, heavy accents</td>
-</tr>
-</table>
-
-### 🛠️ Intelligent Post-processing
-
-<table>
-<tr>
-<td width="50%">
-
-#### 🔍 **Error Detection**
-- 🔤 Automatic identification of common ASR errors
-- 🏢 Brand name standardization
-- 📝 Intelligent grammar correction
-- ⚠️ Hallucination content detection and filtering
-
-</td>
-<td width="50%">
-
-#### ⚡ **Performance Optimization**
-- 🧹 24-hour automatic audio file cleanup
-- 💾 Intelligent GPU memory recycling
-- 🔄 Zero-downtime model hot switching
-- 📊 Real-time performance monitoring (RTF)
-
-</td>
-</tr>
-</table>
-
-## 🎯 Usage Examples
-
-### Python Client Example
-```python
-import requests
-
-# Audio translation
-files = {'file': open('audio.wav', 'rb')}
-data = {
-    'meeting_id': '001',
-    'device_id': 'mic_01', 
-    'audio_uid': 'audio_001',
-    'times': '2024-01-01T10:00:00',
-    'o_lang': 'zh',
-    'multi_strategy_transcription': 2,
-    'use_translate': True
-}
-
-response = requests.post(
-    'http://localhost:80/translate',
-    files=files,
-    data=data
-)
-print(response.json())
-
-# Text translation
-data = {'text': 'Hello World', 'language': 'en'}
-response = requests.post(
-    'http://localhost:80/text_translate',
-    data=data
-)
-print(response.json())
-```
-
-### curl Example
-```bash
-# Audio translation
-curl -X POST "http://localhost:80/translate" \
-  -F "file=@audio.wav" \
-  -F "meeting_id=001" \
-  -F "device_id=mic_01" \
-  -F "audio_uid=audio_001" \
-  -F "times=2024-01-01T10:00:00" \
-  -F "o_lang=zh" \
-  -F "use_translate=true"
-
-# Text translation  
-curl -X POST "http://localhost:80/text_translate" \
-  -F "text=Hello World" \
-  -F "language=en"
-```
-
-## 📊 Performance Optimization
-
-### 💻 Recommended Hardware Configuration
-
-<table>
-<tr>
-<th>Component</th>
-<th>Minimum Requirement</th>
-<th>Recommended Configuration</th>
-<th>Optimal Performance</th>
-</tr>
-<tr>
-<td><strong>🔥 GPU</strong></td>
-<td>GTX 1660 (6GB)</td>
-<td>RTX 3080 (10GB)</td>
-<td>RTX 4090 (24GB)</td>
-</tr>
-<tr>
-<td><strong>💾 Memory</strong></td>
-<td>8GB RAM</td>
-<td>16GB RAM</td>
-<td>32GB+ RAM</td>
-</tr>
-<tr>
-<td><strong>💿 Storage</strong></td>
-<td>HDD</td>
-<td>SATA SSD</td>
-<td>NVMe SSD</td>
-</tr>
-<tr>
-<td><strong>🌐 Network</strong></td>
-<td>10 Mbps</td>
-<td>100 Mbps</td>
-<td>1 Gbps</td>
-</tr>
-</table>
-
-### ⚙️ Performance Tuning Parameters
-
-<details>
-<summary><strong>🔧 Adjust the following parameters in constant.py</strong></summary>
-
-```python
-# ⏱️ Transcription timeout setting
-WAITING_TIME = 60           # Unit: seconds, recommend 30-120
-
-# 🎯 Strategy count setting
-MAX_NUM_STRATEGIES = 4      # Maximum 4, can reduce to 1-2 for speed
-
-# 🔇 Silence padding
-SILENCE_PADDING = True      # Improve boundary word recognition, slight processing time increase
-
-# 📈 Real-time factor calculation
-RTF = True                  # Enable performance monitoring, slight performance impact
-```
-
-</details>
-
-### 📈 Performance Monitoring Metrics
-
-<table>
-<tr>
-<td><strong>🎯 RTF (Real-Time Factor)</strong></td>
-<td>< 0.3 Excellent | 0.3-0.5 Good | > 0.5 Needs optimization</td>
-</tr>
-<tr>
-<td><strong>💾 GPU Memory Usage</strong></td>
-<td>< 80% Safe | 80-90% Caution | > 90% Dangerous</td>
-</tr>
-<tr>
-<td><strong>⚡ Processing Speed</strong></td>
-<td>1-minute audio < 20 seconds processing is optimal</td>
-</tr>
-</table>
-
-## 🛡️ Security Considerations
-
-### API Security
-- Recommended to use reverse proxy (nginx)
-- Configure API rate limiting
-- Enable HTTPS for production environment
-
-### Data Privacy
-- Automatic audio file cleanup
-- Sensitive information log masking
-- Support for local deployment, data stays on-premises
-
-## 🐛 Troubleshooting
-
-### ❓ Common Issues
-
-<details>
-<summary><strong>🔥 Issue 1: GPU Memory Insufficient</strong></summary>
-
-**Symptoms**: CUDA out of memory error
-
-**Solutions**:
-```bash
-# 🔍 Check GPU usage
-nvidia-smi
-
-# 🔧 Solutions
-# 1. Use smaller model
-POST /change_transcription_model
-model_name: turbo
-
-# 2. Clear GPU cache
-docker restart babelon
-
-# 3. Reduce concurrent processing count
-```
-
-</details>
-
-<details>
-<summary><strong>🤗 Issue 2: Model Loading Failed</strong></summary>
-
-**Symptoms**: Hugging Face model download failed
-
-**Solutions**:
-```bash
-# 🔐 Check login status
-huggingface-cli whoami
-
-# 🧹 Clear cache and re-download
-rm -rf ~/.cache/huggingface/
-
-# 🔄 Re-login
-huggingface-cli login --token your_token
-```
-
-</details>
-
-<details>
-<summary><strong>☁️ Issue 3: Translation API Error</strong></summary>
-
-**Symptoms**: Translation function unresponsive or error
-
-**Solutions**:
-```bash
-# ⚙️ Check Azure configuration
-cat lib/azure_config.yaml
-
-# 🔍 Verify API connectivity
-curl -X POST "https://your-endpoint.openai.azure.com/openai/deployments/your-deployment/chat/completions?api-version=2024-02-15-preview" \
-  -H "Content-Type: application/json" \
-  -H "api-key: your-api-key" \
-  -d '{"messages":[{"role":"user","content":"test"}]}'
-
-# 📋 View detailed logs
-tail -f logs/app.log
-```
-
-</details>
-
-### 📋 Debugging Tools
-
-<table>
-<tr>
-<th>Tool</th>
-<th>Purpose</th>
-<th>Command</th>
-</tr>
-<tr>
-<td><strong>📊 Real-time Logs</strong></td>
-<td>Monitor system running status</td>
-<td><code>tail -f logs/app.log</code></td>
-</tr>
-<tr>
-<td><strong>🔍 Error Search</strong></td>
-<td>Quickly locate error messages</td>
-<td><code>grep "error" logs/app.log</code></td>
-</tr>
-<tr>
-<td><strong>🔧 Debug Mode</strong></td>
-<td>Enable detailed logging</td>
-<td>Set <code>logging.DEBUG</code> in main.py</td>
-</tr>
-<tr>
-<td><strong>🔥 GPU Monitoring</strong></td>
-<td>Check GPU usage status</td>
-<td><code>watch -n 1 nvidia-smi</code></td>
-</tr>
-</table>
-
-## 🤝 Development Participation
-
-### Development Environment Setup
-```bash
-# Clone project
+# Clone
 git clone https://github.com/bobo0303/Babelon-Translate-Service.git
 cd Babelon-Translate-Service
 
-# Install dependencies
-pip install -r requirements.txt
+# Build and start
+docker-compose up -d
 
-# Configure necessary files
-# 1. Create azure_config.yaml (contains Azure API secrets)
-# 2. Set Hugging Face Token
+# Check logs
+docker logs -f babelon
 ```
 
-### Development Notes
-- Please ensure Azure OpenAI API is configured
-- GPU environment recommended to use Docker deployment
-- Please confirm all dependent models are downloaded before testing
-- Secret files (azure_config.yaml) should not be committed to repository
+### Local Installation
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
+
+Service starts on port `80` (configurable via `PORT` env var).
+
+---
+
+## ⚙️ Environment Variables
+
+### Required — Translation APIs
+
+```bash
+# GPT-4o (Azure OpenAI)
+GPT_4O_API_KEY=your_key
+GPT_4O_API_VERSION=2024-02-15-preview
+GPT_4O_ENDPOINT=https://your-endpoint.openai.azure.com
+GPT_4O_DEPLOYMENT=your-deployment
+
+# GPT-4.1
+GPT_41_API_KEY=your_key
+GPT_41_API_VERSION=2025-01-01-preview
+GPT_41_ENDPOINT=https://your-endpoint.openai.azure.com/
+GPT_41_DEPLOYMENT=gpt-4.1
+
+# GPT-4.1-mini
+GPT_41_MINI_API_KEY=your_key
+GPT_41_MINI_API_VERSION=2025-01-01-preview
+GPT_41_MINI_ENDPOINT=https://your-endpoint.openai.azure.com/
+GPT_41_MINI_DEPLOYMENT=gpt-4.1-mini
+
+# Claude Sonnet 4.5 (Azure)
+CLAUDE_SONNET_4_5_API_KEY=your_key
+CLAUDE_SONNET_4_5_ENDPOINT=https://your-endpoint.openai.azure.com
+CLAUDE_SONNET_4_5_DEPLOYMENT=claude-sonnet-4-5
+
+# Claude Haiku 4.5 (Azure)
+CLAUDE_HAIKU_4_5_API_KEY=your_key
+CLAUDE_HAIKU_4_5_ENDPOINT=https://your-endpoint.openai.azure.com
+CLAUDE_HAIKU_4_5_DEPLOYMENT=claude-haiku-4-5
+
+# Azure Speech (for language detection)
+AZURE_SPEECH_SUBSCRIPTION_KEY=your_key
+AZURE_SPEECH_SERVICE_REGION=your_region
+```
+
+### Optional
+
+```bash
+# Ollama fallback
+OLLAMA_HOST=http://172.17.0.1:52013/
+OLLAMA_GEMMA_MODEL=gemma3:12b-it-qat
+
+# Service
+PORT=80
+DEFAULT_MODEL=ggml_breeze_asr_25
+BACKEND_DOMAIN=http://your-backend
+HEALTH_CHECK_CYCLE_SEC=30
+```
+
+---
+
+## 🎯 Usage Examples
+
+### Python
+
+```python
+import requests
+import datetime
+
+# Audio transcription + translation
+with open("audio.wav", "rb") as f:
+    resp = requests.post("http://localhost:80/translate_pipeline", 
+        files={"file": ("audio.wav", f, "audio/wav")},
+        data={
+            "meeting_id": "mtg_001",
+            "device_id": "mic_01",
+            "audio_uid": "uid_001",
+            "times": datetime.datetime.now().isoformat(),
+            "o_lang": "zh",
+            "t_lang": "zh,en,ja,ko,de",
+            "multi_strategy_transcription": 4,
+        })
+print(resp.json())
+
+# Text-only translation
+resp = requests.post("http://localhost:80/text_translate",
+    data={
+        "text": "今天天氣很好",
+        "source_language": "zh",
+        "target_language": "en,ja,ko,de",
+    })
+print(resp.json())
+
+# Switch translation model
+requests.post("http://localhost:80/change_translator",
+    data={"model_name": "claude-haiku-4-5"})
+
+# View logs
+resp = requests.get("http://localhost:80/get_logs?lines=50")
+print(resp.json())
+```
+
+### curl
+
+```bash
+# Audio translation
+curl -X POST "http://localhost:80/translate_pipeline" \
+  -F "file=@audio.wav" \
+  -F "meeting_id=mtg_001" \
+  -F "audio_uid=uid_001" \
+  -F "times=2026-04-27T10:00:00" \
+  -F "o_lang=zh" \
+  -F "t_lang=zh,en,ja,ko,de"
+
+# Text translation
+curl -X POST "http://localhost:80/text_translate" \
+  -F "text=Hello World" \
+  -F "source_language=en" \
+  -F "target_language=zh,ja,ko,de"
+
+# Switch model
+curl -X POST "http://localhost:80/change_translator" \
+  -F "model_name=gpt-4.1-mini"
+
+# Check status
+curl http://localhost:80/get_current_model
+```
+
+---
+
+## 🐛 Troubleshooting
+
+<details>
+<summary><strong>GPU Memory Insufficient</strong></summary>
+
+```bash
+nvidia-smi  # Check GPU usage
+
+# Switch to smaller/quantized model
+curl -X POST "http://localhost:80/change_transcription_model" \
+  -F "model_name=ggml_breeze_asr_25"
+```
+
+</details>
+
+<details>
+<summary><strong>Translation API 403 Error</strong></summary>
+
+The system auto-fallbacks to local Ollama. Check logs:
+```bash
+curl "http://localhost:80/get_logs?lines=50"
+```
+Verify API keys in environment variables are correct.
+
+</details>
+
+<details>
+<summary><strong>Translation Timeout</strong></summary>
+
+Default timeout is 10 seconds (`WAITING_TIME`). For longer audio, the pipeline will force-terminate and return partial results. Adjust in `lib/config/constant.py`.
+
+</details>
+
+---
+
+## 📊 Performance Reference
+
+| Metric | Target |
+|--------|--------|
+| **RTF** (Real-Time Factor) | < 0.3 excellent, 0.3-0.5 good |
+| **Translation (GPT-4o)** | ~1.9s avg per request |
+| **Translation (Claude Haiku)** | ~3.8s avg per request |
+| **Translation (Claude Sonnet)** | ~5.6s avg per request |
+
+---
 
 ## 📄 License
 
-This project is licensed under [MIT License](LICENSE)
-
-## 📞 Contact Information
-
-<table>
-<tr>
-<td>👤 <strong>Project Maintainer</strong></td>
-<td>Bobo</td>
-</tr>
-<tr>
-<td>🐛 <strong>Issue Reporting</strong></td>
-<td><a href="https://github.com/bobo0303/Babelon-Translate-Service/issues">GitHub Issues</a></td>
-</tr>
-<tr>
-<td>⭐ <strong>If you find this useful</strong></td>
-<td>Please give us a Star ⭐</td>
-</tr>
-</table>
-
-## 🔄 Change Log
-
-### 📅 v1.0.0 (2025-10-17)
-- 🎉 **Major version release**
-- 🎵 Support for multi-language audio transcription and translation
-- 🤖 Integration of multiple AI models (Whisper, Gemma, Ollama, GPT-4o/4.1)
-- ⚡ Implementation of SSE real-time streaming translation
-- 🐳 Docker containerized deployment support
-- 🛠️ Complete English documentation and comments
-- 🔧 Enhanced multi-strategy transcription capabilities
-- 📊 Real-time performance monitoring (RTF)
+[MIT License](LICENSE)
 
 ---
 
 <div align="center">
 
-### 🌟 Thank you for using Babelon Translation Service!
-
-**⚠️ Disclaimer**: This service is still under continuous development, and some features may be subject to adjustment.  
-Please test thoroughly before production use and comply with relevant AI service terms of use.
-
-<br>
-
 [![Made with ❤️](https://img.shields.io/badge/Made%20with-❤️-red.svg)](https://github.com/bobo0303/Babelon-Translate-Service)
 [![Powered by FastAPI](https://img.shields.io/badge/Powered%20by-FastAPI-009688.svg)](https://fastapi.tiangolo.com)
-[![AI Translation](https://img.shields.io/badge/AI-Translation-blue.svg)](https://github.com/bobo0303/Babelon-Translate-Service)
 
 </div>
