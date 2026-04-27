@@ -67,11 +67,25 @@ OLLAMA_CONFIG = {
     "ollama-qwen": os.getenv("OLLAMA_QWEN_MODEL", "qwen3:14b-q4_K_M"),
 }
 
+# Azure Claude Models Configuration (from environment variables)
+CLAUDE_CONFIG = {
+    "claude-sonnet-4-5": {
+        "API_KEY": os.getenv("CLAUDE_SONNET_4_5_API_KEY", ""),
+        "ENDPOINT": os.getenv("CLAUDE_SONNET_4_5_ENDPOINT", "https://prod-knowledge-navigator-aoai.services.ai.azure.com/anthropic/"),
+        "DEPLOYMENT": os.getenv("CLAUDE_SONNET_4_5_DEPLOYMENT", "claude-sonnet-4-5"),
+    },
+    "claude-haiku-4-5": {
+        "API_KEY": os.getenv("CLAUDE_HAIKU_4_5_API_KEY", ""),
+        "ENDPOINT": os.getenv("CLAUDE_HAIKU_4_5_ENDPOINT", "https://prod-knowledge-navigator-aoai.services.ai.azure.com/anthropic/"),
+        "DEPLOYMENT": os.getenv("CLAUDE_HAIKU_4_5_DEPLOYMENT", "claude-haiku-4-5"),
+    },
+}
+
 # GEMMA 4B (https://huggingface.co/google/gemma-3-4b-it)
 GEMMA_4B_IT = "google/gemma-3-4b-it"
 
 TRANSCRIPTION_METHODS = ['large_v2', 'large_v3', 'breeze_asr_25', 'ggml_large_v2', 'ggml_large_v3', 'ggml_breeze_asr_25']
-TRANSLATE_METHODS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini'] # 'ollama-gemma', 'ollama-qwen' prepare for 403
+TRANSLATE_METHODS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'claude-sonnet-4-5', 'claude-haiku-4-5'] # 'ollama-gemma', 'ollama-qwen' prepare for 403
 
 #############################################################################
 

@@ -8,7 +8,8 @@ from queue import Queue
 
 # from api.translation.gemma_translate import Gemma4BTranslate  
 from api.translation.ollama_translate import OllamaChat
-from api.translation.gpt_translate import GptTranslate  
+from api.translation.gpt_translate import GptTranslate
+from api.translation.claude_translate import ClaudeTranslate
 from lib.config.constant import DEFAULT_RESULT, TaskContext, SharedResources
 from lib.core.logging_config import get_logger
 
@@ -48,6 +49,28 @@ class TranslateManager:
         result[ori] = ori_pred
         return result
     
+    def set_translation_method(self, method_name):
+        """
+        Dynamically change the translation method at runtime.
+        
+        Args:
+            method_name: Translation method to use (e.g., 'gpt-4o', 'claude-haiku-4-5')
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        from lib.config.constant import TRANSLATE_METHODS
+        
+        if method_name not in TRANSLATE_METHODS:
+            logger.error(f" | Invalid translation method: {method_name} | ")
+            logger.error(f" | Available methods: {TRANSLATE_METHODS} | ")
+            return False
+        
+        old_method = self.translation_method
+        self.translation_method = method_name
+        logger.info(f" | Translation method changed: {old_method} -> {method_name} | ")
+        return True
+    
     def _create_translator(self):
         """
         Create a new translator instance on-demand.
@@ -60,8 +83,13 @@ class TranslateManager:
             # Use method name directly (no instance numbering)
             translator_name = self.translation_method
             
-            # Create new GPT translator instance
-            translator = GptTranslate(model_version=self.translation_method)
+            # Create translator instance based on model type
+            if self.translation_method.startswith("claude"):
+                translator = ClaudeTranslate(model_version=self.translation_method)
+            else:
+                # Default to GPT translator
+                translator = GptTranslate(model_version=self.translation_method)
+            
             logger.debug(f" | Created new translator: {translator_name} | ")
             return translator_name, translator
             
@@ -98,15 +126,16 @@ class TranslateManager:
                 return
             
             # Call translator based on type
-            if task_ctx.translator_name.startswith("gpt"):
-                logger.debug(f" | Calling GPT translator for {task_ctx.target_lang} | ")
+            if task_ctx.translator_name.startswith("gpt") or task_ctx.translator_name.startswith("claude"):
+                translator_type = "GPT" if task_ctx.translator_name.startswith("gpt") else "Claude"
+                logger.debug(f" | Calling {translator_type} translator for {task_ctx.target_lang} | ")
                 translated_result = task_ctx.translator.translate(
                     source_text=task_ctx.text, 
                     source_lang=task_ctx.source_lang, 
                     target_lang=task_ctx.target_lang, 
                     prev_text=task_ctx.prev_text
                 )
-                logger.debug(f" | GPT translation result for {task_ctx.target_lang}: {type(translated_result)} | ")
+                logger.debug(f" | {translator_type} translation result for {task_ctx.target_lang}: {type(translated_result)} | ")
                 
                 # Check for 403 Forbidden
                 if translated_result == "403_Forbidden":

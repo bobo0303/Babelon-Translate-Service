@@ -242,6 +242,31 @@ async def get_pretext_status():
     logger.info(f" | Current pretext status: {use_pretext} | ")
     return BaseResponse(message=f" | Current pretext status: {'enabled' if use_pretext else 'disabled'} | ", data={"use_pretext": use_pretext})
 
+@app.get("/get_logs")
+async def get_logs(lines: int = 100):
+    """
+    Get the latest N lines from the application log file.
+    
+    Args:
+        lines: Number of lines to retrieve (default: 100)
+    
+    Returns:
+        PlainTextResponse with log lines separated by newlines
+    """
+    log_path = "logs/app.log"
+    if not os.path.exists(log_path):
+        return BaseResponse(status=Status.FAILED, message=" | Log file not found | ", data=None)
+    
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            all_lines = f.readlines()
+        latest = all_lines[-lines:] if len(all_lines) >= lines else all_lines
+        log_content = [line.rstrip("\n") for line in latest]
+        return BaseResponse(status=Status.OK, message=f" | Retrieved {len(log_content)} log lines | ", data={"lines": log_content, "total": len(all_lines)})
+    except Exception as e:
+        logger.error(f" | Failed to read log file: {e} | ")
+        return BaseResponse(status=Status.FAILED, message=f" | Failed to read log file: {e} | ", data=None)
+
 @app.post("/change_transcription_model")  
 async def change_transcription_model(model_name: str = Form(...)):  
     """  
@@ -274,6 +299,38 @@ async def change_transcription_model(model_name: str = Form(...)):
         return BaseResponse(status=Status.OK, message=f" | Model {model_name} has been loaded successfully. | ", data=None)  
     else:  
         return BaseResponse(status=Status.FAILED, message=f" | Model {model_name} loading failed: {message} | ", data=None)  
+    
+@app.post("/change_translator")
+async def change_translator(model_name: str = Form(...)):
+    """
+    Load a specified translation model.
+    
+    This endpoint allows the user to load a specified model for translation.
+    
+    Args:
+        model_name: The name of the translation model to load (e.g., "google", "azure", "gpt-4o")
+    
+    Returns:
+        BaseResponse: A response indicating the success or failure of the model loading process
+    """
+    model_name = model_name.lower()
+    
+    if model_name not in TRANSLATE_METHODS:
+        logger.info(f" | Translation model '{model_name}' not found. | ")
+        return BaseResponse(status=Status.FAILED, message=f" | Translation model '{model_name}' not found. | ", data=None)
+    
+    if model_name == translate_manager.translation_method:
+        logger.info(f" | Translation model '{model_name}' is already loaded. | ")
+        return BaseResponse(status=Status.OK, message=f" | Translation model '{model_name}' is already loaded. | ", data=None)
+    
+    try:
+        translate_manager.set_translation_method(model_name)
+        logger.info(f" | Translation model '{model_name}' has been loaded successfully. | ")
+    except Exception as e:  
+        logger.error(f" | Error loading translation model '{model_name}': {e} | ")
+        return BaseResponse(status=Status.FAILED, message=f" | Error loading translation model '{model_name}': {e} | ", data=None)
+    
+    return BaseResponse(status=Status.OK, message=f" | Translation model '{model_name}' has been loaded successfully. | ", data=None)
     
 @app.post("/set_prompt")
 async def set_prompt(prompts = Form(None)):

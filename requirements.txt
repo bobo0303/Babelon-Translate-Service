@@ -30,6 +30,9 @@ ollama
 # GPT-4o
 openai
 
+# Claude (Anthropic)
+anthropic
+
 # g_translate
 # /tmp/googletrans-4.0.0rc1-py3-none-any.whl   # 自己包的一定要這個不然會版本衝突
 
