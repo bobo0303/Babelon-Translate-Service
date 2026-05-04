@@ -6,8 +6,8 @@ from typing import Optional, Dict, List, Any
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (override=True ensures .env always wins)
+load_dotenv(override=True)
 
 #############################################################################
 

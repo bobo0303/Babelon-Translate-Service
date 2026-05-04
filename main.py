@@ -601,7 +601,7 @@ async def translate_pipeline(
     audio_uid: str = Form(123),  
     times: datetime.datetime = Form(...),  
     o_lang: str = Form("zh"),  
-    t_lang: str = Form("zh,en,ja,ko,de"), 
+    t_lang: str = Form(""), # zh,en,ja,ko,de
     prev_text: str = Form(""),
     multi_strategy_transcription: int = Form(4), # 1~MAX_NUM_STRATEGIES others 1
     transcription_post_processing: bool = Form(True), # True/False
