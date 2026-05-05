@@ -42,7 +42,8 @@ use_pretext = True
 # Initialize health check service
 health_check_service = create_health_check_service(
     backend_domain=BACKEND_DOMAIN,
-    timezone=tz
+    timezone=tz,
+    port=os.getenv("PORT", 80)
 )
   
 # Initialize global objects and variables
@@ -1162,10 +1163,9 @@ async def stop_sse():
 ##############################################################################
   
 if __name__ == "__main__":  
-    port = int(os.environ.get("PORT", 80))  
     uvicorn.config.LOGGING_CONFIG["formatters"]["default"]["fmt"] = "%(asctime)s [%(name)s] %(levelprefix)s %(message)s"  
     uvicorn.config.LOGGING_CONFIG["formatters"]["access"]["fmt"] = '%(asctime)s [%(name)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'  
-    uvicorn.run(app, log_level='info', host='0.0.0.0', port=port)   
+    uvicorn.run(app, log_level='info', host='0.0.0.0', port=80)   
     
     
  
