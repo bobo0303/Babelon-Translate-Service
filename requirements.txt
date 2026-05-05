@@ -29,6 +29,7 @@ ollama
 
 # GPT-4o
 openai
+jiter
 
 # Claude (Anthropic)
 anthropic
