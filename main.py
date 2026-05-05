@@ -266,6 +266,30 @@ async def get_logs(lines: int = 100):
     except Exception as e:
         logger.error(f" | Failed to read log file: {e} | ")
         return BaseResponse(status=Status.FAILED, message=f" | Failed to read log file: {e} | ", data=None)
+    
+@app.get("/download_logs")  
+async def download_logs():
+    """
+    Download the application log file.
+    
+    Returns:
+        StreamingResponse to download the log file
+    """
+    log_path = "logs/app.log"
+    if not os.path.exists(log_path):
+        return BaseResponse(status=Status.FAILED, message=" | Log file not found | ", data=None)
+    
+    try:
+        def iterfile():
+            with open(log_path, "rb") as f:
+                yield from f
+        
+        response = StreamingResponse(iterfile(), media_type="text/plain")
+        response.headers["Content-Disposition"] = f"attachment; filename=app.log"
+        return response
+    except Exception as e:
+        logger.error(f" | Failed to read log file: {e} | ")
+        return BaseResponse(status=Status.FAILED, message=f" | Failed to read log file: {e} | ", data=None)
 
 @app.post("/change_transcription_model")  
 async def change_transcription_model(model_name: str = Form(...)):  
