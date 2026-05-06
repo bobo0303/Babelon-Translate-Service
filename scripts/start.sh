@@ -132,7 +132,7 @@ echo "Waiting for service to be ready..."
 # Wait for service to be ready (max 3 minutes)
 MAX_WAIT=180
 COUNT=0
-SERVICE_URL="http://localhost:${PORT:-80}"
+SERVICE_URL="http://localhost:80"
 
 while [ $COUNT -lt $MAX_WAIT ]; do
     if curl -s "$SERVICE_URL/health_check" 2>/dev/null | grep -q "OK"; then
