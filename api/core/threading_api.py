@@ -30,7 +30,7 @@ def _cleanup_transcription_task(transcribe_manager, task_id):
 
 def audio_pipeline_coordinator(transcribe_manager, translate_manager, o_lang, t_lang, 
                                multi_strategy_transcription, transcription_post_processing, 
-                               prev_text, multi_translate, audio_uid, times, audio_bytes):
+                               prev_text, multi_translate, audio_uid, times, audio_bytes, translate_mode):
     """
     Coordinate transcription and translation pipeline with proper decoupling.
     
@@ -64,7 +64,8 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, o_lang, t_
         'transcription_time': 0,
         'translate_time': 0,
         'translate_method': "none",
-        'timing_dict': {}
+        'timing_dict': {},
+        'translate_mode': translate_mode
     }
     
     start_time = time.time()
@@ -209,9 +210,24 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, o_lang, t_
         
     # Step 4: Handle translation if needed
     if t_lang:
+
         try:
-            result['translated_pred'], result['translate_time'], result['translate_method'], result['timing_dict'] = \
-                translate_manager.translate(result['ori_pred'], o_lang, t_lang, prev_text, multi_translate)
+            # Determine translation engine based on translate_mode
+            use_azure = False
+            if translate_mode == "ultimate":
+                use_azure = True
+            elif translate_mode == "fast":
+                # fast mode: only use LLM for strategy==4 (final segment), others use Azure
+                if multi_strategy_transcription != 4:
+                    use_azure = True
+            # stable mode: always use LLM (default behavior)
+            
+            if use_azure:
+                result['translated_pred'], result['translate_time'], result['translate_method'], result['timing_dict'] = \
+                    translate_manager._azure_translate_all(result['ori_pred'], o_lang, t_lang, prev_text)
+            else:
+                result['translated_pred'], result['translate_time'], result['translate_method'], result['timing_dict'] = \
+                    translate_manager.translate(result['ori_pred'], o_lang, t_lang, prev_text, multi_translate)
         except Exception as e:
             logger.error(f" | Translation failed for task {task_id}: {e} | ")
             # Clean up any translation threads if needed
@@ -263,7 +279,7 @@ def audio_pipeline_coordinator(transcribe_manager, translate_manager, o_lang, t_
     return tuple(result.values()), other_info
 
 def audio_translate(transcribe_manager, translate_manager, result_queue, o_lang, t_lang, 
-                    stop_event, strategy, post_processing, prev_text, multi_translate, audio_bytes):  
+                    stop_event, strategy, post_processing, prev_text, multi_translate, audio_bytes, translate_mode="fast"):  
     """
     Transcribe and translate audio from bytes, then store the results in a queue.
   
@@ -282,6 +298,7 @@ def audio_translate(transcribe_manager, translate_manager, result_queue, o_lang,
     :param prev_text: Previous context text
     :param multi_translate: Multi-translation flag
     :param audio_bytes: Raw audio bytes
+    :param translate_mode: Translation mode ('ultimate'/'fast' -> Azure, 'stable' -> LLM)
     """  
     try:
         detected_lang, ori_pred, n_segments, segments, inference_time, audio_length = transcribe_manager.transcribe(
@@ -289,8 +306,21 @@ def audio_translate(transcribe_manager, translate_manager, result_queue, o_lang,
             prev_text=prev_text, audio_bytes=audio_bytes
         )
         if t_lang:
-            # t_lang is already a list from main.py
-            translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, o_lang, t_lang, prev_text, multi_translate)  
+            # Determine translation engine based on translate_mode
+            use_azure = False
+            if translate_mode == "ultimate":
+                use_azure = True
+            elif translate_mode == "fast":
+                if strategy != 4:
+                    use_azure = True
+            # stable mode: always use LLM
+            
+            if use_azure:
+                translated_pred, translate_time, translate_method, timing_dict = \
+                    translate_manager._azure_translate_all(ori_pred, o_lang, t_lang, prev_text)
+            else:
+                translated_pred, translate_time, translate_method, timing_dict = \
+                    translate_manager.translate(ori_pred, o_lang, t_lang, prev_text, multi_translate)
         else:
             translated_pred = DEFAULT_RESULT.copy()
             translate_time = 0

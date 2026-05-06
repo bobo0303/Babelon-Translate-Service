@@ -9,7 +9,7 @@ services:
     container_name: babelon-translate-service
     restart: unless-stopped
     ports:
-      - "${PORT:-80}:80"
+      - "80:80"
     env_file:
       - .env
     environment:

@@ -10,6 +10,7 @@ from queue import Queue
 from api.translation.ollama_translate import OllamaChat
 from api.translation.gpt_translate import GptTranslate
 from api.translation.claude_translate import ClaudeTranslate
+from api.translation.azure_translate import AzureTranslate
 from lib.config.constant import DEFAULT_RESULT, TaskContext, SharedResources
 from lib.core.logging_config import get_logger
 
@@ -305,6 +306,53 @@ class TranslateManager:
             
             return result_dict, elapsed_time, methods_used, timing_dict
     
+    def _azure_translate_all(self, text, source_lang, target_langs, prev_text=""):
+        """
+        Use Azure Translator API to translate all target languages in one request.
+        
+        Args:
+            text: Text to translate
+            source_lang: Source language code
+            target_langs: List of target language codes
+            prev_text: Previous context text (not used by Azure, kept for API compatibility)
+            
+        Returns:
+            tuple: (result_dict, translate_time, methods_used, timing_dict)
+        """
+        logger.debug(f" | _azure_translate_all called: source={source_lang}, targets={target_langs} | ")
+        start_time = time.time()
+        
+        try:
+            translator = AzureTranslate()
+            
+            result_dict = translator.translate(
+                source_text=text,
+                source_lang=source_lang,
+                target_lang=target_langs,
+                prev_text=prev_text
+            )
+            
+            elapsed_time = time.time() - start_time
+            
+            # Check for failure
+            if result_dict == "403_Forbidden":
+                logger.warning(f" | Azure Translate failed, using LLM fallback | ")
+                return self._single_llm_translate_all(text, source_lang, target_langs, prev_text)
+            
+            # Ensure source language is in result
+            if source_lang not in result_dict:
+                result_dict[source_lang] = text
+            
+            methods_used = "azure-translate"
+            timing_dict = {"azure-translate": [(elapsed_time, ", ".join(target_langs))]}
+            
+            logger.debug(f" | Azure Translate completed in {elapsed_time:.3f}s | ")
+            return result_dict, elapsed_time, methods_used, timing_dict
+            
+        except Exception as e:
+            logger.error(f" | Azure Translate failed: {e}, falling back to LLM | ")
+            return self._single_llm_translate_all(text, source_lang, target_langs, prev_text)
+
     def _fallback_translate_all(self, text, source_lang, target_langs, prev_text):
         """
         Fallback: Use fallback translator to translate all target languages at once.

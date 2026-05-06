@@ -441,7 +441,8 @@ async def translate(
     prev_text: str = Form(""),
     multi_strategy_transcription: int = Form(4), # 1~MAX_NUM_STRATEGIES others 1
     transcription_post_processing: bool = Form(True), # True/False
-    multi_translate: bool = Form(True)
+    multi_translate: bool = Form(True),
+    translate_mode: str = Form("fast") # ultimate、fast、stable
 ):  
     """  
     Transcribe and translate an audio file.  
@@ -468,7 +469,7 @@ async def translate(
     :rtype: BaseResponse  
         A response containing the transcription results.  
     """  
-    
+    translate_mode = translate_mode.lower()
     # Handle t_lang parameter
     if t_lang:
         # Convert comma-separated string to list
@@ -538,7 +539,7 @@ async def translate(
             target=audio_translate, 
             args=(transcribe_manager, translate_manager, result_queue, o_lang, t_lang, 
                   stop_event, multi_strategy_transcription, transcription_post_processing, prev_text, 
-                  multi_translate, file_content)
+                  multi_translate, file_content, translate_mode.lower())
         )
   
         # Start the threads  
@@ -626,11 +627,12 @@ async def translate_pipeline(
     audio_uid: str = Form(123),  
     times: datetime.datetime = Form(...),  
     o_lang: str = Form("zh"),  
-    t_lang: str = Form(""), # zh,en,ja,ko,de
+    t_lang: str = Form("zh,en,ja,ko,de"), # zh,en,ja,ko,de
     prev_text: str = Form(""),
     multi_strategy_transcription: int = Form(4), # 1~MAX_NUM_STRATEGIES others 1
     transcription_post_processing: bool = Form(True), # True/False
-    multi_translate: bool = Form(True)
+    multi_translate: bool = Form(True),
+    translate_mode: str = Form("fast") # ultimate、fast、stable
 ):  
     """
     Pipeline endpoint for transcription and translation.
@@ -641,7 +643,7 @@ async def translate_pipeline(
     is still running.
     """
     logger.debug(f" | Received pipeline translation request: audio_uid={audio_uid}, times={times}) | ")
-    
+
     # Handle t_lang parameter
     if t_lang:
         if ',' in t_lang:
@@ -703,7 +705,8 @@ async def translate_pipeline(
                 multi_translate=multi_translate,
                 audio_uid=audio_uid,
                 times=times,
-                audio_bytes=file_content
+                audio_bytes=file_content,
+                translate_mode=translate_mode.lower()
             ),
             timeout=WAITING_TIME
         )
@@ -747,7 +750,7 @@ async def translate_pipeline(
         # Mark older pending requests as cancelled
         response_tracker.complete_and_cancel_older(audio_uid, task_id, times)
         
-        detected_lang, ori_pred, n_segments, segments, translated_result, transcription_time, translate_time, translate_method, timing_dict = result
+        detected_lang, ori_pred, n_segments, segments, translated_result, transcription_time, translate_time, translate_method, timing_dict, _translate_mode = result
         
         # Check if this result indicates cancellation from other_info
         if other_info and 'cancelled_by_times' in other_info:
@@ -833,8 +836,9 @@ async def text_translate(
     text: str = Form(...),
     source_language: str = Form("zh"),
     target_language: str = Form("zh,en,ja,ko,de"),
-    multi_translate: bool = Form(True)
-):  
+    multi_translate: bool = Form(True),
+    use_azure_translate: bool = Form(False) 
+):    
     """  
     Translate a text.  
   
@@ -848,6 +852,8 @@ async def text_translate(
         Target languages for translation. Can be single language 'en' or comma-separated 'en,ja,ko'. If None or empty, no translation.
     :param multi_translate: bool
         If True, distribute tasks across multiple LLMs; If False, use single LLM to translate all languages at once
+    :param translate_mode: str
+        Translation mode: 'ultimate'/'fast' uses Azure Translate, 'stable' uses LLM
     :rtype: BaseResponse  
         A response containing the translation results.  
     """  
@@ -883,66 +889,72 @@ async def text_translate(
             return BaseResponse(status=Status.FAILED, message=f" | The target language '{lang}' is not in LANGUAGE_LIST: {LANGUAGE_LIST}. | ", data=response_data)  
   
     try:  
-        # Create a queue to hold the return value  
-        result_queue = Queue()  
-        # Create an event to signal stopping  
-        stop_event = threading.Event()  
-  
-        # Create timing thread and inference thread  
-        time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
-        inference_thread = threading.Thread(target=texts_translate, args=(translate_manager, text, result_queue, source_language, target_language, stop_event, multi_translate))  
-  
-        # Start the threads  
-        time_thread.start()  
-        inference_thread.start()  
-  
-        # Wait for timing thread to complete and check if the inference thread is active to close  
-        time_thread.join()  
-        stop_thread(inference_thread)  
-  
-        # Get the result from the queue  
-        if not result_queue.empty():  
-            result, translate_time, translate_method, timing_dict = result_queue.get()  
-            response_data.text = result  
-            response_data.translate_time = translate_time
-            zh_result = response_data.text.get("zh", "")
-            en_result = response_data.text.get("en", "")
-            de_result = response_data.text.get("de", "")
-            ja_result = response_data.text.get("ja", "")
-            ko_result = response_data.text.get("ko", "")
-            
-            # Format timing_dict: each task as separate entry
-            timing_parts = []
-            if timing_dict:
-                for translator, time_lang_pairs in timing_dict.items():
-                    if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
-                        for t, lang in time_lang_pairs:
-                            timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
-                    else:
-                        for t in time_lang_pairs:
-                            timing_parts.append(f"{translator}: {t:.2f}s")
-            timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
-  
-            logger.debug(f" | {response_data.model_dump_json()} | ")  
-            logger.info(f" | source language: {source_language} -> target language: {target_language} | translate_method: {translate_method} |")
-            if timing_str != "N/A":
-                logger.info(f" | {timing_str} | ")
-            if target_language:
-                logger.info(f" | {'#' * 75} | ")
-                logger.info(f" | ZH: {zh_result} | ")  
-                logger.info(f" | EN: {en_result} | ")  
-                logger.info(f" | DE: {de_result} | ")  
-                logger.info(f" | JA: {ja_result} | ")  
-                logger.info(f" | KO: {ko_result} | ")
-                logger.info(f" | {'#' * 75} | ")
-            logger.info(f" | translate has been completed in {translate_time:.2f} seconds. |")  
-            state = Status.OK
+        if use_azure_translate:
+            # Azure Translate: direct call (fast, no need for timeout thread)
+            result, translate_time, translate_method, timing_dict = \
+                translate_manager._azure_translate_all(text, source_language, target_language)
         else:
-            logger.info(f" | translation has exceeded the upper limit time and has been stopped |")
-            zh_result = en_result = de_result = ja_result = ko_result = ""
-            state = Status.FAILED
+            # LLM: use threading with timeout
+            # Create a queue to hold the return value  
+            result_queue = Queue()  
+            # Create an event to signal stopping  
+            stop_event = threading.Event()  
+  
+            # Create timing thread and inference thread  
+            time_thread = threading.Thread(target=waiting_times, args=(stop_event, transcribe_manager, WAITING_TIME))  
+            inference_thread = threading.Thread(target=texts_translate, args=(translate_manager, text, result_queue, source_language, target_language, stop_event, multi_translate))  
+  
+            # Start the threads  
+            time_thread.start()  
+            inference_thread.start()  
+  
+            # Wait for timing thread to complete and check if the inference thread is active to close  
+            time_thread.join()  
+            stop_thread(inference_thread)  
+  
+            if not result_queue.empty():
+                result, translate_time, translate_method, timing_dict = result_queue.get()
+            else:
+                logger.info(f" | translation has exceeded the upper limit time and has been stopped |")
+                response_data.text = DEFAULT_RESULT.copy()
+                return BaseResponse(status=Status.FAILED, message=f" | ZH:  | EN:  | DE:  | JA:  | KO:  | ", data=response_data)
 
-        return BaseResponse(status=state, message=f" | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)
+        # Process result (shared by both paths)
+        response_data.text = result  
+        response_data.translate_time = translate_time
+        zh_result = response_data.text.get("zh", "")
+        en_result = response_data.text.get("en", "")
+        de_result = response_data.text.get("de", "")
+        ja_result = response_data.text.get("ja", "")
+        ko_result = response_data.text.get("ko", "")
+            
+        # Format timing_dict: each task as separate entry
+        timing_parts = []
+        if timing_dict:
+            for translator, time_lang_pairs in timing_dict.items():
+                if time_lang_pairs and isinstance(time_lang_pairs[0], tuple):
+                    for t, lang in time_lang_pairs:
+                        timing_parts.append(f"{translator}: {t:.2f}s ({lang})")
+                else:
+                    for t in time_lang_pairs:
+                        timing_parts.append(f"{translator}: {t:.2f}s")
+        timing_str = " | ".join(timing_parts) if timing_parts else "N/A"
+  
+        logger.debug(f" | {response_data.model_dump_json()} | ")  
+        logger.info(f" | source language: {source_language} -> target language: {target_language} | translate_method: {translate_method} |")
+        if timing_str != "N/A":
+            logger.info(f" | {timing_str} | ")
+        if target_language:
+            logger.info(f" | {'#' * 75} | ")
+            logger.info(f" | ZH: {zh_result} | ")  
+            logger.info(f" | EN: {en_result} | ")  
+            logger.info(f" | DE: {de_result} | ")  
+            logger.info(f" | JA: {ja_result} | ")  
+            logger.info(f" | KO: {ko_result} | ")
+            logger.info(f" | {'#' * 75} | ")
+        logger.info(f" | translate has been completed in {translate_time:.2f} seconds. |")  
+
+        return BaseResponse(status=Status.OK, message=f" | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | ", data=response_data)
     except Exception as e:
         logger.error(f" | translation() error: {e} | ")
         return BaseResponse(status=Status.FAILED, message=f" | translation() error: {e} | ", data=response_data)
