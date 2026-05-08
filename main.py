@@ -809,7 +809,7 @@ async def translate_pipeline(
         state = Status.OK
         message = f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | "
     else:  
-        state = Status.FAILED
+        state = Status.OK
         # Determine failure reason and set appropriate message
         if result is None:
             # Timeout occurred
@@ -817,8 +817,13 @@ async def translate_pipeline(
         elif result and result[0] is None:
             # Task was cancelled (e.g., duplicate request)
             message = " | Translation task was cancelled due to newer request | "
+        elif result and len(result) > 7 and "cancelled" in str(result[7]):
+            # Cancelled by newer request (race condition: TranscribeManager cancelled it
+            # before response_tracker could mark it)
+            message = " | Translation task was cancelled due to newer request | "
         else:
             # Other failure reasons (interrupted, transcription failed, etc.)
+            state = Status.FAILED
             message = " | Pipeline processing failed | "
         logger.warning(message)
         
