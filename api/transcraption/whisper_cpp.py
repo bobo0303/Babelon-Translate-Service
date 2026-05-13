@@ -618,16 +618,16 @@ class WhisperCpp:
                             prompt_text = (self.prompt + " " + prev_text) if self.prompt else prev_text
                             # Log token count for prompt
                             prompt_size = self.get_prompt_token_count(prompt_text)
-                            if prompt_size <= 400:    
+                            if prompt_size <= 224:    
                                 initial_prompt = prompt_text
                             else:
-                                logger.warning(f" | len of prompt: {prompt_size} over the limit 448 tokens. Use no prev_text prompt. | ")
+                                logger.warning(f" | len of prompt: {prompt_size} over the limit 224 tokens. Use no prev_text prompt. | ")
                     
                     if trim_text != "": 
                         initial_prompt = (initial_prompt + " " + trim_text) if initial_prompt else trim_text
-                        if self.get_prompt_token_count(initial_prompt) > 400:
+                        if self.get_prompt_token_count(initial_prompt) > 224:
                             initial_prompt = (self.prompt + " " + trim_text) if self.prompt is not None else trim_text
-                            logger.warning(f" | add trim text | len of prompt with trim_text over the limit 448 tokens. Use original prompt with trim prompt. (ignored prev text) | ")                              
+                            logger.warning(f" | add trim text | len of prompt with trim_text over the limit 224 tokens. Use original prompt with trim prompt. (ignored prev text) | ")                              
                     
                     # Call single temperature transcription
                     result = self._transcribe_single_temperature(audio, ori, 0.0, initial_prompt)

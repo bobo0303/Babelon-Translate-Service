@@ -93,6 +93,26 @@ class TranscribeManager:
         """Get the current prompt text."""
         return self.prompt
     
+    def get_prompt_token_count(self, prompt_text: str) -> int:
+        """Get the number of tokens in the given prompt text using the current transcriber.
+        Applies the same formatting as set_prompt() to get the real token count."""
+        if not self.transcriber:
+            logger.error(" | TranscribeManager: No transcriber loaded, cannot count tokens | ")
+            return 0
+        
+        if not prompt_text:
+            return 0
+        
+        # Apply same formatting as set_prompt()
+        formatted = " ".join(prompt_text.strip().split())
+        if formatted:
+            if not formatted.endswith((',', '.', '。', '!', '！', '?', '？')):
+                formatted += '.'
+            if not (formatted.startswith("These are our prompts ") and formatted.endswith(" Let's continue.")):
+                formatted = f"These are our prompts {formatted} Let's continue."
+        
+        return self.transcriber.get_prompt_token_count(formatted)
+    
     def set_prompt(self, prompt):  
         """  
         Set the prompt for the transcription model.  

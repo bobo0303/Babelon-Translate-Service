@@ -114,6 +114,34 @@ class WhisperTransformer:
             logger.error(f" | Prompt setting failed. | ")
             return e    
     
+    def get_prompt_token_count(self, prompt_text: str) -> int:
+        """
+        Get the number of tokens in the given prompt text.
+        
+        :param prompt_text: str
+            The prompt text to tokenize.
+        :return: int
+            The number of tokens in the prompt.
+        """
+        if not self.processor and not self.model_path:
+            logger.error(" | Model not loaded, cannot tokenize prompt | ")
+            return 0
+        
+        if not prompt_text:
+            return 0
+        
+        try:
+            if self.processor is None:
+                self.processor = AutoProcessor.from_pretrained(self.model_path)
+            
+            prompt_ids = self.processor.get_prompt_ids(prompt_text, return_tensors="pt")
+            n_tokens = prompt_ids.shape[0]
+            logger.debug(f" | Prompt token count: {n_tokens} | ")
+            return n_tokens
+        except Exception as e:
+            logger.error(f" | get_prompt_token_count() error: {e} | ")
+            return 0
+    
     
     def transcribe(self, audio, audio_length, ori, multi_strategy_transcription=1, post_processing=True, prev_text="", trim_text=""):  
         """  
@@ -168,8 +196,8 @@ class WhisperTransformer:
                         prev_prompt = prev_prompt.to(self.device) if self.device == "cuda" else prev_prompt
                         prompt = torch.cat([self.prompt_token, prev_prompt], dim=-1) if self.prompt_token is not None else prev_prompt
                         prompt_size = list(prompt.size())[0]  # Get the size as an integer
-                        if prompt_size >= 400:    
-                            logger.warning(f" | len of prompt: {prompt_size} over the limit 448 tokens. Use no prev_text prompt. | ")
+                        if prompt_size >= 224:    
+                            logger.warning(f" | len of prompt: {prompt_size} over the limit 224 tokens. Use no prev_text prompt. | ")
                         else:
                             generate_kwargs["prompt_ids"] = prompt
                         # logger.debug(self.prompt)
@@ -181,9 +209,9 @@ class WhisperTransformer:
                     trim_prompt = trim_prompt.to(self.device) if self.device == "cuda" else trim_prompt
                     if "prompt_ids" in generate_kwargs and generate_kwargs["prompt_ids"] is not None:
                         generate_kwargs["prompt_ids"] = torch.cat([generate_kwargs["prompt_ids"], trim_prompt], dim=-1)
-                        if list(generate_kwargs["prompt_ids"].size())[0] > 400:
+                        if list(generate_kwargs["prompt_ids"].size())[0] > 224:
                             generate_kwargs["prompt_ids"] = torch.cat([self.prompt_token, trim_prompt], dim=-1) if self.prompt_token is not None else trim_prompt
-                            logger.warning(f" | add trim text | len of prompt with trim_text over the limit 448 tokens. Use original prompt with trim prompt. (ignored prev text) | ")                              
+                            logger.warning(f" | add trim text | len of prompt with trim_text over the limit 224 tokens. Use original prompt with trim prompt. (ignored prev text) | ")                              
                     else:
                         generate_kwargs["prompt_ids"] = trim_prompt
                     

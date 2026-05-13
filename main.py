@@ -378,6 +378,30 @@ async def set_prompt(prompts = Form(None)):
         return BaseResponse(status=Status.FAILED, message=prompt_message, data=None)
     else:
         return BaseResponse(status=Status.OK, message=" | Prompt has been set successfully. | ", data=None)
+
+@app.post("/get_prompt_token_count")
+async def get_prompt_token_count(prompts: str = Form(...)):
+    """
+    Count the number of tokens in the given prompt text.
+    Whisper has a maximum prompt token limit of 448 tokens.
+    
+    Args:
+        prompts: The prompt text to tokenize.
+        
+    Returns:
+        BaseResponse: Token count and whether it's within the limit.
+    """
+    if not transcribe_manager.transcriber:
+        return BaseResponse(status=Status.FAILED, message=" | No model loaded. | ", data=None)
+    
+    token_count = transcribe_manager.get_prompt_token_count(prompts)
+    within_limit = token_count <= 224
+    
+    return BaseResponse(
+        status=Status.OK,
+        message=f" | Prompt token count: {token_count} | {'Within' if within_limit else 'Exceeds'} limit (224) | ",
+        data={"token_count": token_count, "max_tokens": 224, "within_limit": within_limit}
+    )
     
 @app.post("/change_pretext_usage")
 async def change_pretext_usage(enable: bool = Form(True)):
