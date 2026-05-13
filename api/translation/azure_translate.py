@@ -72,15 +72,17 @@ class AzureTranslate:
                 target_languages = [target_lang]
 
             # Map language codes to Azure format
-            azure_source = self._map_lang(source_lang)
             azure_targets = [self._map_lang(lang) for lang in target_languages]
 
-            # Build request
+            # Build request params
             params = {
                 'api-version': self.api_version,
-                'from': azure_source,
                 'to': azure_targets
             }
+            # If source_lang is explicitly specified (not "auto"), set 'from'; otherwise let Azure auto-detect
+            if source_lang and source_lang != 'auto':
+                params['from'] = self._map_lang(source_lang)
+
             body = [{'text': source_text}]
 
             logger.debug(f" | Azure Translate | from {source_lang} to {target_languages}: {source_text[:100]}... | ")
