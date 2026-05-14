@@ -189,7 +189,8 @@ ENTROPY_THOLD = 2.4
 
 # no used just for reference
 DEFAULT_PROMPTS = {
-    "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, Micro LED, 急單, foreX, NT dollars, Monitor, MS, QoQ, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, E&E, Notebook, RD, TV, 8B, YoY, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, 友達, Pillar, 凌華, ComQi, AMSC, AI 四支箭, paul, AUO, 彭双浪, 柯富仁",
+    # "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, Micro LED, 急單, foreX, NT dollars, Monitor, MS, QoQ, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, E&E, Notebook, RD, TV, 8B, YoY, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, 友達, Pillar, 凌華, ComQi, AMSC, AI 四支箭, paul, AUO, 彭双浪, 柯富仁",
+    "DEFAULT": "拉貨, 出貨, 放量, 換機潮, 業說會, pull in, BOM, deal, Micro LED, 急單, foreX, NT dollars, Monitor, MS, QoQ, BS, china car, FindARTs, DSBG, low temp, Tier, E&E, RD, TV, 8B, YoY, In-Cell Touch, Vertical, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, 友達, Pillar, 凌華, ComQi, AMSC, AI 四支箭, paul, AUO, 彭双浪, 柯富仁",
     }
 
 #############################################################################
