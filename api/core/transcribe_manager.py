@@ -121,6 +121,16 @@ class TranscribeManager:
             The name of the prompt to be used.  
         :rtype: None  
         """  
+        if prompt is None or (isinstance(prompt, str) and prompt.strip() == ""):
+            self.prompt = ""
+            try:
+                self.transcriber.set_prompt(prompt=self.prompt)
+            except Exception as e:
+                msg = f" | TranscribeManager: set_prompt() error: {e} | "
+                logger.error(msg)
+                return msg
+            return None
+        
         self.prompt = " ".join(prompt.strip().split())
         
         # Build prompt text based on language
