@@ -8,6 +8,7 @@ app.yml
 audio/*
 whl/*
 test
+results
 logs/*
 rtt_test
 tools

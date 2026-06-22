@@ -46,3 +46,6 @@ csv/
 scripts/start.sh
 scripts/stop.sh
 batch_test_results
+
+# test
+results

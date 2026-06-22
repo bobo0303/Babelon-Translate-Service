@@ -189,8 +189,8 @@ ENTROPY_THOLD = 2.4
 
 # no used just for reference
 DEFAULT_PROMPTS = {
-    # "DEFAULT": "拉貨力道, 出貨力道, 放量, 換機潮, 業說會, pull in, 曝險, BOM, deal, Micro LED, 急單, foreX, NT dollars, Monitor, MS, QoQ, BS, china car, FindARTs, DSBG, low temp, Tier 2, Tier 3, E&E, Notebook, RD, TV, 8B, YoY, In-Cell Touch, Vertical, 主管, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, 友達, Pillar, 凌華, ComQi, AMSC, AI 四支箭, paul, AUO, 彭双浪, 柯富仁",
-    "DEFAULT": "拉貨, 出貨, 放量, 換機潮, 業說會, pull in, BOM, deal, Micro LED, 急單, foreX, NT dollars, Monitor, MS, QoQ, BS, china car, FindARTs, DSBG, low temp, Tier, E&E, RD, TV, 8B, YoY, In-Cell Touch, Vertical, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, 友達, Pillar, 凌華, ComQi, AMSC, AI 四支箭, paul, AUO, 彭双浪, 柯富仁",
+    # "DEFAULT": "拉貨, 出貨, 放量, 換機潮, 業說會, pull in, BOM, deal, Micro LED, 急單, foreX, NT dollars, Monitor, MS, QoQ, BS, china car, FindARTs, DSBG, low temp, Tier, E&E, RD, TV, 8B, YoY, In-Cell Touch, Vertical, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, Karl Storz, Schwarz, NATISIX, 友達, Pillar, 凌華, ComQi, AMSC, AI 四支箭, paul, AUO, 彭双浪, 柯富仁",
+    "DEFAULT": "拉貨, 出貨, 放量, 換機潮, 業說會, pull in, BOM, 曝險, Micro LED, 急單, foreX, NT dollars, Monitor, QoQ, china car, FindARTs, DSBG, low temp, Tier, E&E, YoY, In-Cell Touch, Vertical, Firmware, AecoPost, DaaS, OLED, AmLED, Polarizer, Tartan Display, 達擎, ADP team, Legamaster, AVOCOR, RISEvision, JECTOR, SatisCtrl, 主管, Karl Storz, 光通訊, Schwarz, NATISIX, 友達, Pillar, 凌華, ComQi, AMSC, CPO, AI 四支箭, paul, AUO, 彭双浪, 柯富仁",
     }
 
 #############################################################################
@@ -1062,6 +1062,17 @@ This text has systematic ASR errors:
 Preserve EXACTLY (case-sensitive): `AUO`, `Microsoft`, `Google`, `Apple`, `TikTok`, `Oracle`
  
 Protect all capitalized terms, proper nouns, technical abbreviations unless explicitly listed for translation.
+
+## Forced Translation Dictionary
+When the input contains the following terms, MUST use the specified translation:
+| English | 繁體中文 |
+|---------|----------|
+| AI Edge Service: Intelligent Terminal | AI智慧服務_智慧終端 |
+| From Circular Economy to Zero-Carbon Energy: Ammonia-to-Hydrogen Loop as the New Power Solution for AI | 從循環經濟到零碳能源：AI 電力新解方：循環氨轉氫能 |
+| Waveguide for AR glasses | AR眼鏡光波導 |
+| SatGlass Antenna | 玻璃衛星天線 |
+| A new chapter in vision from UI to AI | 從UI邁向AI 開啟視界新篇章 |
+| Optical Interconnect | 光通訊 |
  
 ## Language Requirements
 {lang_requirements_str}
