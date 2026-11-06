@@ -15,10 +15,12 @@ from api import websocket_router
 from api.core.transcribe_manager import TranscribeManager
 from api.core.translate_manager import TranslateManager
 from api.azure_sdk.speech_lid import AzureSpeechLID
+from api.azure_sdk.speech_tts import AzureSpeechTTS
+from api.azure_sdk.tts_monitor import TTSMonitor
 from api.core.threading_api import audio_translate, texts_translate, waiting_times, stop_thread, audio_translate_sse, audio_pipeline_coordinator
 from api.core.utils import write_txt, format_text_spacing, format_cleaning, ResponseTracker
 from lib.core.health_check import create_health_check_service, hc_logger
-from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN, HEALTH_CHECK_CYCLE_SEC, DEFAULT_AUDIO
+from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, TTSResultData, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN, HEALTH_CHECK_CYCLE_SEC, DEFAULT_AUDIO
 from lib.core.logging_config import get_logger
 from lib.core.base_object import BaseResponse, Status
 
@@ -50,6 +52,8 @@ health_check_service = create_health_check_service(
 transcribe_manager = TranscribeManager()
 translate_manager = TranslateManager()
 azure_speech = AzureSpeechLID()  # Initialize Azure Speech LID
+azure_tts = AzureSpeechTTS()  # Initialize Azure Speech TTS
+tts_monitor = TTSMonitor()  # TTS Pipeline Monitor
 response_tracker = ResponseTracker()  # Tracker to prevent race conditions
 waiting_list = []  # Queue for waiting translation requests
 sse_stop_event = Event()  # Global event to control SSE connection
@@ -666,6 +670,8 @@ async def translate_pipeline(
     in parallel, allowing the next transcription to start while the previous translation
     is still running.
     """
+    request_arrival = time.time()  # Record request arrival for TTS monitor timeline
+    recording_start_ts = times.timestamp()  # 前端傳來的收音開始真實時間 (unix timestamp)
     logger.debug(f" | Received pipeline translation request: audio_uid={audio_uid}, times={times}) | ")
 
     # Handle t_lang parameter
@@ -830,6 +836,63 @@ async def translate_pipeline(
             logger.info(f" | KO: {ko_result} | ")  
             logger.info(f" | {'#' * 75} | ")
         logger.info(f" | RTF: {rtf} | total time: {transcription_time + translate_time:.2f} seconds. | transcribe {transcription_time:.2f} seconds. | translate {translate_time:.2f} seconds. | strategy: {multi_strategy_transcription} | ")  
+        
+        # TTS: when multi_strategy_transcription == 4, run in background thread (monitor only, no response)
+        if multi_strategy_transcription == 4 and t_lang:
+            tts_texts = {lang: response_data.text.get(lang, "") for lang in t_lang if lang != "auto"}
+            input_audio_length = other_info.get('audio_length', 0.0) if other_info else 0.0
+            
+            # DEBUG: 輸出所有 TTS monitor 相關的時間資訊
+            logger.info(
+                f" | TTS Monitor DEBUG | "
+                f"audio_uid={audio_uid} | "
+                f"times={times} | "
+                f"recording_start_ts={recording_start_ts:.6f} | "
+                f"request_arrival={request_arrival:.6f} | "
+                f"request_arrival - recording_start_ts = {request_arrival - recording_start_ts:.3f}s | "
+                f"input_audio_length (from other_info)={input_audio_length:.3f}s | "
+                f"transcription_time={transcription_time:.3f}s | "
+                f"translate_time={translate_time:.3f}s | "
+                f"other_info keys={list(other_info.keys()) if other_info else 'None'} | "
+                f"trim_duration={other_info.get('trim_duration', 'N/A') if other_info else 'N/A'} | "
+                f"trim_updated={other_info.get('trim_updated', 'N/A') if other_info else 'N/A'} | "
+                f"file_content_len={len(file_content)} bytes | "
+            )
+            
+            def _tts_background(texts, uid, ts, in_dur, t_time, tl_time, req_time, rec_start):
+                try:
+                    logger.info(f" | Starting TTS synthesis (background) for languages: {list(texts.keys())} | ")
+                    batch = azure_tts.synthesize_batch(texts)
+                    tts_parts = [f"{lang}: fb={r.first_byte_latency:.3f}s, total={r.synthesis_time:.3f}s"
+                                 for lang, r in batch.results.items() if r.success]
+                    logger.info(f" | TTS summary | {' | '.join(tts_parts)} | batch_total: {batch.total_time:.3f}s | ")
+                    
+                    tts_per_lang = {}
+                    for lang, tts_r in batch.results.items():
+                        if tts_r.success:
+                            tts_per_lang[lang] = {
+                                "first_byte": tts_r.first_byte_latency,
+                                "synthesis_time": tts_r.synthesis_time,
+                                "audio_duration": tts_r.audio_duration,
+                            }
+                    tts_monitor.record(
+                        audio_uid=uid, times=ts,
+                        input_audio_duration=in_dur,
+                        recording_start=rec_start,
+                        request_arrival=req_time,
+                        transcribe_time=t_time, translate_time=tl_time,
+                        tts_wall_time=batch.total_time,
+                        tts_per_lang=tts_per_lang,
+                    )
+                except Exception as e:
+                    logger.error(f" | TTS background error: {e} | ")
+            
+            threading.Thread(
+                target=_tts_background,
+                args=(tts_texts, audio_uid, times, input_audio_length, transcription_time, translate_time, request_arrival, recording_start_ts),
+                daemon=True
+            ).start()
+        
         state = Status.OK
         message = f" | Transcription: {ori_pred} | ZH: {zh_result} | EN: {en_result} | DE: {de_result} | JA: {ja_result} | KO: {ko_result} | "
     else:  
@@ -1199,6 +1262,34 @@ async def stop_sse():
     """[⚠️ 目前此功能未使用，測試時可能會出錯] Endpoint to stop the SSE connection."""  
     sse_stop_event.set() 
     return BaseResponse(status=Status.OK, message=" | SSE connection has been stopped | ", data=None)  
+
+
+##############################################################################
+# TTS Monitor API endpoints
+##############################################################################
+
+@app.get("/tts_monitor/data")
+async def get_tts_monitor_data():
+    """取得 TTS 監控數據 (JSON)"""
+    data = tts_monitor.get_data()
+    return BaseResponse(status=Status.OK, message="TTS monitor data", data=data)
+
+
+@app.get("/tts_monitor/csv")
+async def get_tts_monitor_csv():
+    """下載 TTS 監控 CSV 檔案"""
+    from fastapi.responses import FileResponse
+    csv_path = tts_monitor.get_csv_path()
+    if not csv_path or not os.path.exists(csv_path):
+        return BaseResponse(status=Status.FAILED, message="No data yet", data=None)
+    return FileResponse(csv_path, media_type="text/csv", filename="tts_monitor.csv")
+
+
+@app.post("/tts_monitor/reset")
+async def reset_tts_monitor():
+    """重置 TTS 監控數據"""
+    tts_monitor.reset()
+    return BaseResponse(status=Status.OK, message="TTS monitor reset", data=None)
 
 
 ##############################################################################

@@ -128,6 +128,17 @@ DEFAULT_AUDIO = "./audio/test.wav"
 
 #############################################################################
 
+class TTSResultData(BaseModel):
+    """單一語言的 TTS 結果"""
+    language: str = ""
+    audio_base64: str = ""
+    audio_duration: float = 0.0
+    first_byte_latency: float = 0.0
+    synthesis_time: float = 0.0
+    text_length: int = 0
+    success: bool = False
+    error: str = ""
+
 class AudioTranslationResponse(BaseModel):
     meeting_id: str = ""
     device_id: str
@@ -147,6 +158,9 @@ class AudioTranslationResponse(BaseModel):
     trim_duration: float = 0.0 
     trim_updated: bool = False
     window_count: int = 0
+    # TTS fields (only populated when multi_strategy_transcription == 4)
+    tts_results: Dict[str, TTSResultData] = {}
+    tts_total_time: float = 0.0
     
 #############################################################################
 
