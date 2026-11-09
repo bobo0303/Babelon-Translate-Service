@@ -10,6 +10,7 @@ from anthropic import AnthropicFoundry
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from lib.config.constant import CLAUDE_CONFIG, LANGUAGE_LIST, DEFAULT_RESULT, get_system_prompt_dynamic_language
 from lib.core.logging_config import get_logger
+from lib.core.glossary_manager import glossary_manager
 
 # 獲取日誌器
 logger = get_logger(__name__)
@@ -139,7 +140,8 @@ class ClaudeTranslate:
             expected_languages = target_languages  # Only validate target languages by default
 
             # Generate dynamic prompt (always includes source language for context)
-            system_prompt = get_system_prompt_dynamic_language(all_languages, prev_text)
+            glossary_section = glossary_manager.build_prompt_section(source_lang, target_languages, source_text)
+            system_prompt = get_system_prompt_dynamic_language(all_languages, prev_text, glossary_section)
             user_prompt = source_text
 
             logger.debug(f" | Claude({self.model}) | Translating from {source_lang} to {target_languages}: {source_text[:100]}... | ")
