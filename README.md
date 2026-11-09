@@ -124,7 +124,7 @@
 | `GET` | `/get_glossary` | - | Glossary entry count per language pair and last upload time (`updated_at`) |
 | `GET` | `/clear_glossary` | - | Clear the loaded glossary |
 
-Glossary CSV: header row = language codes (`zh,en,ja,ko,de`), one term per row, empty cells allowed. A row only creates entries for language pairs where both cells are filled (both directions). Matching entries are injected into the LLM translation prompt (GPT / Claude / Ollama / Gemma); Azure Translator (`fast` mode intermediate results, `ultimate` mode) does not use the glossary. The glossary lives in memory only: re-upload the CSV after every service restart.
+Glossary CSV: header row = language codes (`zh,en,ja,ko,de`), one term per row, empty cells allowed. A row only creates entries for language pairs where both cells are filled (both directions). Matching entries are injected into the LLM translation prompt (GPT / Claude / Ollama / Gemma); Azure Translator (`fast` mode intermediate results, `ultimate` mode) also applies it: matching terms are swapped before the request (German: replaced in place; other languages: temporary `QX1` placeholders restored afterwards, with Korean particles corrected). Targets with a match are sent as separate requests; if a term does not survive, that target falls back to the plain translation. The glossary lives in memory only: re-upload the CSV after every service restart.
 
 ### Language Detection
 

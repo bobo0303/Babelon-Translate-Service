@@ -1,6 +1,6 @@
 # 翻譯詞庫（Glossary）功能規劃
 
-> 狀態：階段 1（LLM prompt 注入 + 上傳 / 查看 / 清除 API）已實作；階段 2（Azure）未做。
+> 狀態：階段 1（LLM prompt 注入 + 上傳 / 查看 / 清除 API）與階段 2（Azure Translator）皆已實作。
 
 ## 1. 目標
 
@@ -175,8 +175,26 @@ system_prompt = get_system_prompt_dynamic_language(all_languages, prev_text, glo
 | 持久化 | 只放記憶體，不寫檔；重啟後由使用者自行重新上傳自己保存的 CSV |
 | 上傳模式 | 一律取代（replace），不做 append |
 | 方向 | 雙向展開 |
-| Azure（strategy 1~3 / ultimate） | 階段 1 不做 |
+| Azure（strategy 1~3 / ultimate） | 階段 2 已實作，見下方「Azure 做法」 |
 | 清除 API | `GET /clear_glossary`（清空記憶體） |
 | 檢視 API | 有 `GET /get_glossary` |
 
 實作位置：[glossary_manager.py](lib/core/glossary_manager.py)（放 `lib/core` 避免 `api` 套件的循環 import）。
+
+## 10. Azure 做法（階段 2）
+
+實作：[glossary_azure.py](lib/core/glossary_azure.py)、[azure_translate.py](api/translation/azure_translate.py)。
+
+Azure 沒有 prompt，所以改成「送出前替換原文中的詞、回傳後驗證」。每個目標語言獨立處理：
+
+| 目標語言 | 嘗試順序 |
+|---|---|
+| de | ① 直接換成目標語言詞 → ② 佔位符 → ③ 不帶詞庫的原翻譯 |
+| 其他 | ① 佔位符 → ② 不帶詞庫的原翻譯 |
+
+- **佔位符**：詞換成 `QX1`、`QX2`…，翻完換回；Azure 不會翻這類英數代號。原文若已含 `QX<數字>` 則改用 `ZZ`、`XQ`。每個代號必須剛好出現一次，否則視為失敗。
+- **直接換詞**：德文的詞本來就是拉丁字母，Azure 會自己配合冠詞與性別，品質比佔位符好；回傳後檢查詞仍在。其他語言（尤其 zh/ja/ko）Azure 會把換進去的詞再翻一次，保留率只有約 65%，所以不用。
+- **韓文助詞**：換回詞後，依詞的最後一個字有無收音修正緊接的助詞（와/과、은/는、이/가、을/를、으로/로）。
+- **沒命中詞條**的目標語言維持原行為（所有此類目標共用一個請求）；命中的目標各自一個請求並行送出。
+- 環境變數 `GLOSSARY_AZURE_DIRECT_TARGETS`（預設 `de`）可調整先試「直接換詞」的語言。
+- 已知限制：德文詞形變化與連續詞條（如 `半導體營收毛利率`）會黏在一起；詞庫請盡量放名詞。

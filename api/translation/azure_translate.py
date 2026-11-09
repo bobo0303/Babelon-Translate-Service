@@ -7,10 +7,12 @@ import os
 import sys
 import uuid
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from lib.config.constant import DEFAULT_RESULT, LANGUAGE_LIST
 from lib.core.logging_config import get_logger
+from lib.core.glossary_azure import plan_attempts
 
 logger = get_logger(__name__)
 
@@ -51,9 +53,68 @@ class AzureTranslate:
         """Map Azure Translator language code back to internal code."""
         return self.lang_map_reverse.get(azure_code, azure_code)
 
+    def _request(self, text, source_lang, target_languages):
+        """
+        Send one translate request.
+
+        Returns {internal_lang: translated_text}, or None on any failure (error already logged).
+        """
+        params = {
+            'api-version': self.api_version,
+            'to': [self._map_lang(lang) for lang in target_languages]
+        }
+        # If source_lang is explicitly specified (not "auto"), set 'from'; otherwise let Azure auto-detect
+        if source_lang and source_lang != 'auto':
+            params['from'] = self._map_lang(source_lang)
+
+        logger.debug(f" | Azure Translate | from {source_lang} to {target_languages}: {text[:100]}... | ")
+        try:
+            response = requests.post(
+                self.translate_url,
+                params=params,
+                headers=self._get_headers(),
+                json=[{'text': text}],
+                timeout=10
+            )
+            if response.status_code != 200:
+                logger.error(f" | Azure Translate | API error {response.status_code}: {response.text} | ")
+                return None
+
+            result_json = response.json()
+            if not isinstance(result_json, list) or len(result_json) == 0:
+                logger.warning(f" | Azure Translate | Unexpected response format: {result_json} | ")
+                return None
+
+            return {self._map_lang_reverse(t.get('to', '')): t.get('text', '')
+                    for t in result_json[0].get('translations', [])}
+        except requests.exceptions.Timeout:
+            logger.error(" | Azure Translate | Request timeout | ")
+        except requests.exceptions.ConnectionError:
+            logger.error(" | Azure Translate | Connection error | ")
+        except Exception as e:
+            logger.error(f" | Azure Translate | System error: {e} | ")
+        return None
+
+    def _translate_with_glossary(self, text, source_lang, target_lang, attempts):
+        """Try each glossary attempt for one target language; return the final text or None if all failed."""
+        for name, request_text, finish in attempts:
+            translated = self._request(request_text, source_lang, [target_lang])
+            if translated is None:
+                continue
+            final = finish(translated.get(target_lang, ''))
+            if final is not None:
+                logger.debug(f" | Azure Translate | glossary applied ({name}) {source_lang}->{target_lang} | ")
+                return final
+            logger.warning(f" | Azure Translate | glossary {name} check failed {source_lang}->{target_lang}, trying next | ")
+        logger.warning(f" | Azure Translate | glossary skipped {source_lang}->{target_lang}, using plain translation | ")
+        return None
+
     def translate(self, source_text, source_lang='zh', target_lang='en', prev_text=""):
         """
         Translation method - using Azure Translator API (batch multi-language)
+        
+        Glossary terms (if uploaded) are applied per target language: targets with a glossary match are
+        translated in their own request, all other targets share one plain request as before.
         
         :param source_text: Text to be translated
         :param source_lang: Source language code
@@ -71,61 +132,34 @@ class AzureTranslate:
             else:
                 target_languages = [target_lang]
 
-            # Map language codes to Azure format
-            azure_targets = [self._map_lang(lang) for lang in target_languages]
+            plans = {lang: plan_attempts(source_lang, lang, source_text) for lang in target_languages}
+            glossary_targets = [lang for lang, attempts in plans.items() if attempts]
+            plain_targets = [lang for lang in target_languages if lang not in glossary_targets]
 
-            # Build request params
-            params = {
-                'api-version': self.api_version,
-                'to': azure_targets
-            }
-            # If source_lang is explicitly specified (not "auto"), set 'from'; otherwise let Azure auto-detect
-            if source_lang and source_lang != 'auto':
-                params['from'] = self._map_lang(source_lang)
+            translations = {}
+            if glossary_targets:
+                with ThreadPoolExecutor(max_workers=len(glossary_targets)) as pool:
+                    futures = {lang: pool.submit(self._translate_with_glossary, source_text, source_lang, lang, plans[lang])
+                               for lang in glossary_targets}
+                    for lang, future in futures.items():
+                        final = future.result()
+                        if final is None:
+                            plain_targets.append(lang)  # glossary could not be applied, use the plain translation
+                        else:
+                            translations[lang] = final
 
-            body = [{'text': source_text}]
+            if plain_targets:
+                plain = self._request(source_text, source_lang, plain_targets)
+                if plain is None:
+                    return "403_Forbidden"
+                translations.update(plain)
 
-            logger.debug(f" | Azure Translate | from {source_lang} to {target_languages}: {source_text[:100]}... | ")
-
-            # Call Azure Translator API
-            response = requests.post(
-                self.translate_url,
-                params=params,
-                headers=self._get_headers(),
-                json=body,
-                timeout=10
-            )
-
-            if response.status_code != 200:
-                logger.error(f" | Azure Translate | API error {response.status_code}: {response.text} | ")
-                return "403_Forbidden"
-
-            result_json = response.json()
-
-            # Parse response
-            if not isinstance(result_json, list) or len(result_json) == 0:
-                logger.warning(f" | Azure Translate | Unexpected response format: {result_json} | ")
-                return "403_Forbidden"
-
-            translations = result_json[0].get('translations', [])
-
-            # Build result dictionary
             parsed_result = {source_lang: source_text}
-            for t in translations:
-                azure_lang = t.get('to', '')
-                translated_text = t.get('text', '')
-                internal_lang = self._map_lang_reverse(azure_lang)
-                parsed_result[internal_lang] = translated_text
+            parsed_result.update(translations)
 
             logger.debug(f" | Azure Translate | Translation successful | ")
             return parsed_result
 
-        except requests.exceptions.Timeout:
-            logger.error(" | Azure Translate | Request timeout | ")
-            return "403_Forbidden"
-        except requests.exceptions.ConnectionError:
-            logger.error(" | Azure Translate | Connection error | ")
-            return "403_Forbidden"
         except Exception as e:
             logger.error(f" | Azure Translate | System error: {e} | ")
             return "403_Forbidden"
