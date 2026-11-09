@@ -982,13 +982,14 @@ DYNAMIC_LANGUAGE_DICTIONARY = {"zh": "繁體中文",
                                "ja": "日本語",
                                "ko": "한국어"}
 
-def get_system_prompt_dynamic_language(target_languages: list, previous_context: str = "") -> str:
+def get_system_prompt_dynamic_language(target_languages: list, previous_context: str = "", glossary_section: str = "") -> str:
     """
     Generate system prompt based on target languages with optional previous context.
     
     Args:
         target_languages: List of target language codes (e.g., ['zh', 'en'])
         previous_context: Optional previous transcription for context (default: "")
+        glossary_section: Optional pre-built terminology glossary block (default: "")
     
     Returns:
         Formatted system prompt with dynamic output format and optional context
@@ -1042,7 +1043,7 @@ Input may be INCOMPLETE sentences or fragments from audio stream.
 - DO NOT complete partial sentences - translate fragments as-is
 - Only add words if input is clearly complete
 - PRIORITY: Preserve fragmented structure
-{context_section}
+{context_section}{glossary_section}
 
 ## Punctuation & Formatting (CRITICAL)
 - **Mandatory Punctuation**: Every output MUST include appropriate punctuation (commas, periods, etc.) even if the source ASR input lacks it.

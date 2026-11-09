@@ -21,6 +21,7 @@ from lib.core.health_check import create_health_check_service, hc_logger
 from lib.config.constant import AudioTranslationResponse, TextTranslationResponse, WAITING_TIME, LANGUAGE_LIST, TRANSCRIPTION_METHODS, TRANSLATE_METHODS, DEFAULT_PROMPTS, DEFAULT_RESULT, MAX_NUM_STRATEGIES, set_global_model, BACKEND_DOMAIN, HEALTH_CHECK_CYCLE_SEC, DEFAULT_AUDIO
 from lib.core.logging_config import get_logger
 from lib.core.base_object import BaseResponse, Status
+from lib.core.glossary_manager import glossary_manager, format_pairs, GLOSSARY_MAX_BYTES
 
 # Create necessary directories if they don't exist
 if not os.path.exists("./audio"):  
@@ -415,6 +416,60 @@ async def change_pretext_usage(enable: bool = Form(True)):
     use_pretext = enable
     logger.info(f" | Previous text context has been {'enabled' if use_pretext else 'disabled'}. | ")
     return BaseResponse(message=f" | Previous text context has been {'enabled' if use_pretext else 'disabled'}. | ", data={"use_pretext": use_pretext})
+
+@app.post("/upload_glossary")
+async def upload_glossary(file: UploadFile = File(...)):
+    """
+    Upload a translation glossary CSV (replaces the current glossary).
+    
+    The header row holds language codes (zh, en, ja, ko, de); each following row is one term in several languages.
+    A row only creates entries for language pairs where both cells are non-empty.
+    
+    Args:
+        file: CSV file (UTF-8)
+        
+    Returns:
+        BaseResponse: Per language-pair entry counts and warnings
+    """
+    content = await file.read(GLOSSARY_MAX_BYTES + 1)
+    logger.info(f" | Glossary upload received: {file.filename}, {len(content)} bytes | ")
+    try:
+        info = glossary_manager.load_csv(content)
+    except ValueError as e:
+        logger.warning(f" | Glossary upload rejected: {e} | ")
+        return BaseResponse(status=Status.FAILED, message=f" | Glossary upload failed: {e} | ", data=None)
+    info["updated_at"] = glossary_manager.updated_at()
+    logger.info(f" | Glossary uploaded at {info['updated_at']}: {info['rows']} rows ({info['skipped_rows']} skipped), {len(info['warnings'])} warnings | ")
+    for line in format_pairs(info["pairs"]):
+        logger.info(f" | Glossary   {line} | ")
+    return BaseResponse(message=" | Glossary uploaded successfully. | ", data=info)
+
+@app.get("/get_glossary")
+async def get_glossary():
+    """
+    Get the number of glossary entries per language pair.
+    
+    Returns:
+        BaseResponse: Entry counts, e.g. {"zh->en": 3}, and the last upload time
+    """
+    pairs = glossary_manager.stats()
+    updated_at = glossary_manager.updated_at()
+    logger.info(f" | Glossary status: updated_at {updated_at} | ")
+    for line in format_pairs(pairs):
+        logger.info(f" | Glossary   {line} | ")
+    return BaseResponse(message=f" | Glossary has {sum(pairs.values())} entries. | ", data={"pairs": pairs, "updated_at": updated_at})
+
+@app.get("/clear_glossary")
+async def clear_glossary():
+    """
+    Remove the loaded glossary.
+    
+    Returns:
+        BaseResponse: Entry counts that were removed
+    """
+    removed = glossary_manager.clear()
+    logger.info(" | Glossary cleared | ")
+    return BaseResponse(message=" | Glossary cleared. | ", data={"removed_pairs": removed})
 
 @app.post("/language_detect")
 async def language_detect(  

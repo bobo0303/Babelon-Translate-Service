@@ -120,6 +120,11 @@
 | `POST` | `/change_translator` | `model_name` | Switch translation engine |
 | `POST` | `/set_prompt` | `prompts` | Set/clear custom transcription prompt |
 | `POST` | `/change_pretext_usage` | `enable` (bool) | Toggle previous text context |
+| `POST` | `/upload_glossary` | `file` (CSV) | Upload translation glossary (replaces current one, memory only) |
+| `GET` | `/get_glossary` | - | Glossary entry count per language pair and last upload time (`updated_at`) |
+| `GET` | `/clear_glossary` | - | Clear the loaded glossary |
+
+Glossary CSV: header row = language codes (`zh,en,ja,ko,de`), one term per row, empty cells allowed. A row only creates entries for language pairs where both cells are filled (both directions). Matching entries are injected into the LLM translation prompt (GPT / Claude / Ollama / Gemma); Azure Translator (`fast` mode intermediate results, `ultimate` mode) does not use the glossary. The glossary lives in memory only: re-upload the CSV after every service restart.
 
 ### Language Detection
 
