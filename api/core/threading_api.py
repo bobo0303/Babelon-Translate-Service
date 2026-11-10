@@ -5,20 +5,24 @@ import time
 
 from api.audio.audio_utils import calculate_rtf
 from lib.config.constant import DEFAULT_RESULT, ENABLE_TRIM, LANGUAGE_LIST
+from lib.core.glossary_manager import languages_by_script
 from api.core.trim_session_manager import get_trim_manager
 from lib.core.logging_config import get_logger
 
 # 獲取日誌器
 logger = get_logger(__name__)  
 
-def _resolve_source_language(o_lang, detected_lang):
+def _resolve_source_language(o_lang, detected_lang, text):
     """
     Return the language the translation should use as its source.
 
     With "auto", the language Whisper detected during transcription is used, but only if it is one of the supported
-    languages (Whisper can also return "unknown" or a language outside LANGUAGE_LIST); otherwise "auto" is kept.
+    languages AND the transcript's dominant script allows it. Whisper can return "unknown", a language outside
+    LANGUAGE_LIST, or a wrong label (Breeze labels English speech "zh"); a wrong source would make Azure return the
+    text untranslated for a target equal to that language. In those cases "auto" is kept.
     """
-    if o_lang == 'auto' and detected_lang in LANGUAGE_LIST and detected_lang != 'auto':
+    if (o_lang == 'auto' and detected_lang in LANGUAGE_LIST and detected_lang != 'auto'
+            and detected_lang in languages_by_script(text or '')):
         return detected_lang
     return o_lang
 
@@ -317,7 +321,7 @@ def audio_translate(transcribe_manager, translate_manager, result_queue, o_lang,
             prev_text=prev_text, audio_bytes=audio_bytes
         )
         if t_lang:
-            source_lang = _resolve_source_language(o_lang, detected_lang)
+            source_lang = _resolve_source_language(o_lang, detected_lang, ori_pred)
             # Determine translation engine based on translate_mode
             use_azure = False
             if translate_mode == "ultimate":
@@ -429,7 +433,7 @@ def audio_translate_sse(transcribe_manager, translate_manager, audio_bytes, ori,
             audio_bytes=audio_bytes
         )
         if other_information["use_translate"]:
-            source_lang = _resolve_source_language(ori, detected_lang)
+            source_lang = _resolve_source_language(ori, detected_lang, ori_pred)
             # Get target_langs from other_information or default to all languages
             target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != source_lang])
             multi_translate = other_information.get("multi_translate", True)
