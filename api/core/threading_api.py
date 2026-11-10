@@ -4,12 +4,23 @@ import uuid
 import time
 
 from api.audio.audio_utils import calculate_rtf
-from lib.config.constant import DEFAULT_RESULT, ENABLE_TRIM
+from lib.config.constant import DEFAULT_RESULT, ENABLE_TRIM, LANGUAGE_LIST
 from api.core.trim_session_manager import get_trim_manager
 from lib.core.logging_config import get_logger
 
 # 獲取日誌器
 logger = get_logger(__name__)  
+
+def _resolve_source_language(o_lang, detected_lang):
+    """
+    Return the language the translation should use as its source.
+
+    With "auto", the language Whisper detected during transcription is used, but only if it is one of the supported
+    languages (Whisper can also return "unknown" or a language outside LANGUAGE_LIST); otherwise "auto" is kept.
+    """
+    if o_lang == 'auto' and detected_lang in LANGUAGE_LIST and detected_lang != 'auto':
+        return detected_lang
+    return o_lang
 
 def _cleanup_transcription_task(transcribe_manager, task_id):
     """
@@ -306,6 +317,7 @@ def audio_translate(transcribe_manager, translate_manager, result_queue, o_lang,
             prev_text=prev_text, audio_bytes=audio_bytes
         )
         if t_lang:
+            source_lang = _resolve_source_language(o_lang, detected_lang)
             # Determine translation engine based on translate_mode
             use_azure = False
             if translate_mode == "ultimate":
@@ -317,10 +329,10 @@ def audio_translate(transcribe_manager, translate_manager, result_queue, o_lang,
             
             if use_azure:
                 translated_pred, translate_time, translate_method, timing_dict = \
-                    translate_manager._azure_translate_all(ori_pred, o_lang, t_lang, prev_text)
+                    translate_manager._azure_translate_all(ori_pred, source_lang, t_lang, prev_text)
             else:
                 translated_pred, translate_time, translate_method, timing_dict = \
-                    translate_manager.translate(ori_pred, o_lang, t_lang, prev_text, multi_translate)
+                    translate_manager.translate(ori_pred, source_lang, t_lang, prev_text, multi_translate)
         else:
             translated_pred = DEFAULT_RESULT.copy()
             translate_time = 0
@@ -417,10 +429,11 @@ def audio_translate_sse(transcribe_manager, translate_manager, audio_bytes, ori,
             audio_bytes=audio_bytes
         )
         if other_information["use_translate"]:
+            source_lang = _resolve_source_language(ori, detected_lang)
             # Get target_langs from other_information or default to all languages
-            target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != ori])
+            target_langs = other_information.get("target_langs", [lang for lang in ['zh', 'en', 'de', 'ja', 'ko'] if lang != source_lang])
             multi_translate = other_information.get("multi_translate", True)
-            translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, ori, target_langs, other_information["prev_text"], multi_translate)  
+            translated_pred, translate_time, translate_method, timing_dict = translate_manager.translate(ori_pred, source_lang, target_langs, other_information["prev_text"], multi_translate)  
         else:
             translated_pred = DEFAULT_RESULT.copy()
             translate_time = 0
