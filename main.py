@@ -1261,7 +1261,7 @@ async def stop_sse():
 if __name__ == "__main__":  
     uvicorn.config.LOGGING_CONFIG["formatters"]["default"]["fmt"] = "%(asctime)s [%(name)s] %(levelprefix)s %(message)s"  
     uvicorn.config.LOGGING_CONFIG["formatters"]["access"]["fmt"] = '%(asctime)s [%(name)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'  
-    uvicorn.run(app, log_level='info', host='0.0.0.0', port=80)   
+    uvicorn.run(app, log_level='info', host='0.0.0.0', port=int(os.getenv("PORT", 80)))   
     
     
  
