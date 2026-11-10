@@ -154,6 +154,10 @@ class GlossaryManager:
     def stats(self):
         return {f"{s}->{t}": len(terms) for (s, t), terms in sorted(self._table.items())}
 
+    def terms_for(self, source_lang, target_lang):
+        """Return {source term: target term} for one language pair (empty dict if none)."""
+        return self._table.get((source_lang, target_lang), {})
+
     def build_prompt_section(self, source_lang, target_langs, text):
         """
         Build the glossary block for the system prompt.
