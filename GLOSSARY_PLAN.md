@@ -202,7 +202,7 @@ Azure 沒有 prompt，所以在送出前標記或替換原文中的詞，回傳�
 
 ### auto 來源語言
 
-音訊接口（`/translate`、`/translate_pipeline`、`/sse_audio_translate`）在 `auto` 時，轉錄會由 Whisper 檢測語言，翻譯改用檢測結果（`threading_api._resolve_source_language`；只在檢測結果是 zh / en / ja / ko / de 時取代，`unknown` 或其他語言維持 `auto`）。`/text_translate` 沒有檢測步驟，所以詞庫的來源語言在本機推斷，不增加請求：某語言的詞庫來源詞出現在文字中，且文字的主要文字系統允許該語言（韓文字 → ko、假名 → ja、漢字 → zh/ja、拉丁字母 → en/de）；有多個候選時取命中字數最多者，平手則不套用。推斷成功後：
+音訊接口（`/translate`、`/translate_pipeline`、`/sse_audio_translate`）在 `auto` 時，轉錄會由 Whisper 檢測語言，翻譯改用檢測結果（`threading_api._resolve_source_language`；只在檢測結果是 zh / en / ja / ko / de，而且與逐字稿的文字系統相符時才取代；`unknown`、其他語言、或標錯的結果維持 `auto`。Breeze 模型會把英文語音標成 `zh`，若照用，目標為 zh 時 Azure 會把英文原樣回傳不翻譯）。`/text_translate` 沒有檢測步驟，所以詞庫的來源語言在本機推斷，不增加請求：某語言的詞庫來源詞出現在文字中，且文字的主要文字系統允許該語言（韓文字 → ko、假名 → ja、漢字 → zh/ja、拉丁字母 → en/de）；有多個候選時取命中字數最多者，平手則不套用。推斷成功後：
 - 詞庫請求帶明確的 `from`（動態詞典需要）。
 - 沒命中詞條的目標也改用這個來源語言：Azure 自己的自動偵測對 `古人說兩儀生四象。` 這類短句會偵測成 `en`（信心 0.0）並把原文直接回傳不翻譯。
 - LLM 的詞庫 prompt 也用同樣方式處理 `auto`。

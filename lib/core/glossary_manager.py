@@ -132,7 +132,7 @@ _HANGUL = re.compile(r'[\uac00-\ud7af\u1100-\u11ff]')
 _LATIN = re.compile(r'[A-Za-z\u00c0-\u024f]')
 
 
-def _languages_by_script(text: str):
+def languages_by_script(text: str):
     """Languages the dominant script of `text` allows. Latin letters count as ~1/5 of a CJK character (word length)."""
     han, kana, hangul, latin = (len(p.findall(text)) for p in (_HAN, _KANA, _HANGUL, _LATIN))
     scores = {'cjk': (han + kana) / 2, 'hangul': hangul / 2, 'latin': latin / 5}
@@ -197,7 +197,7 @@ class GlossaryManager:
             return source_lang
         if not self._source_terms or not text:
             return None
-        allowed = _languages_by_script(text)
+        allowed = languages_by_script(text)
         text_cf = text.casefold()
         scores = {}
         for lang, terms in self._source_terms.items():
