@@ -126,17 +126,42 @@ def _term_in_text(term: str, text_cf: str) -> bool:
     return term_cf in text_cf
 
 
+_HAN = re.compile(r'[\u3400-\u9fff\uf900-\ufaff]')
+_KANA = re.compile(r'[\u3040-\u30ff]')
+_HANGUL = re.compile(r'[\uac00-\ud7af\u1100-\u11ff]')
+_LATIN = re.compile(r'[A-Za-z\u00c0-\u024f]')
+
+
+def _languages_by_script(text: str):
+    """Languages the dominant script of `text` allows. Latin letters count as ~1/5 of a CJK character (word length)."""
+    han, kana, hangul, latin = (len(p.findall(text)) for p in (_HAN, _KANA, _HANGUL, _LATIN))
+    scores = {'cjk': (han + kana) / 2, 'hangul': hangul / 2, 'latin': latin / 5}
+    dominant = max(scores, key=scores.get)
+    if scores[dominant] == 0:
+        return set()
+    if dominant == 'hangul':
+        return {'ko'}
+    if dominant == 'latin':
+        return {'en', 'de'}
+    return {'ja'} if kana else {'zh', 'ja'}
+
+
 class GlossaryManager:
     """In-memory glossary. The table is replaced as a whole, so readers never see a half-updated glossary."""
 
     def __init__(self):
         self._table = {}
+        self._source_terms = {}
         self._updated_at = None
 
     def load_csv(self, content: bytes):
         """Validate the CSV and replace the current glossary. Returns parse info."""
         table, info = parse_glossary_csv(content)
+        source_terms = {}
+        for (src, _), terms in table.items():
+            source_terms.setdefault(src, set()).update(terms)
         self._table = table
+        self._source_terms = source_terms
         self._updated_at = datetime.datetime.now(pytz.timezone('Asia/Taipei')).strftime("%Y-%m-%d %H:%M:%S")
         return info
 
@@ -144,6 +169,7 @@ class GlossaryManager:
         """Remove the glossary. Returns the per-pair counts that were removed."""
         removed = self.stats()
         self._table = {}
+        self._source_terms = {}
         self._updated_at = None
         return removed
 
@@ -158,6 +184,33 @@ class GlossaryManager:
         """Return {source term: target term} for one language pair (empty dict if none)."""
         return self._table.get((source_lang, target_lang), {})
 
+    def resolve_source(self, source_lang, text):
+        """
+        Return the concrete source language to use for the glossary, or None if it cannot be determined.
+
+        Anything other than "auto" is returned unchanged. For "auto" the language is inferred locally (no request):
+        a language qualifies if one of its glossary source terms occurs in `text` AND the dominant script of the
+        text allows it (Hangul -> ko, kana -> ja, Han -> zh/ja, Latin -> en/de). If several qualify, the one with
+        the most matched term characters wins; a tie gives None.
+        """
+        if source_lang != 'auto':
+            return source_lang
+        if not self._source_terms or not text:
+            return None
+        allowed = _languages_by_script(text)
+        text_cf = text.casefold()
+        scores = {}
+        for lang, terms in self._source_terms.items():
+            if lang in allowed:
+                score = sum(len(t) for t in terms if _term_in_text(t, text_cf))
+                if score:
+                    scores[lang] = score
+        if not scores:
+            return None
+        best = max(scores.values())
+        winners = [lang for lang, score in scores.items() if score == best]
+        return winners[0] if len(winners) == 1 else None
+
     def build_prompt_section(self, source_lang, target_langs, text):
         """
         Build the glossary block for the system prompt.
@@ -165,6 +218,9 @@ class GlossaryManager:
         """
         table = self._table
         if not table or not text:
+            return ""
+        source_lang = self.resolve_source(source_lang, text)
+        if source_lang is None:
             return ""
         if isinstance(target_langs, str):
             target_langs = [target_langs]
